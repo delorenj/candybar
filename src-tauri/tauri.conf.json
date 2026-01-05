@@ -1,10 +1,10 @@
 {
   "$schema": "..\\node_modules/@tauri-apps/cli\\schema.json",
   "build": {
-    "beforeBuildCommand": "npm run next-build",
-    "beforeDevCommand": "npm run next dev",
+    "beforeBuildCommand": "next-build",
+    "beforeDevCommand": "next dev",
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:3000"
+    "devUrl": "http://localhost:3001"
   },
   "bundle": {
     "active": true,
@@ -40,10 +40,10 @@
       }
     }
   },
-  "productName": "nextauri",
-  "mainBinaryName": "nextauri",
+  "productName": "candybar",
+  "mainBinaryName": "candybar",
   "version": "0.1.0",
-  "identifier": "com.nextauri.dev",
+  "identifier": "com.candybar.dev",
   "plugins": {},
   "app": {
     "windows": [
@@ -53,7 +53,7 @@
         "fullscreen": false,
         "height": 600,
         "resizable": true,
-        "title": "nextauri",
+        "title": "candybar",
         "width": 800,
         "useHttpsScheme": true
       }

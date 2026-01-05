@@ -1,5 +1,5 @@
 {
-  "name": "nextauri",
+  "name": "candybar",
   "scripts": {
     "dev": "tauri dev",
     "tauri": "tauri",
@@ -19,17 +19,27 @@
     "@tauri-apps/plugin-os": "^2.3.0",
     "@tauri-apps/plugin-process": "^2.3.0",
     "@tauri-apps/plugin-shell": "^2.3.0",
+    "@types/amqplib": "^0.10.8",
+    "amqplib": "^0.10.9",
+    "lucide-react": "^0.562.0",
     "next": "^15.4.6",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "recharts": "^3.6.0",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
+    "@tailwindcss/forms": "^0.5.11",
+    "@tailwindcss/postcss": "^4.1.18",
     "@tauri-apps/cli": "^2.7.1",
     "@types/node": "^24.2.0",
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",
+    "autoprefixer": "^10.4.23",
     "eslint": "^9.32.0",
     "eslint-config-next": "^15.4.6",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
     "typescript": "^5.9.2"
   }
 }
