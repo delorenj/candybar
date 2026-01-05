@@ -1,0 +1,11 @@
+{
+  "security": {
+    "csp": null,
+    "dangerousRemoteDomainIpcAccess": [
+      {
+        "domain": "bloodbank.events.v1",
+        "allow": ["rabbitmq", "amqp", "localhost", "tailscale"]
+      }
+    ]
+  }
+}

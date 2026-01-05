@@ -1,5 +1,5 @@
 import '../css/index.css';
-import AppLayout from 'components/AppLayout';
+import AppLayout from '../components/AppLayout';
 
 export default function RootLayout({
   children,
