@@ -24,6 +24,13 @@ tauri-plugin-notification = "2.3"
 tauri-plugin-os = "2.3"
 tauri-plugin-http = "2.5"
 
+# RabbitMQ integration
+lapin = "2.3"
+tokio = { version = "1", features = ["full"] }
+futures-lite = "2.0"
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+
 [features]
 # by default Tauri runs in production mode
 # when `tauri dev` runs it is executed with `cargo run --no-default-features` if `devPath` is an URL

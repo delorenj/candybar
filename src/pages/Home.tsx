@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Activity, Zap, Clock, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
+import { Activity, Zap, Clock, TrendingUp, AlertCircle, CheckCircle, Wifi, WifiOff } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { NumberTicker } from "@/components/magicui/number-ticker";
 import { DotPattern } from "@/components/magicui/dot-pattern";
 import { BorderBeam } from "@/components/magicui/border-beam";
@@ -12,20 +13,9 @@ import { ShineBorder } from "@/components/magicui/shine-border";
 import { ModeToggle } from "@/components/ModeToggle";
 import { EventCloud } from "@/components/EventCloud";
 import { EventGraph } from "@/components/EventGraph";
+import { useRabbitMQ } from "@/hooks/useRabbitMQ";
+import { BloodbankEvent, getDomainColor, getDomainFromEventType } from "@/types/bloodbank";
 import { cn } from "@/lib/utils";
-
-interface BloodbankEvent {
-  event_id: string;
-  event_type: string;
-  timestamp: string;
-  source: {
-    host: string;
-    app: string;
-    type: string;
-  };
-  correlation_ids: string[];
-  payload: any;
-}
 
 interface EventNode {
   id: string;
@@ -33,13 +23,14 @@ interface EventNode {
   count: number;
   lastFired: number;
   brightness: number;
+  color: string;
 }
 
 interface EventStats {
   totalEvents: number;
   eventsPerMinute: number;
   errorRate: number;
-  activeConnections: number;
+  uniqueDomains: number;
 }
 
 interface GraphState {
@@ -49,128 +40,37 @@ interface GraphState {
 }
 
 const BloodbankObservability = () => {
-  const [events, setEvents] = useState<BloodbankEvent[]>([]);
+  const { state, events, connect, disconnect } = useRabbitMQ(500);
+  const [selectedEvent, setSelectedEvent] = useState<BloodbankEvent | null>(null);
+  const [graphState, setGraphState] = useState<GraphState | null>(null);
+  const [showEventList, setShowEventList] = useState(false);
   const [stats, setStats] = useState<EventStats>({
     totalEvents: 0,
     eventsPerMinute: 0,
     errorRate: 0,
-    activeConnections: 0
+    uniqueDomains: 0,
   });
-  const [isConnected, setIsConnected] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState<BloodbankEvent | null>(null);
-  const [graphState, setGraphState] = useState<GraphState | null>(null);
-  const [showEventList, setShowEventList] = useState(false);
 
+  // Calculate stats from real events
   useEffect(() => {
-    setIsConnected(true);
+    const now = Date.now();
+    const oneMinuteAgo = now - 60000;
 
-    // Mock events representing real Bloodbank event types
-    const mockEvents: BloodbankEvent[] = [
-      {
-        event_id: "550e8400-e29b-41d4-a716-446655440000",
-        event_type: "fireflies.transcript.ready",
-        timestamp: new Date().toISOString(),
-        source: { host: "big-chungus", app: "fireflies-webhook", type: "webhook" },
-        correlation_ids: ["123e4567-e89b-12d3-a456-426614174000"],
-        payload: { id: "transcript_123", title: "Meeting Notes", duration: 1800 }
-      },
-      {
-        event_id: "660e8400-e29b-41d4-a716-446655440001",
-        event_type: "fireflies.meeting.started",
-        timestamp: new Date().toISOString(),
-        source: { host: "big-chungus", app: "fireflies-webhook", type: "webhook" },
-        correlation_ids: [],
-        payload: { meeting_id: "meet_789", participants: 3 }
-      },
-      {
-        event_id: "770e8400-e29b-41d4-a716-446655440002",
-        event_type: "agent.thread.prompt",
-        timestamp: new Date().toISOString(),
-        source: { host: "agent-01", app: "thread-manager", type: "api" },
-        correlation_ids: [],
-        payload: { thread_id: "thread_456", agent_name: "oracle", tokens: 150 }
-      },
-      {
-        event_id: "880e8400-e29b-41d4-a716-446655440003",
-        event_type: "agent.task.completed",
-        timestamp: new Date().toISOString(),
-        source: { host: "agent-01", app: "thread-manager", type: "api" },
-        correlation_ids: [],
-        payload: { task_id: "task_123", status: "success" }
-      },
-      {
-        event_id: "990e8400-e29b-41d4-a716-446655440004",
-        event_type: "llm.response.received",
-        timestamp: new Date().toISOString(),
-        source: { host: "llm-gateway", app: "openai-proxy", type: "api" },
-        correlation_ids: [],
-        payload: { model: "gpt-4", tokens: 450, latency_ms: 1250 }
-      },
-      {
-        event_id: "aa0e8400-e29b-41d4-a716-446655440005",
-        event_type: "llm.request.sent",
-        timestamp: new Date().toISOString(),
-        source: { host: "llm-gateway", app: "openai-proxy", type: "api" },
-        correlation_ids: [],
-        payload: { model: "gpt-4", prompt_tokens: 150 }
-      },
-      {
-        event_id: "bb0e8400-e29b-41d4-a716-446655440006",
-        event_type: "artifact.file.created",
-        timestamp: new Date().toISOString(),
-        source: { host: "artifact-store", app: "file-manager", type: "api" },
-        correlation_ids: [],
-        payload: { filename: "report.pdf", size: 2048576 }
-      },
-      {
-        event_id: "cc0e8400-e29b-41d4-a716-446655440007",
-        event_type: "github.pr.opened",
-        timestamp: new Date().toISOString(),
-        source: { host: "github-webhook", app: "github-events", type: "webhook" },
-        correlation_ids: [],
-        payload: { pr_number: 123, repo: "delorenj/project" }
-      },
-      {
-        event_id: "dd0e8400-e29b-41d4-a716-446655440008",
-        event_type: "github.commit.pushed",
-        timestamp: new Date().toISOString(),
-        source: { host: "github-webhook", app: "github-events", type: "webhook" },
-        correlation_ids: [],
-        payload: { sha: "abc123", message: "feat: add feature" }
-      },
-      {
-        event_id: "ee0e8400-e29b-41d4-a716-446655440009",
-        event_type: "workflow.step.completed",
-        timestamp: new Date().toISOString(),
-        source: { host: "n8n-runner", app: "workflow-engine", type: "internal" },
-        correlation_ids: [],
-        payload: { workflow_id: "wf_001", step: "transform" }
-      },
-    ];
+    const recentEvents = events.filter(e => new Date(e.timestamp).getTime() > oneMinuteAgo);
+    const errorEvents = events.filter(e => e.event_type.includes('error') || e.event_type.includes('failed'));
+    const domains = new Set(events.map(e => getDomainFromEventType(e.event_type)));
 
-    // Fire events at varying rates to simulate real activity
-    const interval = setInterval(() => {
-      // Random burst of 1-3 events
-      const burstSize = Math.random() < 0.3 ? Math.floor(Math.random() * 3) + 1 : 1;
+    setStats({
+      totalEvents: events.length,
+      eventsPerMinute: recentEvents.length,
+      errorRate: events.length > 0 ? (errorEvents.length / events.length) * 100 : 0,
+      uniqueDomains: domains.size,
+    });
+  }, [events]);
 
-      for (let i = 0; i < burstSize; i++) {
-        setTimeout(() => {
-          const newEvent = { ...mockEvents[Math.floor(Math.random() * mockEvents.length)] };
-          newEvent.event_id = Math.random().toString(36).substring(7);
-          newEvent.timestamp = new Date().toISOString();
-
-          setEvents(prev => [newEvent, ...prev.slice(0, 199)]);
-          setStats(prev => ({
-            totalEvents: prev.totalEvents + 1,
-            eventsPerMinute: Math.floor(Math.random() * 30) + 10,
-            errorRate: Math.random() * 3,
-            activeConnections: Math.floor(Math.random() * 10) + 5
-          }));
-        }, i * 100); // Stagger within burst
-      }
-    }, 500 + Math.random() * 1000); // Vary interval
-
-    return () => clearInterval(interval);
+  // Auto-connect on mount
+  useEffect(() => {
+    connect();
   }, []);
 
   const handleNodeClick = useCallback((nodeId: string, children?: EventNode[]) => {
@@ -188,14 +88,22 @@ const BloodbankObservability = () => {
   }, []);
 
   const getEventTypeIcon = (eventType: string) => {
-    if (eventType.includes('error')) return <AlertCircle className="w-4 h-4 text-destructive" />;
+    if (eventType.includes('error') || eventType.includes('failed')) return <AlertCircle className="w-4 h-4 text-destructive" />;
     if (eventType.includes('ready') || eventType.includes('completed')) return <CheckCircle className="w-4 h-4 text-green-500" />;
-    if (eventType.includes('prompt') || eventType.includes('request')) return <Zap className="w-4 h-4 text-blue-500" />;
+    if (eventType.includes('prompt') || eventType.includes('request') || eventType.includes('started')) return <Zap className="w-4 h-4 text-blue-500" />;
     return <Activity className="w-4 h-4 text-muted-foreground" />;
   };
 
   const formatTimestamp = (timestamp: string) => {
     return new Date(timestamp).toLocaleTimeString();
+  };
+
+  const handleConnectionToggle = () => {
+    if (state.isConnected) {
+      disconnect();
+    } else {
+      connect();
+    }
   };
 
   return (
@@ -232,21 +140,61 @@ const BloodbankObservability = () => {
               >
                 {showEventList ? 'Cloud View' : 'List View'}
               </button>
-              <Badge variant={isConnected ? "outline" : "destructive"} className={cn(
+
+              {/* Connection Button */}
+              <Button
+                variant={state.isConnected ? "outline" : "default"}
+                size="sm"
+                onClick={handleConnectionToggle}
+                disabled={state.isConnecting}
+                className="gap-2"
+              >
+                {state.isConnecting ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Connecting...
+                  </>
+                ) : state.isConnected ? (
+                  <>
+                    <WifiOff className="w-3 h-3" />
+                    Disconnect
+                  </>
+                ) : (
+                  <>
+                    <Wifi className="w-3 h-3" />
+                    Connect
+                  </>
+                )}
+              </Button>
+
+              <Badge variant={state.isConnected ? "outline" : "destructive"} className={cn(
                 "gap-1.5 px-3 py-1 font-semibold",
-                isConnected && "border-green-500/50 text-green-600 dark:text-green-400 bg-green-500/5"
+                state.isConnected && "border-green-500/50 text-green-600 dark:text-green-400 bg-green-500/5"
               )}>
                 <div className={cn(
-                  "w-1.5 h-1.5 rounded-full animate-pulse",
-                  isConnected ? "bg-green-500" : "bg-red-500"
+                  "w-1.5 h-1.5 rounded-full",
+                  state.isConnected ? "bg-green-500 animate-pulse" : "bg-red-500"
                 )} />
-                {isConnected ? 'Connected' : 'Disconnected'}
+                {state.isConnected ? 'Connected' : state.error ? 'Error' : 'Disconnected'}
               </Badge>
               <ModeToggle />
             </div>
           </div>
         </div>
       </header>
+
+      {/* Error Banner */}
+      {state.error && (
+        <div className="relative z-10 bg-destructive/10 border-b border-destructive/20 px-4 py-2">
+          <div className="max-w-7xl mx-auto flex items-center gap-2 text-sm text-destructive">
+            <AlertCircle className="w-4 h-4" />
+            <span>{state.error}</span>
+            <Button variant="ghost" size="sm" onClick={() => connect()} className="ml-auto">
+              Retry
+            </Button>
+          </div>
+        </div>
+      )}
 
       <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Cards */}
@@ -255,7 +203,7 @@ const BloodbankObservability = () => {
             { label: "Total Events", value: stats.totalEvents, icon: Activity, color: "text-blue-500" },
             { label: "Events/Min", value: stats.eventsPerMinute, icon: TrendingUp, color: "text-green-500" },
             { label: "Error Rate", value: stats.errorRate, suffix: "%", icon: AlertCircle, color: "text-red-500", decimals: 1 },
-            { label: "Connections", value: stats.activeConnections, icon: Zap, color: "text-purple-500" }
+            { label: "Domains", value: stats.uniqueDomains, icon: Zap, color: "text-purple-500" }
           ].map((stat, i) => (
             <Card key={i} className="overflow-hidden relative group border-none shadow-md">
               <ShineBorder borderWidth={1} duration={10} shineColor={["#A97CF8", "#F38CB8", "#FF2975"]} />
@@ -281,7 +229,9 @@ const BloodbankObservability = () => {
               <CardHeader className="border-b bg-muted/30 py-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">Event Stream</CardTitle>
-                  <Badge variant="secondary" className="font-mono text-[10px]">LIVE</Badge>
+                  <Badge variant="secondary" className="font-mono text-[10px]">
+                    {state.isConnected ? 'LIVE' : 'OFFLINE'}
+                  </Badge>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
@@ -290,38 +240,46 @@ const BloodbankObservability = () => {
                     {events.length === 0 ? (
                       <div className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
                         <Zap className="w-8 h-8 opacity-20" />
-                        <p>No events received yet</p>
+                        <p>{state.isConnected ? 'Waiting for events...' : 'Connect to RabbitMQ to see events'}</p>
                       </div>
                     ) : (
-                      events.slice(0, 50).map((event) => (
-                        <div
-                          key={event.event_id}
-                          className={cn(
-                            "px-4 py-3 hover:bg-accent/50 cursor-pointer transition-colors group",
-                            selectedEvent?.event_id === event.event_id && "bg-accent"
-                          )}
-                          onClick={() => setSelectedEvent(event)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3">
-                              <div className="p-1.5 rounded-full bg-background border shadow-sm group-hover:border-primary/50 transition-colors">
-                                {getEventTypeIcon(event.event_type)}
+                      events.slice(0, 50).map((event) => {
+                        const domain = getDomainFromEventType(event.event_type);
+                        const domainColor = getDomainColor(domain);
+
+                        return (
+                          <div
+                            key={event.event_id}
+                            className={cn(
+                              "px-4 py-3 hover:bg-accent/50 cursor-pointer transition-colors group",
+                              selectedEvent?.event_id === event.event_id && "bg-accent"
+                            )}
+                            onClick={() => setSelectedEvent(event)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-3">
+                                <div
+                                  className="p-1.5 rounded-full bg-background border shadow-sm group-hover:border-primary/50 transition-colors"
+                                  style={{ borderColor: domainColor + '40' }}
+                                >
+                                  {getEventTypeIcon(event.event_type)}
+                                </div>
+                                <div>
+                                  <p className="text-xs font-semibold tracking-tight">
+                                    {event.event_type}
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground font-medium flex items-center gap-2">
+                                    <span style={{ color: domainColor }}>{event.source.app}</span>
+                                    <Separator orientation="vertical" className="h-2" />
+                                    <span>{formatTimestamp(event.timestamp)}</span>
+                                  </p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="text-xs font-semibold tracking-tight">
-                                  {event.event_type}
-                                </p>
-                                <p className="text-[10px] text-muted-foreground font-medium flex items-center gap-2">
-                                  <span className="text-primary/70">{event.source.app}</span>
-                                  <Separator orientation="vertical" className="h-2" />
-                                  <span>{formatTimestamp(event.timestamp)}</span>
-                                </p>
-                              </div>
+                              <Clock className="w-3 h-3 text-muted-foreground/50" />
                             </div>
-                            <Clock className="w-3 h-3 text-muted-foreground/50" />
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </ScrollArea>
@@ -351,6 +309,19 @@ const BloodbankObservability = () => {
                       <h3 className="text-[9px] uppercase tracking-widest font-bold text-muted-foreground/70">Event ID</h3>
                       <p className="text-[9px] font-mono bg-muted p-1 rounded border border-border/50">{selectedEvent.event_id}</p>
                     </div>
+
+                    {selectedEvent.correlation_ids.length > 0 && (
+                      <div className="space-y-1">
+                        <h3 className="text-[9px] uppercase tracking-widest font-bold text-muted-foreground/70">Correlation IDs</h3>
+                        <div className="flex flex-wrap gap-1">
+                          {selectedEvent.correlation_ids.map((id, i) => (
+                            <Badge key={i} variant="outline" className="text-[8px] font-mono">
+                              {id.slice(0, 8)}...
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <Separator />
 
@@ -383,7 +354,9 @@ const BloodbankObservability = () => {
                   <CardTitle className="text-base">Event Domains</CardTitle>
                   <p className="text-xs text-muted-foreground mt-0.5">Click a domain to explore sub-events</p>
                 </div>
-                <Badge variant="secondary" className="font-mono text-[10px]">LIVE</Badge>
+                <Badge variant="secondary" className="font-mono text-[10px]">
+                  {state.isConnected ? 'LIVE' : 'OFFLINE'}
+                </Badge>
               </div>
             </CardHeader>
             <CardContent className="p-0">
