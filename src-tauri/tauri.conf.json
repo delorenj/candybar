@@ -1,1 +1,63 @@
-{"$schema": "../node_modules/@tauri-apps/cli/schema.json", "build": {"beforeBuildCommand": "next-build", "beforeDevCommand": "next dev", "frontendDist": "../dist"}, "bundle": {"active": true, "category": "DeveloperTool", "copyright": "", "targets": "all", "externalBin": [], "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"], "productName": "candybar", "mainBinaryName": "candybar", "version": "0.1.0", "identifier": "com.candybar.dev", "windows": {"certificateThumbprint": null, "digestAlgorithm": "sha256", "timestampUrl": ""}, "longDescription": "", "macOS": {"entitlements": null, "exceptionDomain": "", "frameworks": [], "providerShortName": null, "signingIdentity": null}, "resources": [], "shortDescription": "", "linux": {"deb": {"depends": []}}}, "security": {"csp": null, "dangerousRemoteDomainIpcAccess": [{"domain": "bloodbank.events.v1", "allow": ["rabbitmq", "amqp", "localhost", "tailscale"]}]}, "app": {"windows": [{"transparent": false, "decorations": true, "fullscreen": false, "height": 600, "resizable": true, "title": "candybar", "width": 800, "useHttpsScheme": true}], "security": {"csp": null, "dangerousRemoteDomainIpcAccess": [{"domain": "bloodbank.events.v1", "allow": ["rabbitmq", "amqp", "localhost", "tailscale"]}]}}, "identifier": "com.candybar.dev"}
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "build": {
+    "beforeBuildCommand": "bun run build",
+    "beforeDevCommand": "bun run vite:dev",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "category": "DeveloperTool",
+    "copyright": "",
+    "targets": "all",
+    "externalBin": [],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
+    "longDescription": "",
+    "macOS": {
+      "entitlements": null,
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": null,
+      "signingIdentity": null
+    },
+    "resources": [],
+    "shortDescription": "",
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "transparent": false,
+        "decorations": true,
+        "fullscreen": false,
+        "height": 600,
+        "resizable": true,
+        "title": "candybar",
+        "width": 800,
+        "useHttpsScheme": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "identifier": "com.candybar.dev",
+  "productName": "candybar",
+  "version": "0.1.0"
+}

@@ -6,7 +6,7 @@ export type AppLayoutProps = {
 
 export default function AppLayout(props: AppLayoutProps) {
   return (
-    <div className='app-layout'>
+    <div className='app-layout w-full h-full min-h-screen'>
       {props.children}
     </div>
   )

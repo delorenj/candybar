@@ -1,17 +1,15 @@
-'use client';
-
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Activity, Zap, Clock, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { Badge } from "../../components/ui/badge";
-import { ScrollArea } from "../../components/ui/scroll-area";
-import { Separator } from "../../components/ui/separator";
-import { NumberTicker } from "../../components/magicui/number-ticker";
-import { DotPattern } from "../../components/magicui/dot-pattern";
-import { BorderBeam } from "../../components/magicui/border-beam";
-import { ShineBorder } from "../../components/magicui/shine-border";
-import { ModeToggle } from "../../components/ModeToggle";
-import { cn } from "../../lib/utils";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { NumberTicker } from "@/components/magicui/number-ticker";
+import { DotPattern } from "@/components/magicui/dot-pattern";
+import { BorderBeam } from "@/components/magicui/border-beam";
+import { ShineBorder } from "@/components/magicui/shine-border";
+import { ModeToggle } from "@/components/ModeToggle";
+import { cn } from "@/lib/utils";
 
 interface BloodbankEvent {
   event_id: string;
@@ -92,7 +90,7 @@ const BloodbankObservability = () => {
       const newEvent = { ...mockEvents[Math.floor(Math.random() * mockEvents.length)] };
       newEvent.event_id = Math.random().toString(36).substring(7);
       newEvent.timestamp = new Date().toISOString();
-      
+
       setEvents(prev => [newEvent, ...prev.slice(0, 99)]);
       setStats(prev => ({
         totalEvents: prev.totalEvents + 1,
@@ -123,7 +121,7 @@ const BloodbankObservability = () => {
           "[mask-image:radial-gradient(500px_circle_at_center,white,transparent)]",
         )}
       />
-      
+
       {/* Header */}
       <header className="relative z-10 border-b bg-background/60 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -227,7 +225,7 @@ const BloodbankObservability = () => {
                           <div className="flex items-center gap-3">
                             {event.correlation_ids.length > 0 && (
                               <Badge variant="secondary" className="text-[10px] h-5">
-                                🔗 {event.correlation_ids.length}
+                                {event.correlation_ids.length}
                               </Badge>
                             )}
                             <Clock className="w-3.5 h-3.5 text-muted-foreground/50" />
@@ -259,7 +257,7 @@ const BloodbankObservability = () => {
                       <p className="text-xs font-semibold">{selectedEvent.source.app}</p>
                     </div>
                   </div>
-                  
+
                   <div className="space-y-1">
                     <h3 className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/70">Event ID</h3>
                     <p className="text-[10px] font-mono bg-muted p-1.5 rounded border border-border/50">{selectedEvent.event_id}</p>
