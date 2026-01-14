@@ -25,7 +25,7 @@ tauri-plugin-os = "2.3"
 tauri-plugin-http = "2.5"
 
 # RabbitMQ integration
-lapin = "2.3"
+lapin = "3.7"
 tokio = { version = "1", features = ["full"] }
 futures-lite = "2.0"
 uuid = { version = "1.0", features = ["v4"] }
