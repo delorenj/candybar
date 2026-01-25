@@ -1,0 +1,20 @@
+{
+  "project_name": "candybar",
+  "description": "Bloodbank event observability for 33GOD agentic pipeline",
+  "project_type": "desktop_application",
+  "output_folder": "docs",
+  "user_name": "Jarad DeLorenzo",
+  "team_size": 1,
+  "methodology": "BMAD Method v6",
+  "created_date": "2026-01-12",
+  "tech_stack": {
+    "frontend": ["React 19", "TypeScript", "Vite", "Tailwind CSS", "shadcn/ui"],
+    "backend": ["Rust", "Tauri 2.9"],
+    "messaging": ["RabbitMQ", "lapin"],
+    "deployment": "Desktop binary (cross-platform)"
+  },
+  "integration": {
+    "ecosystem": "33GOD",
+    "message_broker": "Bloodbank (RabbitMQ)"
+  }
+}
