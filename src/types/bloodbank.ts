@@ -142,7 +142,7 @@ export const DEFAULT_RABBITMQ_CONFIG: RabbitMQConfig = {
   port: 5672,
   username: 'guest',
   password: 'guest',
-  exchange: 'bloodbank.events',
+  exchange: 'bloodbank.events.v1',
   routingKeys: ['#'], // Subscribe to all events
 };
 

@@ -24,10 +24,10 @@ impl Default for RabbitConfig {
         Self {
             host: "localhost".to_string(),
             port: 5672,
-            username: "guest".to_string(),
-            password: "guest".to_string(),
-            exchange: "bloodbank.events".to_string(),
-            routing_keys: vec!["#".to_string()], // Subscribe to all
+            username: std::env::var("DEFAULT_USERNAME").unwrap_or_else(|_| "guest".to_string()),
+            password: std::env::var("DEFAULT_PASSWORD").unwrap_or_else(|_| "guest".to_string()),
+            exchange: "bloodbank.events.v1".to_string(),
+            routing_keys: vec!["#".to_string()],
         }
     }
 }
@@ -91,10 +91,13 @@ pub async fn connect_and_subscribe(
 
     println!("Connecting to RabbitMQ at {}:{}...", config.host, config.port);
 
-    // Connect to RabbitMQ
-    let conn = Connection::connect(&addr, ConnectionProperties::default())
-        .await
-        .map_err(|e| format!("Failed to connect to RabbitMQ: {}", e))?;
+    let conn = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        Connection::connect(&addr, ConnectionProperties::default()),
+    )
+    .await
+    .map_err(|_| "Connection timed out after 10 seconds. Check if RabbitMQ is running and accessible.")?
+    .map_err(|e| format!("Failed to connect to RabbitMQ: {}", e))?;
 
     println!("Connected to RabbitMQ!");
 
