@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
-import { BloodbankEvent, RabbitMQConfig, DEFAULT_RABBITMQ_CONFIG } from '@/types/bloodbank';
+import { BloodbankEvent, RabbitMQConfig } from '@/types/bloodbank';
 
 interface RabbitMQState {
   isConnected: boolean;
@@ -28,15 +28,37 @@ export function useRabbitMQ(maxEvents: number = 500): UseRabbitMQReturn {
   const [events, setEvents] = useState<BloodbankEvent[]>([]);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
 
-  // Set up event listeners
+  // Set up event listeners with batching for performance
   useEffect(() => {
-    const setupListeners = async () => {
-      // Listen for bloodbank events
-      const unlistenEvent = await listen<BloodbankEvent>('bloodbank:event', (event) => {
+    let eventQueue: BloodbankEvent[] = [];
+    let batchTimeout: NodeJS.Timeout | null = null;
+
+    const flushEventQueue = () => {
+      if (eventQueue.length > 0) {
         setEvents((prev) => {
-          const newEvents = [event.payload, ...prev];
-          return newEvents.slice(0, maxEvents);
+          const combined = [...eventQueue, ...prev];
+          eventQueue = [];
+          return combined.slice(0, maxEvents);
         });
+      }
+      batchTimeout = null;
+    };
+
+    const setupListeners = async () => {
+      // Listen for bloodbank events with batching
+      const unlistenEvent = await listen<BloodbankEvent>('bloodbank:event', (event) => {
+        eventQueue.push(event.payload);
+
+        // Batch events within 100ms for performance
+        if (!batchTimeout) {
+          batchTimeout = setTimeout(flushEventQueue, 100);
+        }
+
+        // Force flush if queue gets too large
+        if (eventQueue.length >= 50) {
+          if (batchTimeout) clearTimeout(batchTimeout);
+          flushEventQueue();
+        }
       });
 
       // Listen for connection status
@@ -66,6 +88,8 @@ export function useRabbitMQ(maxEvents: number = 500): UseRabbitMQReturn {
     setupListeners();
 
     return () => {
+      if (batchTimeout) clearTimeout(batchTimeout);
+      flushEventQueue();
       unlistenRefs.current.forEach((unlisten) => unlisten());
     };
   }, [maxEvents]);
@@ -80,7 +104,7 @@ export function useRabbitMQ(maxEvents: number = 500): UseRabbitMQReturn {
         ...defaultConfig,
         ...configOverrides,
         // Map camelCase to snake_case for Rust
-        routing_keys: configOverrides?.routingKeys || defaultConfig.routing_keys || ['#'],
+        routing_keys: configOverrides?.routingKeys || defaultConfig.routingKeys || ['#'],
       };
 
       await invoke('rabbitmq_connect', { config });

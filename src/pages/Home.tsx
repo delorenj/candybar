@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Activity, Zap, Clock, TrendingUp, AlertCircle, CheckCircle, Wifi, WifiOff } from 'lucide-react';
+import { Activity, Zap, Clock, TrendingUp, AlertCircle, CheckCircle, Wifi, WifiOff, Download, GitBranch } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,11 @@ import { ShineBorder } from "@/components/magicui/shine-border";
 import { ModeToggle } from "@/components/ModeToggle";
 import { EventCloud } from "@/components/EventCloud";
 import { EventGraph } from "@/components/EventGraph";
+import { EventFilters, EventFilter } from "@/components/EventFilters";
+import { JsonViewer } from "@/components/JsonViewer";
+import { EventFlowDiagram } from "@/components/EventFlowDiagram";
 import { useRabbitMQ } from "@/hooks/useRabbitMQ";
+import { useEventFiltering } from "@/hooks/useEventFiltering";
 import { BloodbankEvent, getDomainColor, getDomainFromEventType } from "@/types/bloodbank";
 import { cn } from "@/lib/utils";
 
@@ -43,13 +47,25 @@ const BloodbankObservability = () => {
   const { state, events, connect, disconnect } = useRabbitMQ(500);
   const [selectedEvent, setSelectedEvent] = useState<BloodbankEvent | null>(null);
   const [graphState, setGraphState] = useState<GraphState | null>(null);
-  const [showEventList, setShowEventList] = useState(false);
+  const [viewMode, setViewMode] = useState<'cloud' | 'list' | 'flow'>('list');
+  const [filters, setFilters] = useState<EventFilter>({
+    domain: 'all',
+    eventType: 'all',
+    sourceApp: 'all',
+    searchText: '',
+    timeRange: 'all',
+    sessionId: '',
+    errorsOnly: false,
+  });
   const [stats, setStats] = useState<EventStats>({
     totalEvents: 0,
     eventsPerMinute: 0,
     errorRate: 0,
     uniqueDomains: 0,
   });
+
+  // Apply filters
+  const { filteredEvents, availableSources, availableSessions, filteredCount } = useEventFiltering(events, filters);
 
   // Calculate stats from real events
   useEffect(() => {
@@ -106,6 +122,50 @@ const BloodbankObservability = () => {
     }
   };
 
+  const handleExportEvents = () => {
+    const dataStr = JSON.stringify(filteredEvents, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `candybar-events-${new Date().toISOString()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportEventCSV = () => {
+    const headers = ['Event ID', 'Event Type', 'Timestamp', 'Source App', 'Domain', 'Session ID'];
+    const rows = filteredEvents.map((event) => [
+      event.event_id,
+      event.event_type,
+      event.timestamp,
+      event.source.app,
+      getDomainFromEventType(event.event_type),
+      event.agent_context?.session_id || '',
+    ]);
+
+    const csv = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
+    const dataBlob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `candybar-events-${new Date().toISOString()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleClearFilters = () => {
+    setFilters({
+      domain: 'all',
+      eventType: 'all',
+      sourceApp: 'all',
+      searchText: '',
+      timeRange: 'all',
+      sessionId: '',
+      errorsOnly: false,
+    });
+  };
+
   return (
     <div className="relative min-h-screen w-full bg-background overflow-hidden">
       <DotPattern
@@ -129,17 +189,55 @@ const BloodbankObservability = () => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setShowEventList(!showEventList)}
-                className={cn(
-                  "px-3 py-1 text-xs font-medium rounded-md transition-colors",
-                  showEventList
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                )}
+              {/* View Mode Selector */}
+              <div className="flex items-center gap-1 bg-muted rounded-md p-1">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={cn(
+                    "px-3 py-1 text-xs font-medium rounded transition-colors",
+                    viewMode === 'list'
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  List
+                </button>
+                <button
+                  onClick={() => setViewMode('cloud')}
+                  className={cn(
+                    "px-3 py-1 text-xs font-medium rounded transition-colors",
+                    viewMode === 'cloud'
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Cloud
+                </button>
+                <button
+                  onClick={() => setViewMode('flow')}
+                  className={cn(
+                    "px-3 py-1 text-xs font-medium rounded transition-colors flex items-center gap-1",
+                    viewMode === 'flow'
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <GitBranch className="w-3 h-3" />
+                  Flow
+                </button>
+              </div>
+
+              {/* Export Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportEvents}
+                disabled={filteredEvents.length === 0}
+                className="gap-1.5"
               >
-                {showEventList ? 'Cloud View' : 'List View'}
-              </button>
+                <Download className="w-3 h-3" />
+                Export JSON
+              </Button>
 
               {/* Connection Button */}
               <Button
@@ -221,8 +319,30 @@ const BloodbankObservability = () => {
           ))}
         </div>
 
+        {/* Filters */}
+        <div className="mb-6">
+          <EventFilters
+            filters={filters}
+            onFilterChange={setFilters}
+            availableSources={availableSources}
+            availableSessions={availableSessions}
+            onClearFilters={handleClearFilters}
+          />
+        </div>
+
+        {/* Filter Results Badge */}
+        {filteredCount !== events.length && (
+          <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+            <Badge variant="secondary">
+              Showing {filteredCount} of {events.length} events
+            </Badge>
+          </div>
+        )}
+
         {/* Main Content */}
-        {showEventList ? (
+        {viewMode === 'flow' ? (
+          <EventFlowDiagram events={filteredEvents} />
+        ) : viewMode === 'list' ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
             {/* Event Stream */}
             <Card className="lg:col-span-2 shadow-xl border-border/50 bg-background/50 backdrop-blur-sm">
@@ -237,13 +357,19 @@ const BloodbankObservability = () => {
               <CardContent className="p-0">
                 <ScrollArea className="h-[500px]">
                   <div className="divide-y divide-border/50">
-                    {events.length === 0 ? (
+                    {filteredEvents.length === 0 ? (
                       <div className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
                         <Zap className="w-8 h-8 opacity-20" />
-                        <p>{state.isConnected ? 'Waiting for events...' : 'Connect to RabbitMQ to see events'}</p>
+                        <p>
+                          {state.isConnected
+                            ? filteredCount === 0 && events.length > 0
+                              ? 'No events match your filters'
+                              : 'Waiting for events...'
+                            : 'Connect to RabbitMQ to see events'}
+                        </p>
                       </div>
                     ) : (
-                      events.slice(0, 50).map((event) => {
+                      filteredEvents.slice(0, 50).map((event) => {
                         const domain = getDomainFromEventType(event.event_type);
                         const domainColor = getDomainColor(domain);
 
@@ -327,11 +453,20 @@ const BloodbankObservability = () => {
 
                     <div className="space-y-1">
                       <h3 className="text-[9px] uppercase tracking-widest font-bold text-muted-foreground/70">Payload</h3>
-                      <ScrollArea className="h-[180px] w-full rounded-md border bg-muted/50 p-3">
-                        <pre className="text-[9px] leading-relaxed font-mono">
-                          {JSON.stringify(selectedEvent.payload, null, 2)}
-                        </pre>
-                      </ScrollArea>
+                      <JsonViewer
+                        data={selectedEvent.payload}
+                        maxHeight="200px"
+                        onExport={() => {
+                          const dataStr = JSON.stringify(selectedEvent, null, 2);
+                          const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                          const url = URL.createObjectURL(dataBlob);
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = `event-${selectedEvent.event_id}.json`;
+                          link.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                      />
                     </div>
                   </div>
                 ) : (
@@ -360,7 +495,7 @@ const BloodbankObservability = () => {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <EventCloud events={events} onNodeClick={handleNodeClick} />
+              <EventCloud events={filteredEvents} onNodeClick={handleNodeClick} />
             </CardContent>
           </Card>
         )}
