@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "dev": "tauri dev",
     "tauri": "tauri",
+    "stream": "node scripts/stream-events.mjs",
     "lint": "eslint src --ext ts,tsx",
     "clippy": "cargo clippy --manifest-path ./src-tauri/Cargo.toml"
   },
