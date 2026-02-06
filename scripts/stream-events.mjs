@@ -1,14 +1,39 @@
 #!/usr/bin/env node
 
 import amqp from 'amqplib';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const exchange = process.env.EXCHANGE_NAME || process.env.CANDYBAR_EXCHANGE || 'bloodbank.events.v1';
+function loadDotEnvFallback() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidate = path.resolve(here, '../../bloodbank/.env');
+  if (!fs.existsSync(candidate)) return {};
+
+  const out = {};
+  const text = fs.readFileSync(candidate, 'utf8');
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx < 1) continue;
+    const key = trimmed.slice(0, idx).trim();
+    let value = trimmed.slice(idx + 1).trim();
+    value = value.replace(/^['\"]|['\"]$/g, '');
+    out[key] = value;
+  }
+  return out;
+}
+
+const envFallback = loadDotEnvFallback();
+
+const exchange = process.env.EXCHANGE_NAME || envFallback.EXCHANGE_NAME || process.env.CANDYBAR_EXCHANGE || 'bloodbank.events.v1';
 
 const user = process.env.DEFAULT_USERNAME || process.env.RABBIT_USER || 'guest';
 const pass = process.env.DEFAULT_PASSWORD || process.env.RABBIT_PASS || 'guest';
 const host = process.env.RABBIT_HOST || 'localhost';
 const port = process.env.RABBIT_PORT || '5672';
-const rabbitUrl = process.env.RABBIT_URL || `amqp://${user}:${pass}@${host}:${port}/`;
+const rabbitUrl = process.env.RABBIT_URL || envFallback.RABBIT_URL || `amqp://${user}:${pass}@${host}:${port}/`;
 
 const routingKeysArg = process.argv[2] || '#';
 const routingKeys = routingKeysArg.split(',').map((s) => s.trim()).filter(Boolean);
