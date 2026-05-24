@@ -1,0 +1,3 @@
+[submodule "agents/hermes/pm/runtime"]
+	path = agents/hermes/pm/runtime
+	url = git@github.com:delorenj/agent-hm-candybar-pm.git

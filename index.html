@@ -2,12 +2,56 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Candybar</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin:0; font-family: Inter, system-ui, sans-serif; background:#0b1020; color:#e5e7eb; }
+      .app { display:grid; grid-template-columns: 260px 1fr; height:100vh; }
+      aside { border-right:1px solid #1f2937; padding:12px; overflow:auto; }
+      main { display:grid; grid-template-rows:auto 1fr; min-width:0; }
+      .topbar { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px solid #1f2937; }
+      .pill { font-size:12px; padding:3px 8px; border:1px solid #334155; border-radius:999px; }
+      .log { padding:8px 12px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; }
+      .row { padding:7px 8px; border-bottom:1px dotted #1f2937; }
+      .row .meta { color:#93c5fd; }
+      .row .type { color:#a7f3d0; word-break:break-all; }
+      .controls { display:flex; gap:8px; margin-top:8px; }
+      button { background:#111827; color:#e5e7eb; border:1px solid #374151; border-radius:8px; padding:6px 10px; cursor:pointer; }
+      button:hover { background:#1f2937; }
+      .tree details { margin-left:8px; }
+      .tree summary { cursor:pointer; }
+      .small { font-size:11px; color:#9ca3af; }
+      input[type="checkbox"] { margin-right:6px; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div class="app">
+      <aside>
+        <h3>Notifications</h3>
+        <div class="small">Toggle parent => all descendants.</div>
+        <div class="controls">
+          <button id="all-on">All on</button>
+          <button id="all-off">All off</button>
+          <button id="test-ding">Test ding</button>
+        </div>
+        <div class="small" style="margin-top:8px;">L=log S=sound M=mute</div>
+        <label class="small" style="display:block;margin-top:8px;">Default volume
+          <input id="default-volume" type="range" min="0" max="1" step="0.01" value="0.05" style="width:100%;"/>
+        </label>
+        <div id="tree" class="tree"></div>
+      </aside>
+      <main>
+        <div class="topbar">
+          <div>
+            <strong>Candybar</strong>
+            <span class="pill" id="conn">disconnected</span>
+          </div>
+          <div class="small" id="stats">0 events</div>
+        </div>
+        <div id="log" class="log"></div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>

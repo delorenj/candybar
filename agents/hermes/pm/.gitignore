@@ -1,0 +1,6 @@
+# Per-role ignores in agents/hermes/pm/
+
+# The runtime submodule manages its own ignores (.env, auth.json, etc.).
+# We just ignore the provisioning log so it doesn't end up in the project repo.
+.scripts/.provision.log
+.scripts/.last-run

@@ -5,30 +5,31 @@ Cross-platform desktop app for real-time Bloodbank event observability.
 ## Tech Stack
 
 ### Frontend (Vite + React)
+
 - **Framework:** React 19 + Vite 6
 - **Language:** TypeScript 5.9
 - **Styling:** Tailwind CSS 4, tailwindcss-animate, class-variance-authority
 - **Animations:** Framer Motion
 - **Charts:** Recharts
 - **UI Components:** Radix UI (scroll-area, select, separator, switch, slot)
-- **RabbitMQ Client:** amqplib + socket.io-client
 
 ### Backend (Tauri 2)
+
 - **Framework:** Tauri 2.9
 - **Language:** Rust (edition 2021, rust-version 1.70)
 - **Plugins:** dialog, fs, shell, clipboard, global-shortcut, http, notification, os, process
-- **Messaging:** Custom RabbitMQ integration (`src-tauri/src/rabbitmq.rs`)
+- **Messaging:** See ../bloodbank/README.md
 
 ## Commands
 
-| Task | Command |
-|------|---------|
-| Dev (Tauri) | `npm run dev` or `tauri dev` |
-| Dev (Vite only) | `npm run vite:dev` |
-| Build | `npm run build` (Vite build) |
-| Lint (TS) | `npm run lint` (eslint) |
-| Lint (Rust) | `npm run clippy` |
-| Stream Events | `npm run stream` |
+| Task            | Command                      |
+| --------------- | ---------------------------- |
+| Dev (Tauri)     | `npm run dev` or `tauri dev` |
+| Dev (Vite only) | `npm run vite:dev`           |
+| Build           | `npm run build` (Vite build) |
+| Lint (TS)       | `npm run lint` (eslint)      |
+| Lint (Rust)     | `npm run clippy`             |
+| Stream Events   | `npm run stream`             |
 
 ## Key Directories
 
@@ -39,13 +40,7 @@ Cross-platform desktop app for real-time Bloodbank event observability.
 
 ## Conventions
 
-- Radix UI for accessible primitives; custom components in `src/components/ui/`
-- MagicUI components in `src/components/magicui/` for visual effects
+- Radix UI for accessible primitives
+- Stitch for Design Iteration and Ideation (stitch-loop)
 - Real-time events via WebSocket (socket.io-client) to Bloodbank WS relay
 - Rust backend handles native OS integration and secure connections
-
-## Anti-Patterns
-
-- Never use Node.js RabbitMQ client directly in frontend — use Tauri IPC or WS relay
-- Never skip clippy checks on Rust code
-- Never bypass Tauri plugin system for native OS access
