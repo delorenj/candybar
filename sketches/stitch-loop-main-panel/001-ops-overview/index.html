@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Candybar Variant 001 - Ops Overview</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #111827;
+      --panel-2: #0f172a;
+      --line: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --bad: #ef4444;
+      --accent: #38bdf8;
+      --event: #22c55e;
+      --command: #f59e0b;
+      --reply: #a78bfa;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(1200px 500px at 0 0, #172554 0%, var(--bg) 40%);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+    }
+    .app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 12px 16px; border-bottom: 1px solid var(--line); background: rgba(11,16,32,0.92); backdrop-filter: blur(8px);
+    }
+    .brand { display: flex; gap: 10px; align-items: center; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+    .brand h1 { margin: 0; font-size: 14px; letter-spacing: .04em; text-transform: uppercase; }
+    .brand small { color: var(--muted); }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      border: 1px solid #334155; border-radius: 999px; padding: 4px 10px; font-size: 12px; color: #cbd5e1;
+      background: rgba(15,23,42,0.8);
+    }
+    .chip strong { color: white; margin-right: 6px; }
+    .chip.ok strong { color: var(--ok); }
+    .chip.warn strong { color: var(--warn); }
+
+    .shell { display: grid; grid-template-columns: 280px 1fr 360px; gap: 12px; padding: 12px; min-height: 0; }
+    .pane {
+      border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(180deg, #111827, #0f172a);
+      min-height: 0; overflow: hidden;
+      display: grid; grid-template-rows: auto 1fr;
+    }
+    .pane header { padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+
+    .filters { overflow: auto; padding: 10px 12px; }
+    .controls { display: grid; gap: 8px; margin-bottom: 12px; }
+    button {
+      background: #111827; color: var(--text); border: 1px solid #374151; border-radius: 8px;
+      padding: 6px 10px; font-size: 12px; cursor: pointer;
+    }
+    button:hover { background: #1f2937; }
+    .tree details { margin-left: 8px; }
+    .tree summary { cursor: pointer; font-size: 13px; }
+    .tree label { color: var(--muted); font-size: 11px; margin-left: 8px; }
+
+    .main { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+    .toolbar {
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      padding: 10px 12px; border-bottom: 1px solid var(--line);
+    }
+    .seg { display: flex; gap: 8px; }
+    .seg button { padding: 5px 9px; border-radius: 999px; }
+    .seg button.active { border-color: var(--accent); color: white; box-shadow: 0 0 0 1px rgba(56,189,248,.2) inset; }
+    .log {
+      overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+    }
+    .row {
+      border-bottom: 1px solid #162032; padding: 8px 10px; cursor: pointer; display: grid;
+      grid-template-columns: 1fr auto; gap: 8px;
+    }
+    .row:hover { background: rgba(56,189,248,0.08); }
+    .row.active { background: rgba(56,189,248,0.16); }
+    .meta { color: #93c5fd; font-size: 11px; }
+    .type { word-break: break-all; margin-top: 3px; }
+    .kind {
+      font-size: 10px; text-transform: uppercase; letter-spacing: .08em; border: 1px solid #334155;
+      border-radius: 999px; padding: 2px 8px; height: fit-content;
+    }
+    .kind.event { color: var(--event); }
+    .kind.command { color: var(--command); }
+    .kind.reply { color: var(--reply); }
+
+    .right { display: grid; grid-template-rows: auto auto 1fr; min-height: 0; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; padding: 10px; border-bottom: 1px solid var(--line); }
+    .kpi { border: 1px solid #243041; border-radius: 10px; padding: 8px; background: #0b1324; }
+    .kpi .label { color: var(--muted); font-size: 11px; }
+    .kpi .value { margin-top: 4px; font-size: 18px; font-weight: 700; }
+
+    .detail { overflow: auto; padding: 10px; }
+    .detail h3 { margin: 0 0 8px; font-size: 13px; color: #f8fafc; }
+    pre {
+      margin: 0; white-space: pre-wrap; word-break: break-word; background: #020617;
+      border: 1px solid #1f2937; border-radius: 10px; padding: 8px; color: #cbd5e1;
+      font-size: 11px; line-height: 1.4;
+    }
+    .barline { display: grid; gap: 8px; margin-top: 8px; }
+    .barline .item { display: grid; grid-template-columns: 80px 1fr auto; gap: 8px; align-items: center; font-size: 11px; color: var(--muted); }
+    .bar { height: 7px; border-radius: 999px; background: #1e293b; overflow: hidden; }
+    .bar > span { display: block; height: 100%; background: linear-gradient(90deg, #22d3ee, #3b82f6); }
+
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <div>
+        <h1>Candybar · Ops Overview</h1>
+        <small>Stream health + schema filter tree + live feed</small>
+      </div>
+    </div>
+    <div class="chips">
+      <div class="chip ok"><strong>NATS</strong>connected</div>
+      <div class="chip ok"><strong>Dapr</strong>healthy</div>
+      <div class="chip warn"><strong>Candystore</strong>lag 2.1s</div>
+      <div class="chip"><strong>Rate</strong>142 events/min</div>
+    </div>
+  </div>
+
+  <div class="shell">
+    <section class="pane">
+      <header>Event taxonomy controls</header>
+      <div class="filters">
+        <div class="controls">
+          <button>All on</button>
+          <button>All off</button>
+          <button>Test ding</button>
+          <button>Pause stream</button>
+        </div>
+        <div class="muted" style="font-size:11px;margin-bottom:8px;">L=log · S=sound · M=mute</div>
+        <div class="tree">
+          <details open>
+            <summary>conversation <label><input type="checkbox" checked>L</label><label><input type="checkbox">S</label><label><input type="checkbox">M</label></summary>
+            <div>message.appended</div>
+            <div>turn.started</div>
+          </details>
+          <details open>
+            <summary>tool <label><input type="checkbox" checked>L</label><label><input type="checkbox" checked>S</label><label><input type="checkbox">M</label></summary>
+            <div>tool_call.requested</div>
+            <div>tool_call.invoked</div>
+            <div>tool_call.completed</div>
+          </details>
+          <details open>
+            <summary>agent <label><input type="checkbox" checked>L</label><label><input type="checkbox">S</label><label><input type="checkbox">M</label></summary>
+            <div>invocation.started</div>
+            <div>invocation.completed</div>
+            <div>invocation.failed</div>
+          </details>
+          <details>
+            <summary>system <label><input type="checkbox" checked>L</label><label><input type="checkbox">S</label><label><input type="checkbox">M</label></summary>
+            <div>heartbeat.received</div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane main">
+      <header class="toolbar">
+        <div class="seg" id="kindFilters">
+          <button class="active" data-kind="all">All</button>
+          <button data-kind="event">event</button>
+          <button data-kind="command">command</button>
+          <button data-kind="reply">reply</button>
+        </div>
+        <div class="muted" id="count">7 shown</div>
+      </header>
+      <div class="log" id="log"></div>
+    </section>
+
+    <section class="pane right">
+      <header>Live diagnostics</header>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="label">Contract fails</div><div class="value" id="kpiFails">3</div></div>
+        <div class="kpi"><div class="label">Open sessions</div><div class="value">11</div></div>
+        <div class="kpi"><div class="label">Replay backlog</div><div class="value">28</div></div>
+        <div class="kpi"><div class="label">Suppressed dings</div><div class="value">96</div></div>
+      </div>
+      <div class="detail">
+        <h3>Top domains (last 10m)</h3>
+        <div class="barline">
+          <div class="item"><span>tool</span><div class="bar"><span style="width:92%"></span></div><span>221</span></div>
+          <div class="item"><span>conversation</span><div class="bar"><span style="width:66%"></span></div><span>159</span></div>
+          <div class="item"><span>agent</span><div class="bar"><span style="width:38%"></span></div><span>91</span></div>
+          <div class="item"><span>system</span><div class="bar"><span style="width:21%"></span></div><span>52</span></div>
+        </div>
+        <h3 style="margin-top:14px;">Selected envelope</h3>
+        <pre id="detail"></pre>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+const events = [
+  { time: '2026-05-31T18:21:11Z', subject: 'bloodbank.evt.v1.tool.tool_call.invoked', type: 'bloodbank.v1.tool.tool_call.invoked', kind: 'event', correlationid: 'corr-77', actor: {cli:'claude', provider:'anthropic'}, ordering_key:'invocation:2e12', data:{tool_name:'terminal', status:'started'} },
+  { time: '2026-05-31T18:21:12Z', subject: 'bloodbank.evt.v1.tool.tool_call.completed', type: 'bloodbank.v1.tool.tool_call.completed', kind: 'event', correlationid: 'corr-77', actor: {cli:'claude', provider:'anthropic'}, ordering_key:'invocation:2e12', data:{tool_name:'terminal', duration_seconds:2} },
+  { time: '2026-05-31T18:21:12Z', subject: 'bloodbank.evt.v1.agent.invocation.failed', type: 'bloodbank.v1.agent.invocation.failed', kind: 'event', correlationid: 'corr-90', actor: {cli:'copilot', provider:'openai'}, ordering_key:'invocation:7c34', data:{error:'schema mismatch: missing ordering_key'} },
+  { time: '2026-05-31T18:21:13Z', subject: 'bloodbank.cmd.v1.agent.invocation.start', type: 'bloodbank.v1.agent.invocation.start', kind: 'command', correlationid: 'corr-90', actor: {cli:'hermes', provider:'openai'}, ordering_key:'invocation:7c34', data:{delivery:'single_consumer', command_id:'cmd-11'} },
+  { time: '2026-05-31T18:21:14Z', subject: 'bloodbank.rpy.v1.agent.invocation.start', type: 'bloodbank.v1.agent.invocation.start', kind: 'reply', correlationid: 'corr-90', actor: {cli:'hermes', provider:'openai'}, ordering_key:'invocation:7c34', data:{status:'accepted', in_reply_to:'cmd-11'} },
+  { time: '2026-05-31T18:21:15Z', subject: 'bloodbank.evt.v1.system.heartbeat.received', type: 'bloodbank.v1.system.heartbeat.received', kind: 'event', correlationid: 'corr-hb', actor: {cli:'service', provider:'none'}, ordering_key:'producer:heartbeat-1', data:{producer_id:'heartbeat-tick-1', tick_seq:30211} },
+  { time: '2026-05-31T18:21:16Z', subject: 'bloodbank.evt.v1.conversation.turn.started', type: 'bloodbank.v1.conversation.turn.started', kind: 'event', correlationid: 'corr-91', actor: {cli:'claude', provider:'anthropic'}, ordering_key:'turn:919', data:{turn_index:12, model:'claude-sonnet-4'} }
+];
+
+const log = document.getElementById('log');
+const detail = document.getElementById('detail');
+const count = document.getElementById('count');
+let activeKind = 'all';
+let selectedId = null;
+
+function render() {
+  const filtered = events.filter(e => activeKind === 'all' ? true : e.kind === activeKind);
+  count.textContent = `${filtered.length} shown`;
+  log.innerHTML = filtered.map((e, idx) => `
+    <div class="row ${selectedId === idx ? 'active' : ''}" data-idx="${idx}">
+      <div>
+        <div class="meta">${e.time} • ${e.subject}</div>
+        <div class="type">${e.type}</div>
+      </div>
+      <div class="kind ${e.kind}">${e.kind}</div>
+    </div>
+  `).join('');
+
+  log.querySelectorAll('.row').forEach((row) => {
+    row.addEventListener('click', () => {
+      selectedId = Number(row.dataset.idx);
+      detail.textContent = JSON.stringify(filtered[selectedId], null, 2);
+      render();
+    });
+  });
+
+  if (!detail.textContent && filtered.length) {
+    detail.textContent = JSON.stringify(filtered[0], null, 2);
+  }
+}
+
+document.querySelectorAll('#kindFilters button').forEach((button) => {
+  button.addEventListener('click', () => {
+    activeKind = button.dataset.kind;
+    document.querySelectorAll('#kindFilters button').forEach((b) => b.classList.remove('active'));
+    button.classList.add('active');
+    selectedId = null;
+    render();
+  });
+});
+
+render();
+</script>
+</body>
+</html>

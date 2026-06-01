@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Candybar Variant 002 - Session Investigator</title>
+  <style>
+    :root {
+      --bg: #090b12;
+      --panel: #0f1321;
+      --panel2: #111827;
+      --line: #243042;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #60a5fa;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: var(--text);
+      background: linear-gradient(160deg, #070b17, #090b12 40%, #0d1426 100%);
+      height: 100vh;
+      overflow: hidden;
+    }
+    .app { display:grid; grid-template-rows: auto auto 1fr; height: 100%; }
+    .top {
+      border-bottom: 1px solid var(--line);
+      padding: 12px 16px;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      background: rgba(9,11,18,.9);
+      backdrop-filter: blur(6px);
+    }
+    .title { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; }
+    .subtitle { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .status { display: flex; gap: 8px; }
+    .pill {
+      border: 1px solid #334155; border-radius: 999px; padding: 4px 10px;
+      font-size: 12px; color: #cbd5e1; background: #0b1222;
+    }
+
+    .lookup {
+      padding: 12px 16px; border-bottom: 1px solid var(--line);
+      display: grid; grid-template-columns: 1fr auto auto; gap: 10px;
+    }
+    input {
+      width: 100%; border: 1px solid #334155; background: #0f172a; color: #e2e8f0;
+      border-radius: 10px; padding: 10px 12px; font-size: 13px;
+    }
+    button {
+      border: 1px solid #334155; background: #111827; color: #e5e7eb;
+      border-radius: 10px; padding: 10px 12px; font-size: 12px; cursor: pointer;
+    }
+    button:hover { background: #1f2937; }
+    .primary { background: #2563eb; border-color: #3b82f6; }
+
+    .shell {
+      display: grid; gap: 12px; padding: 12px;
+      grid-template-columns: 320px 1fr 340px;
+      min-height: 0;
+    }
+    .pane {
+      background: linear-gradient(180deg, var(--panel), var(--panel2));
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      display: grid; grid-template-rows: auto 1fr;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .pane > header {
+      padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted);
+    }
+
+    .timeline { overflow: auto; padding: 10px; }
+    .step {
+      display: grid; grid-template-columns: 24px 1fr; gap: 8px; margin-bottom: 10px;
+    }
+    .node {
+      width: 24px; height: 24px; border-radius: 999px; border: 1px solid #334155;
+      background: #0b1222; color: #cbd5e1; display: grid; place-items: center; font-size: 10px;
+    }
+    .card {
+      border: 1px solid #263347; border-radius: 10px; padding: 8px; cursor: pointer;
+      background: #0c1425;
+    }
+    .card.active { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(96,165,250,.3) inset; }
+    .card .t { font-size: 12px; color: #f8fafc; }
+    .card .s { margin-top: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; color: var(--muted); }
+
+    .center { display:grid; grid-template-rows: auto 1fr; min-height: 0; }
+    .tabs { border-bottom: 1px solid var(--line); padding: 8px; display: flex; gap: 8px; }
+    .tabs button { padding: 6px 10px; border-radius: 999px; }
+    .tabs .active { border-color: var(--accent); }
+    .content { overflow: auto; padding: 10px; }
+    pre {
+      margin: 0; background: #020617; border: 1px solid #1f2937; border-radius: 10px;
+      color: #cbd5e1; font-size: 11px; padding: 10px; white-space: pre-wrap; word-break: break-word;
+    }
+
+    .stats { overflow: auto; padding: 10px; }
+    .kpi {
+      border: 1px solid #243041; border-radius: 10px; padding: 8px; background: #0a1324;
+      margin-bottom: 8px;
+    }
+    .kpi .l { font-size: 11px; color: var(--muted); }
+    .kpi .v { font-size: 18px; font-weight: 700; margin-top: 4px; }
+    .bars .r { display:grid; grid-template-columns: 1fr 32px; gap:8px; align-items:center; margin: 7px 0; font-size: 11px; color: var(--muted); }
+    .bar { height: 8px; border-radius: 999px; background: #1e293b; overflow: hidden; }
+    .bar > span { display:block; height:100%; background: linear-gradient(90deg, #60a5fa, #22d3ee); }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div>
+      <div class="title">Candybar · Session Investigator</div>
+      <div class="subtitle">Correlation-first debugging (candystore timeline model)</div>
+    </div>
+    <div class="status">
+      <div class="pill">session: <strong>corr-77</strong></div>
+      <div class="pill">duration: <strong>12m 09s</strong></div>
+      <div class="pill">status: <strong style="color:var(--ok)">active</strong></div>
+    </div>
+  </div>
+
+  <div class="lookup">
+    <input id="lookup" value="corr-77" placeholder="Correlation ID" />
+    <button class="primary" id="openBtn">Open session</button>
+    <button id="latestBtn">Latest hot session</button>
+  </div>
+
+  <div class="shell">
+    <section class="pane">
+      <header>Timeline</header>
+      <div class="timeline" id="timeline"></div>
+    </section>
+
+    <section class="pane center">
+      <header id="focusTitle">Event detail</header>
+      <div class="tabs" id="tabs">
+        <button class="active" data-tab="summary">Summary</button>
+        <button data-tab="raw">Raw envelope</button>
+        <button data-tab="related">Related events</button>
+      </div>
+      <div class="content" id="content"></div>
+    </section>
+
+    <section class="pane">
+      <header>Session KPIs</header>
+      <div class="stats">
+        <div class="kpi"><div class="l">Events</div><div class="v" id="eventsCount">17</div></div>
+        <div class="kpi"><div class="l">Turns</div><div class="v">5</div></div>
+        <div class="kpi"><div class="l">Tools invoked</div><div class="v">9</div></div>
+        <div class="kpi"><div class="l">Contract violations</div><div class="v" style="color:var(--warn)">1</div></div>
+        <div class="bars">
+          <div class="r"><div><div>tool.tool_call.*</div><div class="bar"><span style="width:90%"></span></div></div><span>9</span></div>
+          <div class="r"><div><div>conversation.turn.*</div><div class="bar"><span style="width:55%"></span></div></div><span>5</span></div>
+          <div class="r"><div><div>agent.invocation.*</div><div class="bar"><span style="width:35%"></span></div></div><span>3</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+const session = [
+  {id:'a1', time:'18:21:11', type:'bloodbank.v1.conversation.turn.started', title:'Turn started - 12', summary:'model=claude-sonnet-4', raw:{correlationid:'corr-77', ordering_key:'turn:12', actor:{cli:'claude'}}},
+  {id:'a2', time:'18:21:12', type:'bloodbank.v1.tool.tool_call.requested', title:'terminal - requested', summary:'npm run vite:dev', raw:{tool_name:'terminal', input_preview:'npm run vite:dev'}},
+  {id:'a3', time:'18:21:12', type:'bloodbank.v1.tool.tool_call.invoked', title:'terminal - invoked', summary:'pid=45674', raw:{status:'started'}},
+  {id:'a4', time:'18:21:14', type:'bloodbank.v1.tool.tool_call.completed', title:'terminal - completed', summary:'duration=2s', raw:{duration_seconds:2}},
+  {id:'a5', time:'18:21:16', type:'bloodbank.v1.agent.invocation.completed', title:'Agent invocation - completed', summary:'status=ok', raw:{agent_name:'candybar-pm'}},
+  {id:'a6', time:'18:21:17', type:'bloodbank.v1.agent.invocation.failed', title:'Agent invocation - failed', summary:'missing ordering_key', raw:{error:'schema mismatch: missing ordering_key'}}
+];
+
+let selected = 0;
+let activeTab = 'summary';
+
+const timelineEl = document.getElementById('timeline');
+const contentEl = document.getElementById('content');
+const focusTitle = document.getElementById('focusTitle');
+const eventsCount = document.getElementById('eventsCount');
+
+eventsCount.textContent = session.length;
+
+function renderTimeline(){
+  timelineEl.innerHTML = session.map((e, i)=>`
+    <div class="step">
+      <div class="node">${i+1}</div>
+      <div class="card ${i===selected?'active':''}" data-i="${i}">
+        <div class="t">${e.title}</div>
+        <div class="s">${e.time} • ${e.type}</div>
+      </div>
+    </div>
+  `).join('');
+
+  timelineEl.querySelectorAll('.card').forEach((el)=>{
+    el.addEventListener('click', ()=>{
+      selected = Number(el.dataset.i);
+      renderTimeline();
+      renderContent();
+    });
+  });
+}
+
+function renderContent(){
+  const e = session[selected];
+  focusTitle.textContent = `Event detail · ${e.id}`;
+  if(activeTab==='summary'){
+    contentEl.innerHTML = `
+      <p style="margin:0 0 8px;color:#93c5fd">${e.time} • ${e.type}</p>
+      <h3 style="margin:0 0 8px;font-size:15px">${e.title}</h3>
+      <p style="margin:0 0 12px;color:#cbd5e1">${e.summary}</p>
+      <p style="margin:0;color:#94a3b8;font-size:12px">correlation chain: corr-77 → turn:12 → invocation:a5</p>
+    `;
+    return;
+  }
+  if(activeTab==='raw'){
+    contentEl.innerHTML = `<pre>${JSON.stringify(e, null, 2)}</pre>`;
+    return;
+  }
+  contentEl.innerHTML = `
+    <ul style="margin:0;padding-left:18px;color:#cbd5e1;font-size:13px;line-height:1.55">
+      <li>Previous in ordering_key: bloodbank.v1.tool.tool_call.invoked</li>
+      <li>Next in ordering_key: bloodbank.v1.tool.tool_call.completed</li>
+      <li>Same correlationid events: ${session.length}</li>
+      <li>Potential causation edge: ${selected > 0 ? session[selected-1].id : 'none'}</li>
+    </ul>
+  `;
+}
+
+document.querySelectorAll('#tabs button').forEach((b)=>{
+  b.addEventListener('click', ()=>{
+    activeTab = b.dataset.tab;
+    document.querySelectorAll('#tabs button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    renderContent();
+  });
+});
+
+document.getElementById('openBtn').addEventListener('click', ()=>{
+  const id = document.getElementById('lookup').value.trim() || 'corr-77';
+  document.querySelector('.status .pill strong').textContent = id;
+});
+
+document.getElementById('latestBtn').addEventListener('click', ()=>{
+  document.getElementById('lookup').value = 'corr-91';
+  document.querySelector('.status .pill strong').textContent = 'corr-91';
+});
+
+renderTimeline();
+renderContent();
+</script>
+</body>
+</html>

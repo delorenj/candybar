@@ -1,0 +1,31 @@
+# Per-agent runtime — what NOT to commit to the checkpoint repo.
+# Sensitive credentials never go in git.
+.env
+auth.json
+auth.lock
+gateway.pid
+gateway_state.json
+processes.json
+interrupt_debug.log
+
+# Caches (large, regenerable)
+audio_cache/
+image_cache/
+models_dev_cache.json
+context_length_cache.yaml
+honcho.json
+
+# Sandboxes (ephemeral execution environments)
+sandboxes/
+bloodbank-inbox/
+
+# Runtime logs (we want the LFS-tracked summary.log if we add one, not the noise)
+logs/*.log
+logs/*.systemd.log
+
+# Python cruft
+__pycache__/
+*.pyc
+
+# Allow these subdirs to exist
+!logs/.gitkeep

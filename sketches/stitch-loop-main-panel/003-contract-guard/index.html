@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Candybar Variant 003 - Contract Guard</title>
+  <style>
+    :root {
+      --bg: #0a0f1f;
+      --panel: #111827;
+      --line: #1f2937;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --bad: #ef4444;
+      --accent: #38bdf8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin:0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #020617, var(--bg));
+      height: 100vh;
+      overflow: hidden;
+    }
+    .app { display:grid; grid-template-rows:auto auto 1fr; height:100%; }
+    .top {
+      padding: 12px 16px; border-bottom: 1px solid var(--line);
+      display:flex; justify-content:space-between; align-items:center;
+      background: rgba(2,6,23,.9);
+    }
+    h1 { margin:0; font-size:14px; text-transform:uppercase; letter-spacing:.06em; }
+    .sub { margin-top:3px; color: var(--muted); font-size:12px; }
+    .badges { display:flex; gap:8px; }
+    .badge { border:1px solid #334155; border-radius:999px; padding:4px 10px; font-size:12px; color:#cbd5e1; }
+    .badge.ok { color: var(--ok); }
+    .badge.warn { color: var(--warn); }
+    .badge.bad { color: var(--bad); }
+
+    .strip {
+      display:grid; grid-template-columns: repeat(4,minmax(0,1fr));
+      gap:10px; padding: 10px 16px; border-bottom: 1px solid var(--line);
+    }
+    .metric { border: 1px solid #263347; border-radius: 10px; padding: 8px; background: #0d1528; }
+    .metric .k { color: var(--muted); font-size: 11px; }
+    .metric .v { margin-top: 4px; font-size: 18px; font-weight: 700; }
+
+    .shell { display:grid; grid-template-columns: 1.2fr 1fr; gap: 12px; padding:12px; min-height:0; }
+    .pane {
+      border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+      background: linear-gradient(180deg, #111827, #0f172a);
+      display:grid; grid-template-rows:auto 1fr; min-height:0;
+    }
+    .pane header { padding:10px 12px; border-bottom:1px solid var(--line); font-size:12px; color:var(--muted); }
+    .list { overflow:auto; }
+
+    .issue {
+      border-bottom: 1px solid #1e293b; padding: 10px 12px; cursor:pointer;
+      display:grid; grid-template-columns: auto 1fr auto; gap:10px;
+      align-items:start;
+    }
+    .issue:hover { background: rgba(239,68,68,0.08); }
+    .issue.active { background: rgba(56,189,248,0.12); }
+    .sev {
+      border-radius: 999px; font-size:10px; text-transform:uppercase; letter-spacing:.08em;
+      border:1px solid; padding:2px 8px; margin-top:2px;
+    }
+    .sev.high { color: var(--bad); border-color: var(--bad); }
+    .sev.medium { color: var(--warn); border-color: var(--warn); }
+    .sev.low { color: var(--accent); border-color: var(--accent); }
+    .i-title { font-size:13px; }
+    .i-sub { margin-top:4px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; }
+
+    .detail { overflow:auto; padding:10px; }
+    .rule {
+      border:1px solid #243041; border-radius:10px; padding:10px; margin-bottom:10px; background:#0b1222;
+    }
+    .rule h3 { margin:0 0 6px; font-size:13px; }
+    .rule p { margin:0; color:#cbd5e1; font-size:12px; line-height:1.5; }
+    pre {
+      margin:0; white-space:pre-wrap; word-break:break-word;
+      border:1px solid #1f2937; border-radius:10px; background:#020617; color:#cbd5e1;
+      font-size:11px; padding:8px;
+    }
+    .actions { display:flex; gap:8px; margin-top:10px; }
+    button {
+      border:1px solid #334155; border-radius:8px; background:#111827; color:#e5e7eb;
+      padding:7px 10px; font-size:12px; cursor:pointer;
+    }
+    button:hover { background:#1f2937; }
+    .primary { background:#2563eb; border-color:#3b82f6; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div>
+      <h1>Candybar · Contract Guard</h1>
+      <div class="sub">Schema & naming conformance lane (bloodbank.v1 grammar + envelope required fields)</div>
+    </div>
+    <div class="badges">
+      <div class="badge ok">valid: 1,284</div>
+      <div class="badge warn">warn: 17</div>
+      <div class="badge bad">fail: 3</div>
+    </div>
+  </div>
+
+  <div class="strip">
+    <div class="metric"><div class="k">Subject/type mismatch</div><div class="v">2</div></div>
+    <div class="metric"><div class="k">Missing ordering_key</div><div class="v">1</div></div>
+    <div class="metric"><div class="k">Bad action tense</div><div class="v">0</div></div>
+    <div class="metric"><div class="k">Candystore 400 loop risk</div><div class="v" style="color:var(--warn)">1 stream</div></div>
+  </div>
+
+  <div class="shell">
+    <section class="pane">
+      <header>Violations queue</header>
+      <div class="list" id="issues"></div>
+    </section>
+
+    <section class="pane">
+      <header id="detailHeader">Rule detail</header>
+      <div class="detail" id="detail"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const issues = [
+  {
+    sev:'high',
+    title:'Missing required field: ordering_key',
+    rule:'docs/event-naming.md §11 table: ordering_key required for kind=event',
+    type:'bloodbank.v1.repo.candybar.intake.triaged',
+    subject:'bloodbank.evt.v1.repo.candybar.intake.triaged',
+    why:'Candystore strict envelope contract rejects event payloads without ordering_key; Dapr may retry and flood logs.',
+    fix:'Set ordering_key to stable bucket, e.g. repo:candybar for repo-level PM events.',
+    envelope:{kind:'event', type:'bloodbank.v1.repo.candybar.intake.triaged', correlationid:'3fa8...', causationid:null}
+  },
+  {
+    sev:'high',
+    title:'Snake_case extension alias detected',
+    rule:'docs/candystore-integration.md: use correlationid/causationid (not correlation_id/causation_id)',
+    type:'bloodbank.v1.agent.online.changed',
+    subject:'bloodbank.evt.v1.agent.online.changed',
+    why:'Alias fields are outside Bloodbank contract and fail Candystore ingestion requirements.',
+    fix:'Emit canonical CloudEvents extension names and backfill template generator.',
+    envelope:{correlation_id:'old', causation_id:'old', producer:'hermes-agent:candybar-pm'}
+  },
+  {
+    sev:'medium',
+    title:'Kind/subject marker mismatch',
+    rule:'docs/event-naming.md §3 + §11: subject marker must match envelope.kind',
+    type:'bloodbank.v1.agent.invocation.start',
+    subject:'bloodbank.evt.v1.agent.invocation.start',
+    why:'command type observed with evt subject marker can route to wrong stream and hide request/reply lifecycle.',
+    fix:'Publish command with subject bloodbank.cmd.v1.agent.invocation.start and kind=command.',
+    envelope:{kind:'command', subject:'bloodbank.evt.v1.agent.invocation.start'}
+  }
+];
+
+let selected = 0;
+const issuesEl = document.getElementById('issues');
+const detailEl = document.getElementById('detail');
+const detailHeader = document.getElementById('detailHeader');
+
+function renderIssues(){
+  issuesEl.innerHTML = issues.map((i, idx)=>`
+    <div class="issue ${idx===selected?'active':''}" data-idx="${idx}">
+      <div class="sev ${i.sev}">${i.sev}</div>
+      <div>
+        <div class="i-title">${i.title}</div>
+        <div class="i-sub">${i.type}</div>
+      </div>
+      <div style="color:#64748b;font-size:11px">#${idx+1}</div>
+    </div>
+  `).join('');
+
+  issuesEl.querySelectorAll('.issue').forEach((el)=>{
+    el.addEventListener('click', ()=>{
+      selected = Number(el.dataset.idx);
+      renderIssues();
+      renderDetail();
+    });
+  });
+}
+
+function renderDetail(){
+  const i = issues[selected];
+  detailHeader.textContent = `Rule detail · ${i.title}`;
+  detailEl.innerHTML = `
+    <div class="rule">
+      <h3>Contract rule</h3>
+      <p>${i.rule}</p>
+    </div>
+    <div class="rule">
+      <h3>Why this matters</h3>
+      <p>${i.why}</p>
+    </div>
+    <div class="rule">
+      <h3>Recommended fix</h3>
+      <p>${i.fix}</p>
+    </div>
+    <div class="rule">
+      <h3>Envelope snippet</h3>
+      <pre>${JSON.stringify(i.envelope, null, 2)}</pre>
+    </div>
+    <div class="actions">
+      <button class="primary">Create PM task</button>
+      <button>Mute rule 10m</button>
+      <button>Copy patch guidance</button>
+    </div>
+  `;
+}
+
+renderIssues();
+renderDetail();
+</script>
+</body>
+</html>

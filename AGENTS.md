@@ -31,13 +31,6 @@ Cross-platform desktop app for real-time Bloodbank event observability.
 | Lint (Rust)     | `npm run clippy`             |
 | Stream Events   | `npm run stream`             |
 
-## Key Directories
-
-- `src/` — React frontend (components, hooks, pages, types)
-- `src-tauri/` — Rust backend (Tauri commands, RabbitMQ integration)
-- `src/hooks/useRabbitMQ.ts` — Real-time event subscription hook
-- `src/types/bloodbank.ts` — Event type definitions
-
 ## Conventions
 
 - Radix UI for accessible primitives

@@ -87,11 +87,22 @@ mark_done() {
   touch "$ROLE_DIR/.scripts/.done-$1"
 }
 
+# Fleet source-of-truth (shared across all wrappers/provisioners)
+FLEET_ENV="${HERMES_FLEET_ENV:-$HOME/.hermes/fleet.env}"
+if [[ -f "$FLEET_ENV" ]]; then
+  # shellcheck disable=SC1090
+  source "$FLEET_ENV"
+fi
+
 # Tools we expect on the host
-HERMES_BIN="${HERMES_BIN:-/home/delorenj/code/hermes-agent/.venv/bin/hermes}"
-HERMES_AGENT_REPO="${HERMES_AGENT_REPO:-/home/delorenj/code/hermes-agent}"
-RUNTIME_SCAFFOLD_DIR="${RUNTIME_SCAFFOLD_DIR:-/home/delorenj/code/hermes-agent-template/runtime-scaffold}"
-REGISTRY_FILE="${REGISTRY_FILE:-$HOME/.hermes/agents-registry.yaml}"
+HERMES_BIN="${HERMES_BIN:-${HERMES_FLEET_BIN:-/home/delorenj/code/hermes-agent/.venv/bin/hermes}}"
+HERMES_AGENT_REPO="${HERMES_AGENT_REPO:-${HERMES_FLEET_REPO:-/home/delorenj/code/hermes-agent}}"
+# Prefer a scaffold vendored into this agent directory; fall back to legacy template path.
+RUNTIME_SCAFFOLD_DIR="${RUNTIME_SCAFFOLD_DIR:-$ROLE_DIR/.runtime-scaffold}"
+if [[ ! -d "$RUNTIME_SCAFFOLD_DIR" ]]; then
+  RUNTIME_SCAFFOLD_DIR="${HERMES_TEMPLATE_RUNTIME_SCAFFOLD:-/home/delorenj/code/hermes-agent-template/runtime-scaffold}"
+fi
+REGISTRY_FILE="${REGISTRY_FILE:-${HERMES_FLEET_REGISTRY_FILE:-$HOME/.hermes/agents-registry.yaml}}"
 
 # Bloodbank / NATS
 BLOODBANK_NATS_HOST="${BLOODBANK_NATS_HOST:-127.0.0.1}"
@@ -106,7 +117,7 @@ CF_API="${CF_API:-https://api.cloudflare.com/client/v4}"
 CF_ZONE_DELO_SH="${CF_ZONE_DELO_SH:-eabc163cde3e31680f10fc313aecdda3}"
 CF_ACCOUNT_ID="${CF_ACCOUNT_ID:-${CLOUDFLARE_ACCOUNT_ID:-}}"
 
-export HERMES_BIN HERMES_AGENT_REPO RUNTIME_SCAFFOLD_DIR REGISTRY_FILE \
+export FLEET_ENV HERMES_BIN HERMES_AGENT_REPO RUNTIME_SCAFFOLD_DIR REGISTRY_FILE \
        BLOODBANK_NATS_HOST BLOODBANK_NATS_PORT \
        PLANE_BASE PLANE_API_KEY \
        CF_API CF_ZONE_DELO_SH CF_ACCOUNT_ID
