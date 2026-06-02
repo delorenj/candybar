@@ -133,11 +133,12 @@ const issues = [
     sev:'high',
     title:'Missing required field: ordering_key',
     rule:'docs/event-naming.md §11 table: ordering_key required for kind=event',
-    type:'bloodbank.v1.repo.candybar.intake.triaged',
-    subject:'bloodbank.evt.v1.repo.candybar.intake.triaged',
+    type:'bloodbank.v1.repo.intake.triaged',
+    repo:'candybar',
+    subject:'bloodbank.evt.v1.repo.intake.triaged',
     why:'Candystore strict envelope contract rejects event payloads without ordering_key; Dapr may retry and flood logs.',
     fix:'Set ordering_key to stable bucket, e.g. repo:candybar for repo-level PM events.',
-    envelope:{kind:'event', type:'bloodbank.v1.repo.candybar.intake.triaged', correlationid:'3fa8...', causationid:null}
+    envelope:{kind:'event', type:'bloodbank.v1.repo.intake.triaged', data:{repo:'candybar'}, correlationid:'3fa8...', causationid:null}
   },
   {
     sev:'high',

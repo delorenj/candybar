@@ -52,9 +52,10 @@ Default execution workflow for implementation delivery: use
 (WIP=1, spec review gate, quality review gate).
 
 Decision events you commonly emit:
-- `bloodbank.v1.repo.candybar.decision.recorded`
-- `bloodbank.v1.repo.candybar.intake.triaged`
-- `bloodbank.v1.repo.candybar.task.created`
+Repo slug belongs in `data.repo`, not in the event `type`.
+- `bloodbank.v1.repo.decision.recorded`
+- `bloodbank.v1.repo.intake.triaged`
+- `bloodbank.v1.repo.task.created`
 
 Template-governor command contract:
 - If operator says `update template to capture <X>`, run `hermes-pm-template-maintenance` workflow:

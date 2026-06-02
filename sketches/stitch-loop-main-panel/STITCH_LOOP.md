@@ -64,6 +64,25 @@ This keeps fast situational awareness while making deep investigation and contra
    - missing ordering_key on events
    - snake_case extension aliases
 
+## Loop 3: Live notifier overhaul (2026-06-01)
+
+Objective from operator:
+- exhaustive hierarchical multi-select for notification types
+- global sound toggle
+- rolling live list from selected types only
+- no historical backfill
+
+Taste/stitch decisions applied:
+- Shell and visual language inherit from `001-ops-overview` (triage-first)
+- Right inspector keeps `002`/`003` behaviors as lightweight tabs (Investigate/Contract)
+- Left taxonomy panel upgraded from prefix toggles to exhaustive hierarchical type tree
+- Feed explicitly marked live-only; selection changes reset visible feed to avoid historical carryover
+
+Implementation mapping:
+- Frontend layout + controls: `index.html`
+- Hierarchical type tree, sound toggle, rolling live feed: `src/main.js`
+- Schema root discovery hardening + broad bloodbank stream coverage: `src-tauri/src/lib.rs`
+
 ## Artifacts
 
 - `001-ops-overview/index.html`

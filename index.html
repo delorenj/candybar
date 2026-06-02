@@ -5,53 +5,545 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Candybar</title>
     <style>
-      :root { color-scheme: dark; }
-      body { margin:0; font-family: Inter, system-ui, sans-serif; background:#0b1020; color:#e5e7eb; }
-      .app { display:grid; grid-template-columns: 260px 1fr; height:100vh; }
-      aside { border-right:1px solid #1f2937; padding:12px; overflow:auto; }
-      main { display:grid; grid-template-rows:auto 1fr; min-width:0; }
-      .topbar { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px solid #1f2937; }
-      .pill { font-size:12px; padding:3px 8px; border:1px solid #334155; border-radius:999px; }
-      .log { padding:8px 12px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; }
-      .row { padding:7px 8px; border-bottom:1px dotted #1f2937; }
-      .row .meta { color:#93c5fd; }
-      .row .type { color:#a7f3d0; word-break:break-all; }
-      .controls { display:flex; gap:8px; margin-top:8px; }
-      button { background:#111827; color:#e5e7eb; border:1px solid #374151; border-radius:8px; padding:6px 10px; cursor:pointer; }
-      button:hover { background:#1f2937; }
-      .tree details { margin-left:8px; }
-      .tree summary { cursor:pointer; }
-      .small { font-size:11px; color:#9ca3af; }
-      input[type="checkbox"] { margin-right:6px; }
+      :root {
+        color-scheme: dark;
+        --bg: #0b1020;
+        --bg-soft: #111827;
+        --panel: #0f172a;
+        --line: #1f2937;
+        --line-soft: #243042;
+        --text: #e5e7eb;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+        --ok: #22c55e;
+        --warn: #f59e0b;
+        --bad: #ef4444;
+        --event: #22c55e;
+        --command: #f59e0b;
+        --reply: #a78bfa;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: radial-gradient(1400px 580px at 0 0, #172554 0%, var(--bg) 45%);
+        color: var(--text);
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      .app {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        height: 100vh;
+      }
+
+      .topbar {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(11, 16, 32, 0.9);
+        backdrop-filter: blur(8px);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .brand {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--ok);
+        box-shadow: 0 0 10px rgba(34, 197, 94, 0.9);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 14px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .subtitle {
+        margin-top: 2px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .chips {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .chip {
+        border: 1px solid #334155;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.8);
+        color: #cbd5e1;
+        font-size: 12px;
+        padding: 4px 10px;
+      }
+
+      .chip.ok {
+        border-color: rgba(34, 197, 94, 0.55);
+        color: #bbf7d0;
+      }
+
+      .chip.warn {
+        border-color: rgba(245, 158, 11, 0.55);
+        color: #fde68a;
+      }
+
+      .chip.bad {
+        border-color: rgba(239, 68, 68, 0.55);
+        color: #fecaca;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr) 360px;
+        gap: 12px;
+        padding: 12px;
+        min-height: 0;
+      }
+
+      .pane {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: linear-gradient(180deg, var(--bg-soft), var(--panel));
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .pane > header {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .pane-body {
+        min-height: 0;
+        overflow: auto;
+      }
+
+      .left-body {
+        padding: 10px 12px;
+      }
+
+      .controls {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      button {
+        border: 1px solid #374151;
+        background: #111827;
+        color: var(--text);
+        border-radius: 8px;
+        padding: 7px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: #1f2937;
+      }
+
+      .toggle {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 12px;
+        color: #d1d5db;
+        margin-bottom: 8px;
+      }
+
+      .volume {
+        display: grid;
+        gap: 5px;
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+
+      input[type="range"] {
+        width: 100%;
+      }
+
+      .small {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .tree {
+        margin-top: 10px;
+        display: grid;
+        gap: 3px;
+      }
+
+      .tree-node {
+        min-height: 24px;
+      }
+
+      .tree summary {
+        list-style: none;
+      }
+
+      .tree summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .tree-summary,
+      .leaf-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 8px;
+        padding: 4px 6px;
+      }
+
+      .tree-summary:hover,
+      .leaf-row:hover {
+        background: rgba(56, 189, 248, 0.08);
+      }
+
+      .tree-summary {
+        cursor: pointer;
+      }
+
+      .leaf-row {
+        cursor: pointer;
+      }
+
+      .node-label {
+        font-size: 12px;
+        color: #dbe4f2;
+      }
+
+      .node-count {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--muted);
+      }
+
+      .tree-children {
+        margin-left: 12px;
+      }
+
+      .toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .seg {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .seg button {
+        border-radius: 999px;
+        padding: 5px 10px;
+      }
+
+      .seg button.active {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.3) inset;
+      }
+
+      .log {
+        overflow: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      .row {
+        border-bottom: 1px solid #162032;
+        padding: 8px 10px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        cursor: pointer;
+      }
+
+      .row:hover {
+        background: rgba(56, 189, 248, 0.08);
+      }
+
+      .row.active {
+        background: rgba(56, 189, 248, 0.16);
+      }
+
+      .meta {
+        color: #93c5fd;
+        font-size: 11px;
+      }
+
+      .type {
+        color: #d7f3ff;
+        margin-top: 3px;
+        word-break: break-all;
+      }
+
+      .kind {
+        border: 1px solid #334155;
+        border-radius: 999px;
+        height: fit-content;
+        padding: 2px 8px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .kind.event {
+        color: var(--event);
+      }
+
+      .kind.command {
+        color: var(--command);
+      }
+
+      .kind.reply {
+        color: var(--reply);
+      }
+
+      .right-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .tabs button {
+        padding: 5px 9px;
+      }
+
+      .tab-pane {
+        padding: 10px;
+      }
+
+      .tab-pane.hidden {
+        display: none;
+      }
+
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .kpi {
+        border: 1px solid var(--line-soft);
+        border-radius: 10px;
+        background: #0b1324;
+        padding: 8px;
+      }
+
+      .kpi .label {
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .kpi .value {
+        margin-top: 4px;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      h3 {
+        margin: 10px 0 8px;
+        font-size: 12px;
+        color: #dbe4f2;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      pre {
+        margin: 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #020617;
+        color: #cbd5e1;
+        font-size: 11px;
+        line-height: 1.4;
+        padding: 8px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .related-list,
+      .issues {
+        display: grid;
+        gap: 6px;
+      }
+
+      .related-item,
+      .issue {
+        border: 1px solid var(--line-soft);
+        border-radius: 8px;
+        background: #0b1324;
+        padding: 7px;
+      }
+
+      .related-item .type,
+      .issue .title {
+        color: #dbe4f2;
+        font-size: 11px;
+      }
+
+      .related-item .meta,
+      .issue .meta {
+        color: var(--muted);
+        font-size: 10px;
+        margin-top: 3px;
+      }
+
+      .issue.high {
+        border-color: rgba(239, 68, 68, 0.55);
+      }
+
+      .issue.medium {
+        border-color: rgba(245, 158, 11, 0.55);
+      }
+
+      .issue.low {
+        border-color: rgba(56, 189, 248, 0.55);
+      }
     </style>
   </head>
   <body>
     <div class="app">
-      <aside>
-        <h3>Notifications</h3>
-        <div class="small">Toggle parent => all descendants.</div>
-        <div class="controls">
-          <button id="all-on">All on</button>
-          <button id="all-off">All off</button>
-          <button id="test-ding">Test ding</button>
-        </div>
-        <div class="small" style="margin-top:8px;">L=log S=sound M=mute</div>
-        <label class="small" style="display:block;margin-top:8px;">Default volume
-          <input id="default-volume" type="range" min="0" max="1" step="0.01" value="0.05" style="width:100%;"/>
-        </label>
-        <div id="tree" class="tree"></div>
-      </aside>
-      <main>
-        <div class="topbar">
+      <div class="topbar">
+        <div class="brand">
+          <span class="dot"></span>
           <div>
-            <strong>Candybar</strong>
-            <span class="pill" id="conn">disconnected</span>
+            <h1>Candybar · Ops Overview</h1>
+            <div class="subtitle">Live stream triage with investigate + contract lanes</div>
           </div>
-          <div class="small" id="stats">0 events</div>
         </div>
-        <div id="log" class="log"></div>
-      </main>
+        <div class="chips">
+          <div class="chip" id="conn">disconnected</div>
+          <div class="chip" id="selected-pill">0 selected</div>
+          <div class="chip" id="stream-pill">0 in feed</div>
+        </div>
+      </div>
+
+      <div class="shell">
+        <aside class="pane">
+          <header>Event taxonomy controls</header>
+          <div class="pane-body left-body">
+            <div class="controls">
+              <button id="all-on">All on</button>
+              <button id="all-off">All off</button>
+            </div>
+            <label class="toggle">
+              <input id="sound-enabled" type="checkbox" checked />
+              <span>Sound alerts enabled</span>
+            </label>
+            <label class="volume">
+              Default volume
+              <input id="default-volume" type="range" min="0" max="1" step="0.01" value="0.2" />
+            </label>
+            <button id="test-ding">Test ding</button>
+            <div id="schema-status" class="small" style="margin-top: 8px"></div>
+            <div id="tree" class="tree"></div>
+          </div>
+        </aside>
+
+        <main class="pane">
+          <header class="toolbar">
+            <div class="seg" id="kind-filters">
+              <button class="active" data-kind="all">all</button>
+              <button data-kind="event">event</button>
+              <button data-kind="command">command</button>
+              <button data-kind="reply">reply</button>
+            </div>
+            <div id="stats" class="small">0 received</div>
+          </header>
+          <div id="log" class="log"></div>
+        </main>
+
+        <section class="pane">
+          <header class="right-head">
+            <span>Inspector</span>
+            <div class="seg tabs" id="right-tabs">
+              <button class="active" data-tab="investigate">Investigate</button>
+              <button data-tab="contract">Contract</button>
+            </div>
+          </header>
+          <div class="pane-body">
+            <div id="tab-investigate" class="tab-pane">
+              <div class="kpi-grid">
+                <div class="kpi">
+                  <div class="label">Received</div>
+                  <div class="value" id="kpi-received">0</div>
+                </div>
+                <div class="kpi">
+                  <div class="label">Visible feed</div>
+                  <div class="value" id="kpi-visible">0</div>
+                </div>
+                <div class="kpi">
+                  <div class="label">Type-filtered</div>
+                  <div class="value" id="kpi-filtered">0</div>
+                </div>
+                <div class="kpi">
+                  <div class="label">Selected types</div>
+                  <div class="value" id="kpi-selected-types">0</div>
+                </div>
+              </div>
+
+              <h3>Selected envelope</h3>
+              <pre id="detail">No event selected.</pre>
+
+              <h3>Feed mode</h3>
+              <div class="small">Live stream only. No historical backfill.</div>
+            </div>
+
+            <div id="tab-contract" class="tab-pane hidden">
+              <div class="kpi-grid">
+                <div class="kpi">
+                  <div class="label">Subject/kind mismatch</div>
+                  <div class="value" id="contract-subject-kind">0</div>
+                </div>
+                <div class="kpi">
+                  <div class="label">Missing ordering_key</div>
+                  <div class="value" id="contract-ordering">0</div>
+                </div>
+                <div class="kpi">
+                  <div class="label">Snake_case aliases</div>
+                  <div class="value" id="contract-snake">0</div>
+                </div>
+                <div class="kpi">
+                  <div class="label">Issues tracked</div>
+                  <div class="value" id="contract-total">0</div>
+                </div>
+              </div>
+              <div id="contract-issues" class="issues"></div>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
