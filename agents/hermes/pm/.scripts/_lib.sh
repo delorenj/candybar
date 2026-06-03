@@ -97,6 +97,8 @@ fi
 # Tools we expect on the host
 HERMES_BIN="${HERMES_BIN:-${HERMES_FLEET_BIN:-/home/delorenj/code/hermes-agent/.venv/bin/hermes}}"
 HERMES_AGENT_REPO="${HERMES_AGENT_REPO:-${HERMES_FLEET_REPO:-/home/delorenj/code/hermes-agent}}"
+HERMES_OAUTH_FILE="${HERMES_OAUTH_FILE:-${HERMES_FLEET_OAUTH_FILE:-$HOME/.hermes/auth.json}}"
+CODEX_HOME="${CODEX_HOME:-${HERMES_FLEET_CODEX_HOME:-$HOME/.codex}}"
 # Prefer a scaffold vendored into this agent directory; fall back to legacy template path.
 RUNTIME_SCAFFOLD_DIR="${RUNTIME_SCAFFOLD_DIR:-$ROLE_DIR/.runtime-scaffold}"
 if [[ ! -d "$RUNTIME_SCAFFOLD_DIR" ]]; then
@@ -117,7 +119,7 @@ CF_API="${CF_API:-https://api.cloudflare.com/client/v4}"
 CF_ZONE_DELO_SH="${CF_ZONE_DELO_SH:-eabc163cde3e31680f10fc313aecdda3}"
 CF_ACCOUNT_ID="${CF_ACCOUNT_ID:-${CLOUDFLARE_ACCOUNT_ID:-}}"
 
-export FLEET_ENV HERMES_BIN HERMES_AGENT_REPO RUNTIME_SCAFFOLD_DIR REGISTRY_FILE \
+export FLEET_ENV HERMES_BIN HERMES_AGENT_REPO HERMES_OAUTH_FILE CODEX_HOME RUNTIME_SCAFFOLD_DIR REGISTRY_FILE \
        BLOODBANK_NATS_HOST BLOODBANK_NATS_PORT \
        PLANE_BASE PLANE_API_KEY \
        CF_API CF_ZONE_DELO_SH CF_ACCOUNT_ID

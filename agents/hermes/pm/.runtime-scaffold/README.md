@@ -16,7 +16,7 @@ and recoverable on failure.
 | `bloodbank-consumer.py` | yes | NATS subscriber for repo-scoped events |
 | `decisions/` | yes | Agent-emitted decisions, one file per important call |
 | `.env` | **no** | API keys + Telegram bot token (per-machine secret) |
-| `auth.json` | **no** | OAuth tokens for hermes itself |
+| `auth.json` | **no** | Deprecated local OAuth store; fleet auth defaults to `HERMES_OAUTH_FILE=~/.hermes/auth.json` |
 | `audio_cache/`, `image_cache/` | **no** | Regenerable caches |
 | `sandboxes/` | **no** | Per-session ephemeral execution dirs |
 | `bloodbank-inbox/` | **no** | Inbox queue for incoming bloodbank events |
@@ -35,9 +35,10 @@ The checkpoint script lives in the parent's `.scripts/checkpoint.sh`. It
 cd /path/to/parent-project
 git submodule update --init --recursive
 git -C agents/hermes/{{role}}/runtime lfs pull
-# Provide the secrets the submodule deliberately excluded:
+# Provide the per-runtime secrets the submodule deliberately excluded:
 cp ~/path/to/your/.env       agents/hermes/{{role}}/runtime/.env
-cp ~/path/to/your/auth.json  agents/hermes/{{role}}/runtime/auth.json
+# OAuth provider credentials are shared across the fleet. If needed, login once:
+agents/hermes/{{role}}/hermes auth add openai-codex
 agents/hermes/{{role}}/hermes status
 ```
 

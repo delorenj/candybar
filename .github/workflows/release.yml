@@ -1,0 +1,346 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing git tag to release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  NODE_VERSION: '25'
+
+jobs:
+  build-macos-arm64:
+    name: Build macOS arm64
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          npm ci
+
+      - name: Build Tauri app
+        shell: bash
+        run: |
+          set -euxo pipefail
+          npx tauri build --target aarch64-apple-darwin --ci --no-sign
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          set -euxo pipefail
+          assets="release-assets/macos-arm64"
+          bundle_dir="src-tauri/target/aarch64-apple-darwin/release/bundle"
+          mkdir -p "$assets"
+
+          if [ -d "$bundle_dir" ]; then
+            while IFS= read -r -d '' app; do
+              app_name="$(basename "$app")"
+              tar_name="${app_name%.app}-macos-arm64.app.tar.gz"
+              tar -czf "$assets/$tar_name" -C "$(dirname "$app")" "$app_name"
+            done < <(find "$bundle_dir" -type d -name '*.app' -prune -print0)
+
+            while IFS= read -r -d '' file; do
+              case "$file" in
+                *.app/*) continue ;;
+              esac
+              rel="${file#$bundle_dir/}"
+              dest="${rel//\//-}"
+              cp -v "$file" "$assets/$dest"
+            done < <(find "$bundle_dir" -type f -print0)
+          fi
+
+          shopt -s nullglob
+          files=("$assets"/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No macOS release assets were found in $bundle_dir" >&2
+            exit 1
+          fi
+          printf 'Collected macOS assets:\n'
+          printf '  %s\n' "${files[@]}"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: candybar-macos-arm64
+          path: release-assets/macos-arm64/*
+          if-no-files-found: error
+
+  build-linux-x86_64:
+    name: Build Linux x86_64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Install Linux build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libfuse2t64 \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            pkg-config \
+            rpm \
+            wget
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          npm ci
+
+      - name: Build Tauri app
+        shell: bash
+        run: |
+          set -euxo pipefail
+          npx tauri build --target x86_64-unknown-linux-gnu --ci --no-sign --bundles deb,rpm,appimage
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          set -euxo pipefail
+          assets="release-assets/linux-x86_64"
+          bundle_dir="src-tauri/target/x86_64-unknown-linux-gnu/release/bundle"
+          mkdir -p "$assets"
+
+          if [ -d "$bundle_dir" ]; then
+            while IFS= read -r -d '' file; do
+              rel="${file#$bundle_dir/}"
+              dest="${rel//\//-}"
+              cp -v "$file" "$assets/$dest"
+            done < <(find "$bundle_dir" -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.appimage' \) -print0)
+          fi
+
+          shopt -s nullglob
+          files=("$assets"/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No Linux release assets were found in $bundle_dir" >&2
+            exit 1
+          fi
+          printf 'Collected Linux assets:\n'
+          printf '  %s\n' "${files[@]}"
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: candybar-linux-x86_64
+          path: release-assets/linux-x86_64/*
+          if-no-files-found: error
+
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      NDK_VERSION: 27.2.12479018
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euxo pipefail
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null
+          set -o pipefail
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;${NDK_VERSION}"
+
+          ndk_path="${ANDROID_HOME}/ndk/${NDK_VERSION}"
+          test -d "$ndk_path"
+          {
+            echo "ANDROID_NDK_HOME=$ndk_path"
+            echo "ANDROID_NDK_ROOT=$ndk_path"
+            echo "NDK_HOME=$ndk_path"
+          } >> "$GITHUB_ENV"
+          echo "$ndk_path/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+
+      - name: Setup Rust Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          npm ci
+
+      - name: Build Android app
+        shell: bash
+        run: |
+          set -euxo pipefail
+          npx tauri android build --apk --aab --ci
+
+      - name: Collect Android release assets
+        shell: bash
+        run: |
+          set -euxo pipefail
+          assets="release-assets/android"
+          output_dir="src-tauri/gen/android/app/build/outputs"
+          mkdir -p "$assets"
+
+          if [ -d "$output_dir" ]; then
+            for output_kind in apk bundle; do
+              output_kind_dir="$output_dir/$output_kind"
+              [ -d "$output_kind_dir" ] || continue
+              while IFS= read -r -d '' file; do
+                rel="${file#$output_dir/}"
+                dest="${rel//\//-}"
+                cp -v "$file" "$assets/$dest"
+              done < <(find "$output_kind_dir" -type f \( -name '*.apk' -o -name '*.aab' \) -print0)
+            done
+          fi
+
+          shopt -s nullglob
+          files=("$assets"/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No Android APK/AAB assets were found in $output_dir" >&2
+            exit 1
+          fi
+          printf 'Collected Android assets:\n'
+          printf '  %s\n' "${files[@]}"
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: candybar-android
+          path: release-assets/android/*
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    needs:
+      - build-macos-arm64
+      - build-linux-x86_64
+      - build-android
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: candybar-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        shell: bash
+        run: |
+          set -euxo pipefail
+          shopt -s nullglob
+          files=(release-assets/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No release assets were downloaded" >&2
+            exit 1
+          fi
+          printf 'Release assets to upload:\n'
+          printf '  %s\n' "${files[@]}"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: release-assets/*
+          fail_on_unmatched_files: true
