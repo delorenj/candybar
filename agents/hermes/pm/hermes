@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Launcher for candybar-pm. Resolves HERMES_HOME to runtime and execs shared fleet Hermes.
+# Launcher for candybar-pm. Resolves HERMES_HOME to the runtime submodule
+# and execs the shared fleet Hermes binary configured in ~/.hermes/fleet.env.
+
 set -euo pipefail
 
 ROLE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -11,10 +13,40 @@ if [[ -f "$FLEET_ENV" ]]; then
   source "$FLEET_ENV"
 fi
 
-HERMES_BIN="${HERMES_BIN:-${HERMES_FLEET_BIN:-/home/delorenj/code/hermes-agent/.venv/bin/hermes}}"
+CONFIG="${HERMES_TEMPLATE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/hermes-agent-template/config.toml}"
+config_get() {
+  local key="$1" def="${2:-}"
+  if [[ ! -f "$CONFIG" ]] || ! command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$def"; return 0
+  fi
+  python3 - "$CONFIG" "$key" "$def" <<'PYEOF' || printf '%s' "$def"
+import os
+import sys
+try:
+    import tomllib
+except ModuleNotFoundError:
+    print(sys.argv[3], end=""); sys.exit(0)
+try:
+    cur = tomllib.load(open(sys.argv[1], "rb"))
+except Exception:
+    print(sys.argv[3], end=""); sys.exit(0)
+for part in sys.argv[2].split("."):
+    if isinstance(cur, dict) and part in cur:
+        cur = cur[part]
+    else:
+        print(sys.argv[3], end=""); sys.exit(0)
+print(os.path.expanduser(str(cur)), end="")
+PYEOF
+}
 
-HERMES_OAUTH_FILE="${HERMES_OAUTH_FILE:-${HERMES_FLEET_OAUTH_FILE:-$HOME/.hermes/auth.json}}"
-CODEX_HOME="${CODEX_HOME:-${HERMES_FLEET_CODEX_HOME:-$HOME/.codex}}"
+HERMES_BIN="${HERMES_BIN:-${HERMES_FLEET_BIN:-}}"
+# Fall back to the distributable config before the built-in last-resort path.
+if [[ -z "$HERMES_BIN" ]]; then
+  HERMES_BIN="$(config_get fleet.hermes_bin "")"
+fi
+HERMES_BIN="${HERMES_BIN:-$HOME/.hermes/hermes-agent/.venv/bin/hermes}"
+HERMES_OAUTH_FILE="${HERMES_OAUTH_FILE:-${HERMES_FLEET_OAUTH_FILE:-$(config_get fleet.oauth_file "$HOME/.hermes/auth.json")}}"
+CODEX_HOME="${CODEX_HOME:-${HERMES_FLEET_CODEX_HOME:-$(config_get fleet.codex_home "$HOME/.codex")}}"
 
 if [[ ! -d "$HERMES_HOME" ]]; then
   echo "hermes: runtime submodule not initialized at $HERMES_HOME" >&2
@@ -28,4 +60,6 @@ if [[ ! -x "$HERMES_BIN" ]]; then
   exit 1
 fi
 
-exec env HERMES_HOME="$HERMES_HOME" HERMES_FLEET_ENV="$FLEET_ENV" HERMES_OAUTH_FILE="$HERMES_OAUTH_FILE" CODEX_HOME="$CODEX_HOME" "$HERMES_BIN" "$@"
+exec env HERMES_HOME="$HERMES_HOME" HERMES_FLEET_ENV="$FLEET_ENV" \
+  HERMES_OAUTH_FILE="$HERMES_OAUTH_FILE" CODEX_HOME="$CODEX_HOME" \
+  "$HERMES_BIN" "$@"
