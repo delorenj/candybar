@@ -1,23 +1,85 @@
 #!/usr/bin/env bash
-# Launcher for candybar-pm. Resolves HERMES_HOME to runtime and execs shared fleet Hermes.
+# Launcher for candybar-pm. Resolves HERMES_HOME to the agent's NAMED PROFILE
+# and execs the shared fleet Hermes binary configured in ~/.hermes/fleet.env.
+
 set -euo pipefail
 
 ROLE_DIR="$(cd "$(dirname "$0")" && pwd)"
-HERMES_HOME="$ROLE_DIR/runtime"
+RUNTIME_HOME="$ROLE_DIR/runtime"
+
+FLEET_HOME="${HERMES_FLEET_HOME:-$HOME/.hermes}"
+PROFILE_NAME="${HERMES_PROFILE_NAME:-candybar-pm}"
+
+# Singleton-runtime contract: HERMES_HOME MUST be the named profile dir, never
+# the raw runtime path. Hermes derives the profile identity from the UNRESOLVED
+# HERMES_HOME path; any HERMES_HOME that is neither under ~/.hermes nor a child
+# of a "profiles" dir makes get_active_profile_name() report "default" and
+# _global_auth_file_path() return None — silently disabling shared fleet auth
+# and giving the agent a divergent config.yaml. The profile dir is a REAL dir
+# whose shared entries (config.yaml, .env, skills) symlink to the fleet root
+# and whose owned entries (memories, sessions, state.db, ...) symlink into
+# $RUNTIME_HOME. Provision it with: pj migrate hermes.runtime-singleton
+HERMES_HOME="$FLEET_HOME/profiles/$PROFILE_NAME"
 
 FLEET_ENV="${HERMES_FLEET_ENV:-$HOME/.hermes/fleet.env}"
 if [[ -f "$FLEET_ENV" ]]; then
   # shellcheck disable=SC1090
   source "$FLEET_ENV"
 fi
+# Never pass an identity-bearing chat credential from shared fleet state into
+# a profile process. Hermes loads the profile's own runtime/.env itself.
+unset TELEGRAM_BOT_TOKEN SLACK_BOT_TOKEN SLACK_APP_TOKEN
 
-HERMES_BIN="${HERMES_BIN:-${HERMES_FLEET_BIN:-$HOME/.hermes/hermes-agent/.venv/bin/hermes}}"
+CONFIG="${HERMES_TEMPLATE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/hermes-agent-template/config.toml}"
+config_get() {
+  local key="$1" def="${2:-}"
+  if [[ ! -f "$CONFIG" ]] || ! command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$def"; return 0
+  fi
+  python3 - "$CONFIG" "$key" "$def" <<'PYEOF' || printf '%s' "$def"
+import os
+import sys
+try:
+    import tomllib
+except ModuleNotFoundError:
+    print(sys.argv[3], end=""); sys.exit(0)
+try:
+    cur = tomllib.load(open(sys.argv[1], "rb"))
+except Exception:
+    print(sys.argv[3], end=""); sys.exit(0)
+for part in sys.argv[2].split("."):
+    if isinstance(cur, dict) and part in cur:
+        cur = cur[part]
+    else:
+        print(sys.argv[3], end=""); sys.exit(0)
+print(os.path.expanduser(str(cur)), end="")
+PYEOF
+}
 
-CODEX_HOME="${CODEX_HOME:-${HERMES_FLEET_CODEX_HOME:-$HOME/.codex}}"
+HERMES_BIN="${HERMES_BIN:-${HERMES_FLEET_BIN:-}}"
+# Fall back to the distributable config before the built-in last-resort path.
+if [[ -z "$HERMES_BIN" ]]; then
+  HERMES_BIN="$(config_get fleet.hermes_bin "")"
+fi
+HERMES_BIN="${HERMES_BIN:-$HOME/.hermes/hermes-agent/.venv/bin/hermes}"
+CODEX_HOME="${CODEX_HOME:-${HERMES_FLEET_CODEX_HOME:-$(config_get fleet.codex_home "$HOME/.codex")}}"
+
+if [[ ! -d "$RUNTIME_HOME" ]]; then
+  echo "hermes: local runtime not provisioned at $RUNTIME_HOME" >&2
+  echo "  fix: run $ROLE_DIR/.scripts/20-runtime-repo.sh" >&2
+  exit 1
+fi
 
 if [[ ! -d "$HERMES_HOME" ]]; then
-  echo "hermes: runtime submodule not initialized at $HERMES_HOME" >&2
-  echo "  fix: git submodule update --init --recursive" >&2
+  echo "hermes: profile not provisioned at $HERMES_HOME" >&2
+  echo "  fix: pj migrate hermes.runtime-singleton" >&2
+  exit 1
+fi
+
+if [[ -L "$HERMES_HOME" ]]; then
+  echo "hermes: $HERMES_HOME is a symlink; the profile dir must be a REAL dir" >&2
+  echo "  (a symlink breaks profile-name resolution and shared fleet auth)" >&2
+  echo "  fix: pj migrate hermes.runtime-singleton" >&2
   exit 1
 fi
 
@@ -27,4 +89,6 @@ if [[ ! -x "$HERMES_BIN" ]]; then
   exit 1
 fi
 
-exec env HERMES_HOME="$HERMES_HOME" HERMES_FLEET_ENV="$FLEET_ENV" CODEX_HOME="$CODEX_HOME" "$HERMES_BIN" "$@"
+exec env HERMES_HOME="$HERMES_HOME" HERMES_FLEET_ENV="$FLEET_ENV" \
+  CODEX_HOME="$CODEX_HOME" \
+  "$HERMES_BIN" "$@"
