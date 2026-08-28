@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
-# Create a Plane project in the 33god workspace (one project per agent).
+# Bind this agent to its Plane board — WITHOUT inventing a board identifier.
+#
+# The identifier is Plane's to assign. This step never mints one. It resolves
+# the board through providers/plane.sh and persists ONLY the identifier Plane
+# reports back; if Plane reports none, it dies loudly rather than writing a
+# guess into role.yaml.
+#
+# Resolution order:
+#   1. The repo-root .project.json binding (the SOT) — read back live.
+#   2. Otherwise a repo-named board lookup, falling back to creation.
+#
+# Proposing an identifier for a BRAND-NEW board is legitimate, but it may only
+# come from explicit configuration (PLANE_IDENTIFIER, or an already-recorded
+# role.yaml plane.identifier). Full new-board provisioning with the
+# .project.json transaction lives in 42-ticket-provider.sh.
 # shellcheck source=_lib.sh
 source "$(dirname "$0")/_lib.sh"
 load_role_env
@@ -9,42 +23,38 @@ already_done 40-plane && { log "[40] plane already set up — skipping"; exit 0;
 
 [[ -n "$PLANE_API_KEY" ]] || { warn "[40] PLANE_API_KEY not set; skipping. set PLANE_33GOD_API_KEY and re-run ./.scripts/40-plane.sh"; exit 0; }
 
-# Build the 5-char identifier: <repo[0..2]><role[0..1]> uppercased
-RAW=$(printf '%s%s' "${REPO:0:3}" "${ROLE:0:2}" | tr -cd '[:alnum:]' | tr '[:lower:]' '[:upper:]')
-while (( ${#RAW} < 3 )); do RAW="${RAW}X"; done
-IDENT="${RAW:0:5}"
+PLANE_ADAPTER="$(dirname "$0")/providers/plane.sh"
+[[ -x "$PLANE_ADAPTER" ]] || die "[40] missing Plane adapter: $PLANE_ADAPTER"
 
-# Project name = display_name (already smart-cased: "Bloodbank PM", "Hermes-Agent Dev").
-# Plane forbids hyphens in names — substitute spaces.
-NAME="${DISPLAY_NAME//-/ }"
+# The board belongs to the REPO, not to this role. display_name carries the
+# role suffix ("Holocene PM") and must never become the board name — that is
+# how role-suffixed duplicate boards get created. Matches 42-ticket-provider.sh.
+NAME="$(printf '%s' "$REPO" | tr '_-' '  ' | python3 -c 'import sys; print(" ".join(w[:1].upper()+w[1:] for w in sys.stdin.read().split()))')"
 
-log "[40] creating plane project '$NAME' [$IDENT]"
+# Identifier PROPOSAL, used only in a create request and never persisted as
+# though it were confirmed. Explicit configuration only — never derived from
+# the repo or role strings.
+PROPOSED_IDENT="${PLANE_IDENTIFIER:-$(yaml_get plane.identifier)}"
 
-# Check for existing project with this identifier
-EXISTING=$(curl -sS "$PLANE_BASE/api/v1/workspaces/$PLANE_WORKSPACE/projects/?per_page=200" \
-  -H "X-API-Key: $PLANE_API_KEY" \
-  | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-ident = '$IDENT'
-for p in d.get('results', []):
-    if (p.get('identifier') or '').upper() == ident:
-        print(p['id']); break")
-
-if [[ -n "$EXISTING" ]]; then
-  log "    plane project $IDENT already exists (id=$EXISTING) — reusing"
-  PROJECT_ID="$EXISTING"
+# 1. Prefer the recorded .project.json binding and read it back live.
+OUT="$("$PLANE_ADAPTER" resolve 2>/dev/null || true)"
+if [[ -n "$OUT" ]]; then
+  log "[40] resolving plane board from the .project.json binding"
 else
-  RESP=$(curl -sS -X POST "$PLANE_BASE/api/v1/workspaces/$PLANE_WORKSPACE/projects/" \
-    -H "X-API-Key: $PLANE_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d "$(python3 -c "import json,sys; print(json.dumps({'name': sys.argv[1], 'identifier': sys.argv[2], 'description': sys.argv[3]}))" \
-        "$NAME" "$IDENT" "Hermes agent board for $AGENT_ID")")
-  PROJECT_ID=$(echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id') or '')")
-  [[ -n "$PROJECT_ID" ]] || die "plane create failed: $RESP"
-  log "    plane project created id=$PROJECT_ID"
+  log "[40] no bound board — resolving/creating repo board '$NAME'${PROPOSED_IDENT:+ (proposed identifier $PROPOSED_IDENT)}"
+  OUT="$("$PLANE_ADAPTER" create_board "$NAME" "$PROPOSED_IDENT" "Hermes agent board for $AGENT_ID")" \
+    || die "[40] plane board resolution failed for '$NAME'"
 fi
 
-yaml_set plane.identifier "$IDENT"
+PROJECT_ID="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("board_id","") or "")')"
+LIVE_IDENTIFIER="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("identifier","") or "")')"
+
+[[ -n "$PROJECT_ID" ]] || die "[40] plane returned no board id: $OUT"
+[[ -n "$LIVE_IDENTIFIER" ]] \
+  || die "[40] plane returned no authoritative identifier — refusing to persist a guess: $OUT"
+
+log "    plane board id=$PROJECT_ID identifier=$LIVE_IDENTIFIER (authoritative, read back from Plane)"
+
+yaml_set plane.identifier "$LIVE_IDENTIFIER"
 echo "$PROJECT_ID" > "$ROLE_DIR/.scripts/.plane-project-id"
 mark_done 40-plane
