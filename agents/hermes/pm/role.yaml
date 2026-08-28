@@ -33,7 +33,7 @@ plane:
 bloodbank:
   subscribe:
     - "bloodbank.evt.v1.repo.candybar.>"
-    - "bloodbank.cmd.v1.agent.candybar-pm.>"
+    - "bloodbank.cmd.agent.candybar-pm.>"
   producer: "hermes-agent:candybar-pm"
 
 # Runtime repo (git-tracked HERMES_HOME, auto-checkpointed).
