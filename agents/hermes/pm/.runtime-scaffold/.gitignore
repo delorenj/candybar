@@ -17,7 +17,6 @@ honcho.json
 
 # Sandboxes (ephemeral execution environments)
 sandboxes/
-bloodbank-inbox/
 
 # Runtime logs (we want the LFS-tracked summary.log if we add one, not the noise)
 logs/*.log

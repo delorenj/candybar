@@ -13,13 +13,15 @@ and recoverable on failure.
 | `memories/MEMORY.md` | yes | The condensed mental-model summary loaded each session |
 | `memories/USER.md` | yes | The operator's persona (Jarad DeLorenzo, ...) |
 | `sessions/sessions.db` | yes (LFS) | SQLite store of every conversation |
-| `bloodbank-consumer.py` | yes | NATS subscriber for repo-scoped events |
 | `decisions/` | yes | Agent-emitted decisions, one file per important call |
 | `.env` | **no** | API keys + Telegram bot token (per-machine secret) |
 | `auth.json` | **no** | Deprecated local OAuth store; fleet auth defaults to `HERMES_OAUTH_FILE=~/.hermes/auth.json` |
 | `audio_cache/`, `image_cache/` | **no** | Regenerable caches |
 | `sandboxes/` | **no** | Per-session ephemeral execution dirs |
-| `bloodbank-inbox/` | **no** | Inbox queue for incoming bloodbank events |
+
+Bloodbank ingress is fleet-shared. The fleet gateway discovers this profile
+through `~/.hermes/agents-registry.yaml` and routes commands by
+`data.target_agent_id`; this runtime has no consumer process or inbox bridge.
 
 ## Checkpoint cadence
 
