@@ -68,19 +68,18 @@ comment / transition per the lifecycle) before the general reconcile below.
      independence satisfied, close gate passes): autonomously TREAT THE TICKET AS
      DONE. Leave it in the review lane as the operator's deferred-QA queue (do NOT
      auto-transition to `completed`; `--close` is an optional operator-QA-sweep
-     flag the loop omits). Record the adversarial review report, emit the decision
-     event, and post ONE ticket comment stating the autonomous acceptance with a
+     flag the loop omits). Record the adversarial review report and post ONE
+     ticket comment stating the autonomous acceptance with a
      pointer to the report — never a "waiting on you" comment, no grace wait. A
      dependent blocked only on this review-accepted feature is now unblocked.
    - **Held** (a real finding or gate failure): the ticket goes back to active
      (`started` if a worker takes it now, else `unstarted`); record the hold
-     reasons and emit the decision event.
+     reasons in the review report and a ticket comment.
 6. **Regression rollback.** If a later dependent proves a review-accepted feature
    is ACTUALLY BROKEN, move that feature back to active (`started` if a worker
    takes it now, else `unstarted`) as a PREREQUISITE of the dependent; comment
-   naming the dependent + symptom; emit
-   `bloodbank.v1.repo.candybar.issue.review_rollback.recorded`
-   `{issue, surfaced_by, reason}`. The dependent stays blocked on the prerequisite
+   naming the dependent + symptom, and record the rollback (issue, surfaced_by,
+   reason) in the issue evidence file. The dependent stays blocked on the prerequisite
    until it is fixed. This is expected and healthy — it is the trade for deferring
    operator QA, not a failure.
 7. **External blockers only** (credentials, third-party access, paid actions,

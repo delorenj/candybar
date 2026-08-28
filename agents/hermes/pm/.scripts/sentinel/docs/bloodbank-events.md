@@ -1,5 +1,14 @@
 # Sentinel workflow events
 
+> **Retired 2026-08-28.** The two `repo.issue.*` review families this engine used
+> to mint — the adversarial-review decision and the regression rollback — are
+> gone. A full-history query of the Candystore projection returned zero rows for
+> both, nothing subscribed to them, and their shape was invalid twice over: the
+> repo slug sat inside a type token, and `issue` is not in the Bloodbank §7
+> entity allowlist, so there was no correct name to migrate them to. The verdict
+> now lives in the review report, the issue evidence file, and the ticket
+> comment. Mint a family again only when something will actually read it.
+
 Status: Sentinel engine protocol (provider-agnostic)
 
 ## Purpose
@@ -27,8 +36,6 @@ use the project repo lane `bloodbank.v1.repo.<repo>.<entity>.<action>`, where
 | `…repo.<repo>.issue.evidence.created` | Evidence file created | `issue`, `evidence_file` |
 | `…repo.<repo>.issue.gate.passed` | Close gate passes | `issue`, `evidence_file` |
 | `…repo.<repo>.issue.gate.failed` | Close gate fails | `issue`, `evidence_file` |
-| `…repo.<repo>.issue.autonomous_review.decided` | An independent adversarial review clears a review-lane ticket; the loop acts on the verdict autonomously and treats `accepted` tickets as done (left in the review lane) | `issue`, `decision` (`accepted`/`held`), `drift`, `close_gate`, `reviewer_agent`, `evidence_file`, `report_file` |
-| `…repo.<repo>.issue.review_rollback.recorded` | A review-accepted ticket is moved back to active because a dependent proved it broken | `issue`, `surfaced_by`, `reason` |
 | `…repo.<repo>.issue.truthcheck.flagged` | Status/evidence mismatch found | `issue`, `reason` |
 
 ## Rules
@@ -36,10 +43,10 @@ use the project repo lane `bloodbank.v1.repo.<repo>.<entity>.<action>`, where
 - Emit events for consequential transitions; do not invent types casually.
 - Event emission never replaces the board update or issue evidence.
 - If emission fails, continue and report the trail is incomplete.
-- Autonomous acceptance is legitimate only when
-  `issue.autonomous_review.decided` is emitted with `decision=accepted` and
-  `close_gate=pass` by `bin/issue-autonomous-review.sh`. That script will not
-  emit an `accepted` decision while the close gate fails or drift is `significant`.
+- Autonomous acceptance is legitimate only when `bin/issue-autonomous-review.sh` exits 0 with
+  `close_gate=pass` on its own output. That script will not report an
+  accepted decision while the close gate fails or drift is `significant`.
+  It publishes nothing — see the retirement note above.
 
 ## Canonical BloodBank
 

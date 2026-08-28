@@ -112,29 +112,23 @@ loop:
 .scripts/sentinel/bin/issue-autonomous-review.sh <ISSUE> <REPORT> --close
 ```
 
-## Decision event
+## Decision record
 
-```text
-bloodbank.v1.repo.<repo>.issue.autonomous_review.decided
-```
-
-Required data: `issue`, `decision` (`accepted | held`), `drift`, `close_gate`,
-`reviewer_agent`, `evidence_file`, `report_file`. See `bloodbank-events.md`.
+The verdict is carried by the script's exit code (`0` accepted, `3` held) and
+its stdout/stderr, plus the review report and the ticket comment it posts. The
+durable accountability trail is the review report + evidence file in the repo.
+No event is published; see `bloodbank-events.md` for why the old
+`repo.issue.*` family was retired.
 
 ## Downstream regression rollback
 
 Deferring operator QA means a later dependent can prove a review-accepted
 feature is ACTUALLY BROKEN. When that happens, move the accepted ticket back to
 active (`started` if a worker takes it now, else `unstarted`) as a PREREQUISITE
-of the dependent, via the adapter (`tp transition <id> <state>`); comment naming
-the dependent + symptom; and emit:
-
-```text
-bloodbank.v1.repo.<repo>.issue.review_rollback.recorded
-```
-
-Required data: `issue`, `surfaced_by`, `reason`. The dependent is blocked on the
-prerequisite until it is fixed. This is expected and healthy — it is the trade
+of the dependent, via the adapter (`tp transition <id> <state>`), and comment
+naming the dependent + symptom. Record the rollback in the ticket comment and
+the issue evidence file. The dependent is blocked on the prerequisite until it
+is fixed. This is expected and healthy — it is the trade
 for deferring operator QA, not a failure.
 
 ## Review report shape
@@ -163,6 +157,6 @@ Write `<ISSUE>.review.md`; the script validates it:
 ## Operator override
 
 `reconcile.auto_review: false` (role.yaml) or `RECONCILE_AUTO_REVIEW=off`
-disables autonomous acceptance. Autonomous acceptances are fully traceable via
-the decision events in
-`_bmad-output/implementation-artifacts/bloodbank-events.jsonl`.
+disables autonomous acceptance. Autonomous acceptances are traceable via the
+review report, the issue evidence file, and the ticket comment the script
+posts.
