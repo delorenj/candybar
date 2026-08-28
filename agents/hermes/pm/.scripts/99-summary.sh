@@ -5,8 +5,7 @@ source "$(dirname "$0")/_lib.sh"
 load_role_env
 
 GW_UNIT="hermes-${AGENT_ID}-gateway.service"
-CSM_UNIT="hermes-${AGENT_ID}-consumer.service"
-CKPT_TIMER="hermes-${AGENT_ID}-checkpoint.timer"
+HB_TIMER="hermes-${AGENT_ID}-heartbeat.timer"
 
 cat >&2 <<EOF
 
@@ -15,17 +14,16 @@ cat >&2 <<EOF
 │  Talk:        @$BOT_HANDLE  (Telegram DM)
 │  Shell:       $ROLE_DIR/hermes chat "status"
 │  Board:       $PLANE_BASE/$PLANE_WORKSPACE/projects/$(cat "$ROLE_DIR/.scripts/.plane-project-id" 2>/dev/null || echo "(skipped)")
-│  Mail:        $EMAIL_ADDR  →  $FORWARD_TO
-│  Runtime:     gh:$RUNTIME_REPO   (auto-checkpointed hourly)
+│  Runtime:     $ROLE_DIR/runtime   (pure-local, ignored)
+│  Hermes bin:  $HERMES_BIN
+│  Fleet env:   $FLEET_ENV
 │
 │  Start fleet daemons:
 │    systemctl --user start $GW_UNIT
-│    systemctl --user start $CSM_UNIT
-│    systemctl --user start $CKPT_TIMER
+│    systemctl --user start $HB_TIMER
 │
 │  Tail logs:
 │    journalctl --user -fu $GW_UNIT
-│    journalctl --user -fu $CSM_UNIT
 │
 │  Fleet status:
 │    python3 -c "import yaml,pathlib; print(yaml.safe_dump(yaml.safe_load(pathlib.Path('$REGISTRY_FILE').read_text())['agents']))"

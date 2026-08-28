@@ -12,9 +12,8 @@ cat >&2 <<EOF
 │  role        $ROLE
 │  display     $DISPLAY_NAME
 │  telegram    @$BOT_HANDLE   (one bot per agent)
-│  email       $EMAIL_ADDR  → $FORWARD_TO
 │  plane       $PLANE_WORKSPACE workspace
-│  runtime     gh:$RUNTIME_REPO   (auto-checkpointed)
+│  runtime     $ROLE_DIR/runtime   (pure-local, ignored)
 │  profile     ~/.hermes/profiles/$PROFILE_NAME
 ╰────────────────────────────────────────────────────────────────────────╯
 

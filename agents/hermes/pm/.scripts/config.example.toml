@@ -1,0 +1,64 @@
+# hermes-agent-template — distributable configuration
+#
+# This file holds every environment-specific default the provisioning scripts
+# need. Copy it to ~/.config/hermes-agent-template/config.toml (the first
+# provisioning run does this for you) and edit the values for YOUR machine.
+#
+# Resolution precedence for each value (highest wins):
+#   explicit env var  >  ~/.hermes/fleet.env  >  this file  >  built-in fallback
+#
+# Override the config location with $HERMES_TEMPLATE_CONFIG if you keep it
+# somewhere other than $XDG_CONFIG_HOME/hermes-agent-template/config.toml.
+
+[fleet]
+# Absolute path to the shared Hermes executable every agent launcher execs.
+hermes_bin = "~/.local/share/hermes-agent/releases/0408fec7a153e6c32c064acd2b8053917f1525f1/.venv/bin/hermes"
+# Checkout of the shared hermes-agent repo.
+hermes_repo = "~/.local/share/hermes-agent/releases/0408fec7a153e6c32c064acd2b8053917f1525f1"
+# Canonical CommonProject migration CLI. Runtime provisioning delegates named
+# profile topology to this command; it never rewrites profile links itself.
+pjangler_bin = "pj"
+# Reviewed fleet runtime publication. Provisioning metadata and clean installs
+# must agree on this fork/ref/SHA; do not substitute upstream main.
+hermes_git_url = "https://github.com/delorenj/hermes-agent.git"
+hermes_git_ref = "main"
+hermes_git_sha = "0408fec7a153e6c32c064acd2b8053917f1525f1"
+# Fallback runtime scaffold dir — used only when an agent's vendored
+# ./.runtime-scaffold is missing.
+runtime_scaffold_dir = "~/code/hermes-agent-template/runtime-scaffold"
+# Shared fleet source-of-truth env file + fleet registry. ~ is expanded.
+fleet_env = "~/.hermes/fleet.env"
+registry_file = "~/.hermes/agents-registry.yaml"
+# Shared auth roots. HERMES_OAUTH_FILE is the Hermes provider OAuth store
+# (including openai-codex); CODEX_HOME is for Codex CLI/app-server auth.
+oauth_file = "~/.hermes/auth.json"
+codex_home = "~/.codex"
+# Canonical external skills dir mirrored into each agent profile.
+canonical_skills_dir = "/home/delorenj/.agents/skills"
+# Voxxy plugin + service defaults for Hermes PM agents.
+voxxy_plugin_dir = "~/code/voxxy/plugins/tts/voxxy"
+vox_url = "https://vox.delo.sh"
+# Canonical PM config.yaml the provisioner seeds each runtime's config.yaml from.
+# This is the fleet-wide Hermes inference/skill config (model, toolsets, etc.)
+# every agent runtime starts from. ~ is expanded.
+# canonical_pm_config = "~/.hermes/config.yaml"
+# Skills symlinked into every agent's runtime skills root.
+symlinked_runtime_skills = [
+  "delonet-conventions",
+  "delonet-dotenv",
+  "hermes-pm-template-maintenance",
+  "hindsight",
+  "33god-projects",
+  "subagent-driven-development",
+]
+
+[github]
+# LEGACY INERT COMPATIBILITY METADATA ONLY. Older role manifests may still
+# carry this owner field. Current provisioning does not create, attach,
+# synchronize, restore, archive, or remove runtime storage from this value.
+runtime_repo_owner = ""
+
+[plane]
+# Plane instance base URL and workspace slug (one project per agent).
+base = "https://plane.delo.sh"
+workspace = "33god"

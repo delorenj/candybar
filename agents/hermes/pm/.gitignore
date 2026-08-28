@@ -1,6 +1,11 @@
 # Per-role ignores in agents/hermes/pm/
 
-# The runtime submodule manages its own ignores (.env, auth.json, etc.).
-# We just ignore the provisioning log so it doesn't end up in the project repo.
+# The local runtime contains mutable agent state and secrets. It is never a
+# project submodule or publishable project content.
+runtime/
+
+# Provisioning logs are host-local as well.
 .scripts/.provision.log
 .scripts/.last-run
+.scripts/.done-*
+.scripts/.plane-project-id
