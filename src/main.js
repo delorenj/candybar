@@ -3,7 +3,13 @@ import { listen } from "@tauri-apps/api/event";
 
 const MAX_FEED_ROWS = 400;
 const MAX_CONTRACT_ISSUES = 200;
-const BLOODBANK_PREFIX = "bloodbank.v1.";
+// Read side only. The type grammar is now 4-token
+// (bloodbank.<domain>.<entity>.<action>), but rows already in Candystore keep
+// their 5-token bloodbank.v1.* type forever, so the UI has to accept both.
+// BLOODBANK_ROOT strips the constant root; BLOODBANK_VERSION_SEGMENT strips a
+// legacy v<N> segment when one is still present.
+const BLOODBANK_ROOT = "bloodbank.";
+const BLOODBANK_VERSION_SEGMENT = /^v\d+$/;
 
 const treeEl = document.getElementById("tree");
 const logEl = document.getElementById("log");
@@ -143,10 +149,15 @@ function updateStats() {
 }
 
 function typeSegments(type) {
-  if (type.startsWith(BLOODBANK_PREFIX)) {
-    return type.slice(BLOODBANK_PREFIX.length).split(".").filter(Boolean);
+  let rest = type;
+  if (rest.startsWith(BLOODBANK_ROOT)) {
+    rest = rest.slice(BLOODBANK_ROOT.length);
   }
-  return type.split(".").filter(Boolean);
+  const parts = rest.split(".").filter(Boolean);
+  if (parts.length && BLOODBANK_VERSION_SEGMENT.test(parts[0])) {
+    parts.shift();
+  }
+  return parts;
 }
 
 function buildTreeModel(types) {
@@ -599,7 +610,8 @@ function deriveSelectionFromLegacy(config, types) {
     return new Set(types);
   }
 
-  if (legacyPrefixes.some((prefix) => prefix === "bloodbank.v1" || prefix === "bloodbank")) {
+  // "bloodbank" and any versioned root ("bloodbank.v1", ...) all mean "everything".
+  if (legacyPrefixes.some((prefix) => /^bloodbank(\.v\d+)?$/.test(prefix))) {
     return new Set(types);
   }
 
