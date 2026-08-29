@@ -1,56 +1,42 @@
 # Sentinel workflow events
 
-> **Retired 2026-08-28.** The two `repo.issue.*` review families this engine used
-> to mint — the adversarial-review decision and the regression rollback — are
-> gone. A full-history query of the Candystore projection returned zero rows for
-> both, nothing subscribed to them, and their shape was invalid twice over: the
-> repo slug sat inside a type token, and `issue` is not in the Bloodbank §7
-> entity allowlist, so there was no correct name to migrate them to. The verdict
-> now lives in the review report, the issue evidence file, and the ticket
-> comment. Mint a family again only when something will actually read it.
-
 Status: Sentinel engine protocol (provider-agnostic)
 
 ## Purpose
 
-Local workflow events are the machine-readable timeline of the sentinel loop.
-The board remains the human command center; issue evidence files remain the
-close gate; this JSONL spool lets Hermes, dashboards, and future agents observe
-what happened.
+The board remains the human command center and issue evidence files remain the
+close gate. Neither depends on an event trail: `bin/issue-close-gate.sh` and
+`bin/issue-autonomous-review.sh` report their verdicts on stdout/stderr and via
+their exit codes, and publish nothing.
+
+The `repo.issue.*` family the sentinel loop used to mint was retired on
+2026-08-28. It was never published to NATS and never consumed by anything, and
+its shape was invalid twice over: it embedded the repo slug inside the type
+(`bloodbank.v1.repo.<repo>.issue.…`) and `issue` is not in the Bloodbank §7
+entity allowlist. There is no correct version of it to migrate to, so it is
+gone rather than renamed.
 
 ## Emitter
+
+`bin/emit-event.py` stays as a dependency-free local emitter for a family a
+future pass genuinely needs:
 
 ```bash
 .scripts/sentinel/bin/emit-event.py <event_type> --field key=value [...]
 ```
 
-Appends to `_bmad-output/implementation-artifacts/bloodbank-events.jsonl`
-(git-ignored dev spool) using the Hermes CloudEvents envelope shape. Event types
-use the project repo lane `bloodbank.v1.repo.<repo>.<entity>.<action>`, where
-`<repo>` comes from `role.yaml`.
+It appends to `_bmad-output/implementation-artifacts/bloodbank-events.jsonl`
+(git-ignored dev spool) using the Hermes CloudEvents envelope shape. Nothing in
+the engine calls it today.
 
-## Event types
+## Naming, before you add one
 
-| Event type | When | Required data |
-| --- | --- | --- |
-| `…repo.<repo>.issue.evidence.created` | Evidence file created | `issue`, `evidence_file` |
-| `…repo.<repo>.issue.gate.passed` | Close gate passes | `issue`, `evidence_file` |
-| `…repo.<repo>.issue.gate.failed` | Close gate fails | `issue`, `evidence_file` |
-| `…repo.<repo>.issue.truthcheck.flagged` | Status/evidence mismatch found | `issue`, `reason` |
+Event types are exactly four tokens — `bloodbank.<domain>.<entity>.<action>` —
+with `<domain>` and `<entity>` drawn from the allowlists in
+`~/code/33GOD/bloodbank/docs/event-naming.md` (§6/§7). Repo and agent identity
+go in `data.repo` / `actor.agent_id`, never in a type or subject token. Schema
+revision lives in `dataschema`/`schemaref`, never in the type.
 
-## Rules
-
-- Emit events for consequential transitions; do not invent types casually.
-- Event emission never replaces the board update or issue evidence.
-- If emission fails, continue and report the trail is incomplete.
-- Autonomous acceptance is legitimate only when `bin/issue-autonomous-review.sh` exits 0 with
-  `close_gate=pass` on its own output. That script will not report an
-  accepted decision while the close gate fails or drift is `significant`.
-  It publishes nothing — see the retirement note above.
-
-## Canonical BloodBank
-
-These project-local repo-lane events are BloodBank-*style*. Promote a type to a
-canonical NATS subject only after adding its JSON Schema to the BloodBank schema
-tree and passing validation. The local emitter does not require NATS so the loop
-stays reliable offline.
+Add a family when something will actually consume it — register the schema in
+the BloodBank schema tree first, then emit. A type nobody reads is a type that
+rots into the wrong shape.

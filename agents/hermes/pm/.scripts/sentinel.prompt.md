@@ -33,7 +33,7 @@ on Linear, Plane, or Trello.
 ## Pass
 
 **Trigger.** This pass runs both on the cheap heartbeat timer AND on a live
-**Plane board event** — a `bloodbank.evt.v1.repo.<repo>.ticket_*` event delivered
+**Plane board event** — a `bloodbank.evt.repo.task.*` event (repo identity lives in `data.repo`, never in the subject) delivered
 by the `plane-webhook-bridge`. If a specific ticket event triggered you, FIRST
 `tp get_issue <that ticket>`, read the change, and react to it (triage / refine /
 comment / transition per the lifecycle) before the general reconcile below.
