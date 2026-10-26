@@ -51,7 +51,7 @@ development_status:
   2-1-effectively-once-dispatch-proven-under-fault-injection: review
   2-2-misfire-coalesce-to-latest-after-downtime: review
   2-3-skip-a-single-occurrence: review
-  2-4-skip-the-rest-of-a-day: in-progress
+  2-4-skip-the-rest-of-a-day: review
   epic-2-retrospective: optional
 
   epic-3: in-progress

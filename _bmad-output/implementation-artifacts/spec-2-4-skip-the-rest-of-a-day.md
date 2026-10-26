@@ -2,7 +2,7 @@
 title: 'Story 2.4: Skip the rest of a day'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'done'
 route: 'dispatch'
 baseline_commit: '30ed92e60d5472eb561ef828422d8dc06e3f2e6f'
 review_loop_iteration: 0
@@ -73,14 +73,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/candybar/registry/{models,store,__init__}.py` -- skip kind vocabulary, `rest_of_day_skip_id`, idempotent `add_rest_of_day_skip`, day-intersecting `list_skips`.
-- [ ] `src/candybar/dispatcher/schedule.py` -- `SkipSet.rest_of_day`, `group_skips` folding, stale-comment cleanup.
-- [ ] `src/candybar/dispatcher/worker.py` -- rename to `operator_skipped_for`; docstrings mention both kinds.
-- [ ] `tests/test_skips.py` -- update the import/usages for the rename; keep every 2.3 test green unchanged otherwise.
-- [ ] `tests/test_skip_rest_of_day.py` -- NEW: every non-DB matrix row, deterministic ids, redelivery identity, precedence, store-input validation without a session.
-- [ ] `tests/test_skip_rest_of_day_integration.py` -- NEW live suite. Store: idempotence + note kept, unknown candybar, day-intersecting window read. Roles: production `run_dispatcher` + `run_executor` on a throwaway bus — a stored day skip suppresses every remaining fire across a UTC midnight (and the next day runs), plus a gap covering a fully skipped day (hourly job runs the next day's fire as misfire).
-- [ ] `.github/workflows/ci.yml` -- store test in the live-Postgres step; role test in the fault + misfire + skips step.
-- [ ] `README.md` -- extend the skip-semantics section with rest-of-day behavior.
+- [x] `src/candybar/registry/{models,store,__init__}.py` -- skip kind vocabulary, `rest_of_day_skip_id`, idempotent `add_rest_of_day_skip`, day-intersecting `list_skips`.
+- [x] `src/candybar/dispatcher/schedule.py` -- `SkipSet.rest_of_day`, `group_skips` folding, stale-comment cleanup.
+- [x] `src/candybar/dispatcher/worker.py` -- rename to `operator_skipped_for`; docstrings mention both kinds.
+- [x] `tests/test_skips.py` -- update the import/usages for the rename; keep every 2.3 test green unchanged otherwise.
+- [x] `tests/test_skip_rest_of_day.py` -- NEW: every non-DB matrix row, deterministic ids, redelivery identity, precedence, store-input validation without a session.
+- [x] `tests/test_skip_rest_of_day_integration.py` -- NEW live suite. Store: idempotence + note kept, unknown candybar, day-intersecting window read. Roles: production `run_dispatcher` + `run_executor` on a throwaway bus — a stored day skip suppresses every remaining fire across a UTC midnight (and the next day runs), plus a gap covering a fully skipped day (hourly job runs the next day's fire as misfire).
+- [x] `.github/workflows/ci.yml` -- store test in the live-Postgres step; role test in the fault + misfire + skips step.
+- [x] `README.md` -- extend the skip-semantics section with rest-of-day behavior.
 
 **Acceptance Criteria:**
 - Given a registered `*/5` candybar with a stored rest-of-day skip for its tick's UTC date, when the live dispatcher consumes ticks at 23:40, 23:45 (that date) and 00:00, 00:05 (the next), then exactly two child runs happen (00:00 and 00:05, `trigger=scheduled`), no `invocations` row or command exists for the suppressed fires, `BLOODBANK_EVENTS` holds one `skipped` fact per suppressed fire with `reason=rest_of_day`, and the neighbour candybar runs all four ticks.
@@ -89,9 +89,60 @@ context:
 
 ## Implementation Notes
 
+I implemented this directly in this session. There is no subagent-spawn tool, the same deviation as Stories 1.1 to 2.3. The spec runs to about 2.3k tokens, over the 1600 guide, and I kept it whole: one cohesive goal, unattended run. Commits on main: 79c236c (spec), bb7f0e2 (code + unit tests), 2776031 (live suite, CI, README).
+
+**What was built**
+- Registry: `SKIP_REST_OF_DAY` in `SKIP_KINDS`; `rest_of_day_skip_id` (UUIDv5 `rest_of_day:<candybar>:<iso-date>` under the existing `SKIP_NAMESPACE`); `add_rest_of_day_skip` with the 2.3 contract (candybar check, insert-on-conflict-do-nothing, FK race -> `UnknownCandybarError`, first note kept). `list_skips` is now an OR: occurrence rows in `[start, end)` plus rest-of-day rows with `start.date() <= day <= (end - 1m).date()` — the exact set of dates a fire in the window can land on. No migration: the 0001 `day` column already fit.
+- Schedule: `SkipSet.rest_of_day: frozenset[date]`; `reason_for` checks occurrences first (the more specific override wins), then the fire's UTC date. `group_skips` folds day rows; malformed (NULL day) and unknown kinds stay ignored. The three helpers needed no change — they ride `covers`.
+- Dispatcher: no control-flow change. `occurrence_skipped_for` renamed `operator_skipped_for` (the reason parameter already carried the kind into the event id and data); the tick path and `_coalesce` publish per-fire skipped facts as before.
+- A naive `day` that is a `datetime` (a `date` subclass), a string, None or an int is a `ValueError` before any session work — one error class for invalid skip inputs, matching 2.3 (ruff's TRY004 `TypeError` preference is waived with a noqa naming that contract).
+
+**Live proof** (production `run_dispatcher` + `run_executor`, throwaway nats:2.10.29 and postgres:17-alpine)
+- Across a UTC midnight with `*/5` candybars and a day skip on one of them: the skipped candybar ran only the next day's 00:00/00:05 (scheduled), with no rows for the suppressed fires and counters 2/2; the bus held one `rest_of_day` fact per suppressed fire — 23:40 and 23:45 on their own ticks, 23:50 and 23:55 when the 00:00 tick closed the 15-minute gap; the neighbour ran all four ticks plus its own 23:55 misfire.
+- Gap spanning a fully skipped day (hourly candybar, 24h25m down): the following day's 00:00 fire ran as `misfire`; the skipped day's 23 fires inside the 24h window were each recorded `rest_of_day`, oldest first; no rows for them; counters 2/2.
+- The 2.1 fault, 2.2 misfire, 2.3 occurrence-skip and registry live suites still pass unchanged (14 passed).
+
+**Verification results**
+- 530 unit tests pass (24 new), ruff clean.
+- Live: the 2.4 suite 2 passed in 7.4s; regression suites 14 passed.
+
+**Test-authoring notes (bugs in my first test draft, not the code)**
+- The midnight-crossing ticks are not consecutive minutes, so the 23:45 -> 00:00 tick is a 15-minute gap: coalescing records the skipped candybar's remaining SKIP_DAY fires (23:50/23:55) as overridden and runs the neighbour's 23:55 misfire. The assertions now expect exactly that — a richer proof of "each suppressed fire is recorded".
+- In part B the two `*/5` candybars leave the registry before the 24h gap tick, so their coalesced backlogs (~290 facts each) do not flood the throwaway bus; the hourly candybar is the one under test there.
+
+**Decisions where the spine is silent**
+- The stored date covers the whole UTC date, not "from store time to midnight": rows are override state Epic 5 renders, and past fires are already dispatched, so the distinction is unobservable at dispatch time.
+- Occurrence beats rest-of-day when both cover one fire (the more specific override); the fact's reason is then `occurrence`.
+- A past or fireless date stores inertly (2.3 precedent), so `add_rest_of_day_skip` never consults the schedule.
+- The day-window read is exact (`start.date() <= day <= (end - 1m).date()`), not an over-read, so the dispatcher never pulls irrelevant rows.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+The three review layers (blind-hunter, edge-case-hunter, verification-gap) ran inline, because no subagent-spawn tool was available; the same deviation as 1.1 to 2.3. Diff: 30ed92e..2776031 over src, tests, .github and README. It is 56.5 kB, so the finding floor is N = min(floor(sqrt(56.5)+1), 10) = 8.
+
+**Patched** (bff8f2f)
+- *Blind + verification-gap.* `list_skips` ordered by `(fire_time, candybar_id)`; two day rows for one candybar tie on both keys (NULL fire_time), so the live store test's `[SKIP_DAY, NEXT_DAY]` assertion rested on unspecified Postgres tie order. low, patched: `order_by(fire_time, day, candybar_id)`; occurrence ordering (2.3) is unchanged because non-NULL fire_time dominates. Re-ran all seven live suites (20 passed).
+- *Blind.* `tests/test_skips.py`'s `Row` double no longer satisfied the `SkipRow` protocol structurally (no `day`); a future 2.3-style test folding a day row through that harness would die with AttributeError instead of a real failure. low, patched: `day: date | None = None` on the double.
+- *Blind.* `test_a_skip_for_another_date_is_inert` carried a self-contradicting comment from a drafting edit. low, patched: the comment now states the actual contract (the 25th's row is outside the tick's window, so it is not even read).
+
+**Rejected**
+- *Edge.* `list_skips(start, start)` (empty window) returns the date's day rows but no occurrence rows — an asymmetric contract. false: the dispatcher's windows are always non-empty (tick path `[minute, minute+1m)`; gap path `[last+1m, minute+1m)` with `minute > last + 1m`), and 2.3 established the store validates bounds, not ordering, with the same empty-window behavior for occurrences.
+- *Blind.* `previous_fire`/`next_fire` walk up to 1440 croniter steps across a skipped day for a `* * * * *` schedule. low, rejected: gap detection and API upcoming-fire calls only, bounded by the stored override set, and a shortcut index would add complexity for an operator-sized table.
+- *Blind.* A `* * * * *` candybar day-skipped emits up to 1440 `skipped` facts that day. rejected: the AC requires each suppressed fire to be recorded; thinning the record would falsify it.
+- *Blind.* `add_rest_of_day_skip` never checks the date against the schedule. rejected: inert-by-design (2.3 precedent), and Story 5.6 owns the 404 for a fireless date via `matches_tick`.
+- *Blind.* The `_require_date` `noqa: TRY004` suppresses ruff's TypeError preference. rejected: deliberate and documented — invalid skip inputs are one error class (ValueError) across both add functions.
+- *Edge.* `add_rest_of_day_skip`'s read-back after insert could return None if the candybar were deleted mid-call. false: nothing in `src/` deletes candybars (the only `session.delete` calls are in tests); same refutation as 2.3.
+- *Edge.* A day row for a date straddling the gap-read window edge could be missed. false: the window read uses exact date intersection `[start.date(), (end-1m).date()]`, pinned live by the boundary read (`[NEXT_DAY 00:00, day-after 00:00)` returns NEXT_DAY only) and by part B's 24h gap, which read the day row from a cursor on the skipped date.
+
+**Claims check:** nothing falsified. Checked: suppression until the next UTC midnight (live A), one fact per suppressed fire published on its own tick (live A: 23:40/23:45 tick-path, 23:50/23:55 at gap close), the following day dispatching normally (live A/B), registry-not-memory override state (role reads via `list_skips` per tick), occurrence-beats-day precedence, idempotent storage keeping the first note, and that the unwired-port behavior is still exactly Story 2.2 (2.3's regression test passes unchanged).
+
+**Deleted code check:** clean. The old single-kind `list_skips` query, `reason_for`/`__bool__` bodies and `group_skips` comprehension are re-established with the day clause; the `occurrence_skipped_for` rename re-established under `operator_skipped_for` with no other importers (grep-verified).
+
+**Verification-gap layer:** no gaps filed. Traced consumers of the changed `list_skips` (dispatcher role port — covered live; no other consumers in the repo), the `SkipSet`/`group_skips` extension (unit + live, with a behavioral control: if day rows were dropped, the live skipped candybar would run at 23:40/23:45 and the `runs()` assertion would fail), CI wiring (store test in the live-Postgres step, role test by node id in the fault step), and contract drift (skipped reason is a free string since 1.2 — no schema rev needed).
+
+**Deferred:** nothing.
 
 ## Design Notes
 
