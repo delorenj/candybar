@@ -3089,13 +3089,13 @@ jobs:
   - systemctl --user disable --now ipm-metrics.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/ipm-metrics.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794f-2891-7b02-aad7-ea8971e0c95a
   cutover_at: '2026-10-26T17:43:13.846779Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 8e423c2d-db9d-5737-bce2-f75918bf6728
+    result: success
+    at: '2026-10-26T17:45:02.964456Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:41:53.867771Z'
@@ -3106,6 +3106,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794f-2891-7b02-aad7-ea8971e0c95a enabled; first fire 2026-10-26T17:45:00Z
+  - at: '2026-10-26T17:46:59.915517Z'
+    action: verify
+    outcome: ok
+    detail: invocation 8e423c2d-db9d-5737-bce2-f75918bf6728 (scheduled) success exit=0 runtime=2760ms memory=87068672B cpu=0.2927
 - id: systemd:ipm-internal-dashboard.timer
   wave: '7.14'
   candybar:
@@ -3472,13 +3476,13 @@ jobs:
   - systemctl --user disable --now telnyx-s3-intake.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/telnyx-s3-intake.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17952-2ab7-78f1-a008-f994a0aaf1c7
   cutover_at: '2026-10-26T17:46:31.040278Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: b958e9f7-c33a-5c29-9d43-5447484cffd3
+    result: success
+    at: '2026-10-26T17:47:25.817207Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:45:36.576134Z'
@@ -3489,6 +3493,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17952-2ab7-78f1-a008-f994a0aaf1c7 enabled; first fire 2026-10-26T17:47:00Z
+  - at: '2026-10-26T17:47:38.094450Z'
+    action: verify
+    outcome: ok
+    detail: invocation b958e9f7-c33a-5c29-9d43-5447484cffd3 (scheduled) success exit=0 runtime=25720ms memory=75460608B cpu=0.7316
 - id: systemd:gruvato-acoustid-check.timer
   wave: '7.11'
   candybar:
@@ -3520,9 +3528,9 @@ jobs:
   - systemctl --user disable --now gruvato-acoustid-check.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/gruvato/deploy/gruvato-acoustid-check.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17953-d39d-708b-a96c-7cceefab032b
+  cutover_at: '2026-10-26T17:48:19.782147Z'
   verification:
     invocation_id: null
     result: null
@@ -3533,6 +3541,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:48:19.782147Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17953-d39d-708b-a96c-7cceefab032b enabled; first fire 2026-10-26T19:07:00Z
 - id: systemd:mobile-deploy-hub-catchup.timer
   wave: '7.11'
   candybar:
