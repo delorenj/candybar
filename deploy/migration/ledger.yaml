@@ -36,13 +36,13 @@ jobs:
   - systemctl --user disable --now newapi-allowances.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-allowances.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1793a-d2a0-7070-b267-4f6d3e41a3b5
   cutover_at: '2026-10-26T17:21:01.164216Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 5489318d-e9f2-5211-aa7b-49ea0885b505
+    result: success
+    at: '2026-10-26T17:25:06.003740Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:15:39.722006Z'
@@ -53,6 +53,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793a-d2a0-7070-b267-4f6d3e41a3b5 enabled; first fire 2026-10-26T17:25:00Z
+  - at: '2026-10-26T17:28:07.826265Z'
+    action: verify
+    outcome: ok
+    detail: invocation 5489318d-e9f2-5211-aa7b-49ea0885b505 (scheduled) success exit=0 runtime=5942ms memory=55091200B cpu=0.1787
 - id: systemd:newapi-vm-health
   wave: '7.13'
   candybar:
@@ -912,9 +916,9 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler internal'
-  status: planned
+  status: cutover
   candybar_id: 01a1793b-6dcd-730f-8317-5975681f9792
-  cutover_at: null
+  cutover_at: '2026-10-26T17:28:03.162377Z'
   verification:
     invocation_id: null
     result: null
@@ -933,6 +937,10 @@ jobs:
     action: cutover
     outcome: pinned-external
     detail: '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler external'
+  - at: '2026-10-26T17:28:03.162377Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793b-6dcd-730f-8317-5975681f9792 enabled after the batched hermes-gateway-restart; pin active
 - id: hermes:33god-pm:f3db72089593
   wave: '7.17'
   candybar:
@@ -967,9 +975,9 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler internal'
-  status: planned
+  status: cutover
   candybar_id: 01a1793b-7e99-7b33-b53e-514014a99922
-  cutover_at: null
+  cutover_at: '2026-10-26T17:28:03.172945Z'
   verification:
     invocation_id: null
     result: null
@@ -988,6 +996,10 @@ jobs:
     action: cutover
     outcome: pinned-external
     detail: '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler external'
+  - at: '2026-10-26T17:28:03.172945Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793b-7e99-7b33-b53e-514014a99922 enabled after the batched hermes-gateway-restart; pin active
 - id: hermes:delodocs-pm:fc39bd8b33c8
   wave: '7.17'
   candybar:
@@ -1021,9 +1033,9 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler internal'
-  status: planned
+  status: cutover
   candybar_id: 01a1793b-951c-7dbb-8aff-0abcb26bdf90
-  cutover_at: null
+  cutover_at: '2026-10-26T17:28:03.182875Z'
   verification:
     invocation_id: null
     result: null
@@ -1042,6 +1054,10 @@ jobs:
     action: cutover
     outcome: pinned-external
     detail: '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler external'
+  - at: '2026-10-26T17:28:03.182875Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793b-951c-7dbb-8aff-0abcb26bdf90 enabled after the batched hermes-gateway-restart; pin active
 - id: hermes:dumply:8aecd027dbd0
   wave: '7.17'
   candybar:
@@ -1075,9 +1091,9 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler internal'
-  status: planned
+  status: cutover
   candybar_id: 01a1793b-e235-7efd-8719-d316aba335b4
-  cutover_at: null
+  cutover_at: '2026-10-26T17:28:03.192006Z'
   verification:
     invocation_id: null
     result: null
@@ -1096,6 +1112,10 @@ jobs:
     action: cutover
     outcome: pinned-external
     detail: '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler external'
+  - at: '2026-10-26T17:28:03.192006Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793b-e235-7efd-8719-d316aba335b4 enabled after the batched hermes-gateway-restart; pin active
 - id: hermes:peter-griffin:b240575fae0c
   wave: '7.17'
   candybar:
@@ -1129,9 +1149,9 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler internal'
-  status: planned
+  status: cutover
   candybar_id: 01a1793b-f875-73c7-b1cd-4df0d7f28cbd
-  cutover_at: null
+  cutover_at: '2026-10-26T17:28:03.201181Z'
   verification:
     invocation_id: null
     result: null
@@ -1150,6 +1170,10 @@ jobs:
     action: cutover
     outcome: pinned-external
     detail: '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler external'
+  - at: '2026-10-26T17:28:03.201181Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793b-f875-73c7-b1cd-4df0d7f28cbd enabled after the batched hermes-gateway-restart; pin active
 - id: hermes:peter-griffin:3684c5aa8eac
   wave: '7.17'
   candybar:
@@ -1183,9 +1207,9 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler internal'
-  status: planned
+  status: cutover
   candybar_id: 01a1793c-0b29-7ef2-ac1d-aa1bc158ce1c
-  cutover_at: null
+  cutover_at: '2026-10-26T17:28:03.216463Z'
   verification:
     invocation_id: null
     result: null
@@ -1204,6 +1228,10 @@ jobs:
     action: cutover
     outcome: pinned-external
     detail: '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler external'
+  - at: '2026-10-26T17:28:03.216463Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793c-0b29-7ef2-ac1d-aa1bc158ce1c enabled after the batched hermes-gateway-restart; pin active
 - id: systemd:cache-prune-codex-tmp.timer
   wave: '7.7'
   candybar:
@@ -1234,9 +1262,9 @@ jobs:
   - systemctl --user disable --now cache-prune-codex-tmp.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune-codex-tmp.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17941-50aa-7b5e-a1f1-570707d1fd6d
+  cutover_at: '2026-10-26T17:28:06.560551Z'
   verification:
     invocation_id: null
     result: null
@@ -1247,6 +1275,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:28:06.560551Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-50aa-7b5e-a1f1-570707d1fd6d enabled; first fire 2026-10-26T18:17:00Z
 - id: systemd:cache-prune-daily.timer
   wave: '7.7'
   candybar:
@@ -1277,9 +1309,9 @@ jobs:
   - systemctl --user disable --now cache-prune-daily.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune-daily.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17941-5493-76ad-9549-cd33cde24f58
+  cutover_at: '2026-10-26T17:28:07.557073Z'
   verification:
     invocation_id: null
     result: null
@@ -1290,6 +1322,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:28:07.557073Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-5493-76ad-9549-cd33cde24f58 enabled; first fire 2026-10-27T09:23:00Z
 - id: systemd:cache-prune.timer
   wave: '7.7'
   candybar:
@@ -1320,9 +1356,9 @@ jobs:
   - systemctl --user disable --now cache-prune.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17941-5879-7692-beb8-549ad17f3e8d
+  cutover_at: '2026-10-26T17:28:08.575118Z'
   verification:
     invocation_id: null
     result: null
@@ -1333,6 +1369,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:28:08.575118Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-5879-7692-beb8-549ad17f3e8d enabled; first fire 2026-11-01T10:07:00Z
 - id: systemd:docker-prune.timer
   wave: '7.7'
   candybar:
@@ -1363,9 +1403,9 @@ jobs:
   - systemctl --user disable --now docker-prune.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/docker-prune.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17941-5c4f-7445-a8c9-4f653505764c
+  cutover_at: '2026-10-26T17:28:09.532912Z'
   verification:
     invocation_id: null
     result: null
@@ -1376,6 +1416,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:28:09.532912Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-5c4f-7445-a8c9-4f653505764c enabled; first fire 2026-10-27T09:41:00Z
 - id: systemd:state-maintain
   wave: '7.7'
   candybar:
@@ -1406,9 +1450,9 @@ jobs:
   - systemctl --user disable --now state-maintain.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/state-maintain.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17941-601b-745b-9070-d0f6fec1e893
+  cutover_at: '2026-10-26T17:28:10.502416Z'
   verification:
     invocation_id: null
     result: null
@@ -1419,6 +1463,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:28:10.502416Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-601b-745b-9070-d0f6fec1e893 enabled; first fire 2026-10-27T09:40:00Z
 - id: systemd:user-logrotate
   wave: '7.7'
   candybar:
@@ -1669,9 +1717,9 @@ jobs:
   - systemctl --user disable --now hindsight-capture-sweep.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/33GOD/bloodbank/services/hook-hub/systemd/hindsight-capture-sweep.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1793d-f18c-7e83-9080-f3e42a96bd1f
+  cutover_at: '2026-10-26T17:24:25.589397Z'
   verification:
     invocation_id: null
     result: null
@@ -1682,6 +1730,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:24:25.589397Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793d-f18c-7e83-9080-f3e42a96bd1f enabled; first fire 2026-10-26T17:30:00Z
 - id: systemd:hindsight-write-probe.timer
   wave: '7.10'
   candybar:
@@ -1717,9 +1769,9 @@ jobs:
   - systemctl --user disable --now hindsight-write-probe.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.agents/hooks/hindsight/systemd/hindsight-write-probe.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17941-24c0-79c4-81d7-8fc3dcdadf06
+  cutover_at: '2026-10-26T17:27:55.297867Z'
   verification:
     invocation_id: null
     result: null
@@ -1730,6 +1782,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:27:55.297867Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-24c0-79c4-81d7-8fc3dcdadf06 enabled; first fire 2026-10-26T18:04:00Z
 - id: systemd:hindsight-memory-analysis.timer
   wave: '7.10'
   candybar:
@@ -1762,9 +1818,9 @@ jobs:
   - systemctl --user disable --now hindsight-memory-analysis.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-memory-analysis.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1793e-2686-796d-bc20-a620f13809b1
+  cutover_at: '2026-10-26T17:24:39.511061Z'
   verification:
     invocation_id: null
     result: null
@@ -1775,6 +1831,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:24:39.511061Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793e-2686-796d-bc20-a620f13809b1 enabled; first fire 2026-10-27T09:00:00Z
 - id: systemd:hindsight-template-sweep.timer
   wave: '7.10'
   candybar:
@@ -1807,9 +1867,9 @@ jobs:
   - systemctl --user disable --now hindsight-template-sweep.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-template-sweep.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1793e-46ae-724c-9c34-eed9b832445b
+  cutover_at: '2026-10-26T17:24:47.477082Z'
   verification:
     invocation_id: null
     result: null
@@ -1820,3 +1880,7 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:24:47.477082Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793e-46ae-724c-9c34-eed9b832445b enabled; first fire 2026-10-27T08:30:00Z
