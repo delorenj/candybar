@@ -73,17 +73,18 @@ context:
 - **All five jobs use the AD-18 `systemd` runner** so the `.service` keeps hardening (pr-crusher's bwrap/RestrictNamespaces/systemd-creds/MemoryMax; tolt's batch.slice + TimeoutStartSec=9h). Only the `.timer` units retired.
 - **Source of truth changes:** delorenj/tower-of-lost-things `1576845` (ops/README.md units instruction retires the timers, retired-headers on both `foundry/cron/tolt-*-daily.timer`; the `.path` trigger instructions keep only `tolt-items-inbox.path`); delorenj/pr-crusher `8c64f90` (install.sh `--enable` no longer enables `pr-crusher.timer`). DeLoDocs is not git: retired-headers added to the two vault timer files and recorded as `nogit-sha256:` tokens in `source_of_truth.commit` (decision: the cutover blocker only requires a non-empty token; the sha256 pins the exact edited file).
 - **Cutovers (all five, 2026-10-26 17:18Z):** register-disabled → `systemctl --user disable --now <timer>` → probe retired → enable. The tolt timers were `systemctl link`-ed, so disable removed the links (expected on systemd 257; rollback enables by the repo path, filled by `plan --write`). `tolt-items-inbox.path` untouched (still enabled/active).
-- **Ledger commit note:** the post-cutover ledger state reached origin/main via a concurrent wave agent's commit (0b0b1c7 swept the shared `deploy/migration/ledger.yaml` while its own wave-7.12 cutover landed); all five 7.16 entries are present at HEAD with `status: cutover`, `candybar_id` and `cutover_at`.
-- **Internal-job manual runs:** honda-hunt-daily-check ran once (`trigger=manual`, invocation 0411dfdc): `fail`, exit 1, stderr tail shows the codex refresh token expired — exactly the pre-existing native failure (parity, not a migration defect). Metering works: 400 MB peak, cpu_load 0.31, runtime 12 s, and the runner's `start --wait` + journal-tail path produced the full record. delodocs-wiki-self-tuning-weekly manual run (invocation 9bb13c45): the executor started the unit at 17:19:52Z (journal `Starting...`), then a concurrent wave's `candybar-executor` restart SIGTERMed the `start --wait` client at 17:36Z — the record reads `fail / executor stopped (SIGTERM)` with metering up to the interruption (45 MB peak, cpu 0.99). The UNIT was not killed (systemd-runner work survives executor restarts) and kept running independently. Not re-run: a second manual run is refused as overlap while the unit runs, the plumbing is proven by the unit start plus honda's full metered record, and the ledger's verify gate is Monday's scheduled fire (native_failing parity: native last run failed on the 3600 s hermes timeout).
+- **Ledger commit note:** the post-cutover ledger state reached origin/main via a concurrent wave agent's commit (0b0b1c7 swept the shared `deploy/migration/ledger.yaml` while its own wave-7.12 cutover landed). Four 7.16 entries remain `cutover`; the wiki entry is `rolled-back` with a disabled candybar and active native timer after its interrupted manual invocation.
+- **Internal-job manual runs:** honda-hunt-daily-check ran once (`trigger=manual`, invocation 0411dfdc): `fail`, exit 1, stderr tail shows the codex refresh token expired — exactly the pre-existing native failure (parity, not a migration defect). Metering works: 400 MB peak, cpu_load 0.31, runtime 12 s, and the runner's `start --wait` + journal-tail path produced the full record. delodocs-wiki-self-tuning-weekly manual run (invocation 9bb13c45): the executor started the unit at 17:19:52Z (journal `Starting...`), then a concurrent wave's `candybar-executor` restart SIGTERMed the `start --wait` client at 17:36Z — the record reads `fail / executor stopped (SIGTERM)` with metering up to the interruption (45 MB peak, cpu 0.99). The UNIT was not killed (systemd-runner work survives executor restarts) and kept running independently. Rolled back immediately through the ledger: the native timer is enabled/active and the candybar is disabled. Do not re-cut over until an uninterrupted systemd-runner proof succeeds. The unit itself kept running after the executor restart; no second manual invocation was sent.
 - **Token spend:** 0 for all five (systemd units; the job scripts do not write the AD-8 result file). Allowed by the wave AC ("else 0").
 - **No daemon code changed; no container redeploy** (per the wave rule — other waves run concurrently).
-- **DeLoDocs vault diffs (the vault is not git; these are the whole source-of-truth changes):** both files gained the same 3-line header at the top, no other lines touched:
+- **DeLoDocs vault diffs (the vault is not git):** both files initially gained the same 3-line header at the top, no other lines touched:
   ```diff
   +# RETIRED 2026-10-26 (candybar migration wave 7.16): candybar owns this job's
   +# schedule (systemd runner starts the .service). Do NOT enable this timer;
   +# rollback lives in 33GOD/candybar deploy/migration/ledger.yaml.
   ```
-  Applied to `/home/delorenj/code/DeLoDocs/Projects/project-fuckudeer/scripts/systemd/honda-hunt-daily-check.timer` (sha256 `dd4b6353…79716`) and `/home/delorenj/code/DeLoDocs/_vault/Workflows/systemd/delodocs-wiki-self-tuning-weekly.timer` (sha256 `99624124…091e`); full hashes in the ledger's `source_of_truth.commit` as `nogit-sha256:` tokens.
+  Wiki-only rollback replaced that header with `ROLLED BACK 2026-10-26`, `this timer is the live scheduler again`, and `Keep it enabled until a later ledger cutover succeeds`.
+  Applied to `/home/delorenj/code/DeLoDocs/Projects/project-fuckudeer/scripts/systemd/honda-hunt-daily-check.timer` (sha256 `dd4b6353…79716`) and `/home/delorenj/code/DeLoDocs/_vault/Workflows/systemd/delodocs-wiki-self-tuning-weekly.timer` (initial sha256 `99624124…091e`); after rollback the wiki timer header was changed to `ROLLED BACK / this timer is the live scheduler again` (sha256 `2787fc74…4a4f2`). Full current hashes are in the ledger's `source_of_truth.commit` as `nogit-sha256:` tokens.
 
 ## Spec Change Log
 
@@ -96,9 +97,9 @@ Inline layers (no subagent tool in this session — same documented deviation as
 | 1 | `systemd:delodocs-wiki-self-tuning-weekly.timer`'s `deviations` list holds a non-deviation note ("no jitter; Persistent absent natively") | low | Rejected: cosmetic ledger wording; rewriting the committed ledger for it is churn with no behavioral gain |
 | 2 | `tolt-items-daily` and `pr-crusher` now fire at the exact same instant (03:00 local); native jitter (120s/15m) spread them | low | Rejected as intended: jitter-drop is the recorded, accepted deviation (AD-21); both units run under batch.slice with TimeoutStartSec caps, and the inventory mapping itself assigned both `0 3 * * *` |
 | 3 | wiki-self-tuning manual run still in flight at review time (native failure mode is a 3600 s hermes timeout) | gap | Resolved before close: waited for the terminal result; recorded in Implementation Notes |
-| 4 | Double/zero-scheduler states, `.path` trigger, rollback command correctness | false | Verified live: all five timers `not-found`/`disabled`, all five candybars enabled, `tolt-items-inbox.path` still enabled+active, rollback commands enable by resolved unit-file path (linked-unit safe on systemd 257) |
+| 4 | Double/zero-scheduler states, `.path` trigger, rollback command correctness | false | Verified live: four timers retired and their candybars enabled; wiki rollback restored its timer and disabled its candybar; `tolt-items-inbox.path` stayed enabled+active. Rollback by resolved unit-file path works for linked units on systemd 257. |
 
-Matrix audit: this story changes no daemon code; every I/O-matrix row is a live-ops check and was executed live (cutover order, linked-timer link removal, internal manual runs, external jobs deferred to first scheduled fire).
+Matrix audit: this story changes no daemon code; live checks covered cutover order, linked-timer link removal, internal manual runs (wiki failure rolled back), and external jobs deferred to first scheduled fire.
 
 ## Design Notes
 
@@ -108,7 +109,7 @@ Matrix audit: this story changes no daemon code; every I/O-matrix row is a live-
 ## Verification
 
 **Commands:**
-- `uv run candybar migrate status --wave 7.16` -- five entries, status `cutover`
-- `systemctl --user list-timers --all | grep -E 'tolt|pr-crusher|honda|delodocs-wiki-self'` -- none of the five timers listed
-- `curl -s localhost:8700/candybars | grep -c America/New_York` -- 5 new candybars enabled with the NY zone
+- `uv run candybar migrate status --wave 7.16` -- four entries `cutover`; wiki entry `rolled-back` with native timer restored
+- `systemctl --user list-timers --all | grep -E 'tolt|pr-crusher|honda|delodocs-wiki-self'` -- four migrated timers have no next fire; wiki native timer is enabled/active after rollback
+- `curl -s localhost:8700/candybars` -- four migrated candybars enabled in the NY zone; wiki candybar disabled after rollback
 - `git -C ~/code/tower-of-lost-things log --oneline -1` and `git -C ~/code/pr-crusher log --oneline -1` -- source-of-truth commits pushed
