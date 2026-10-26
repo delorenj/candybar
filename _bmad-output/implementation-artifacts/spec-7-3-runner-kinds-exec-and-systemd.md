@@ -63,9 +63,9 @@ context:
 
 ## Verification
 
-- Unit suite plus live Postgres/NATS: 982 passed before the final test additions, ruff clean on `src` and the new tests (11 pre-existing `E741` in untouched fault-injection/misfire tests).
+- Unit suite with live Postgres/NATS and `CANDYBAR_TEST_SYSTEMD=1`: 991 passed, 16 skipped; ruff clean on `src` and the new tests (11 pre-existing `E741` in untouched fault-injection/misfire tests); deploy-hygiene gate OK.
 - `CANDYBAR_TEST_SYSTEMD=1`: 6 live tests on the real systemd 257 user manager (the GC premise, end-to-end metering with env reaching the unit, failing unit with journal tail, unstartable unit, unknown and overlapping unit, `OnFailure=` skip).
-- Live deploy: see Spec Change Log.
+- Live deploy (2026-10-26 ~15:16Z): container rebuilt per deploy/README.md (alembic 0005 -> 0006 ran, `/healthz` 200), `candybar-executor` restarted (schema guard open at head 0006), `candybar-unit-holder` installed and active. `deploy-smoke` fired on the new executor at 15:16, 15:17 and 15:18. Canaries `deploy-smoke-exec` and `deploy-smoke-systemd` (manifests in `deploy/smoke/`, noise, `*/15`) registered through the CLI: a manual run of each recorded `success` with memory 3.1 MB / 3.8 MB and CPU 0.22 / 0.33; the unit's journal shows the AD-8 env (invocation id, trigger) reached it; the generated drop-in and holder `After=` line are in place.
 
 ## Independent Review (inline layers, 2026-10-26)
 
@@ -77,4 +77,4 @@ No subagent tool was available; blind, edge-case and verification-gap layers ran
 
 ## Spec Change Log
 
-- 2026-10-26: implemented; the "properties persist" AC premise was falsified on systemd 257 and replaced by the holder (Design Notes).
+- 2026-10-26: deployed and verified live; implemented; the "properties persist" AC premise was falsified on systemd 257 and replaced by the holder (Design Notes).

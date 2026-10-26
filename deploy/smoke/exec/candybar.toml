@@ -1,0 +1,16 @@
+# Canary for the exec runner (Story 7.3). No side effects: burns a few ms of
+# CPU and some memory so metering has something to read. After a redeploy:
+#   candybar run <id>   (id from GET /candybars) and read /candybars/<id>/invocations
+[candybar]
+name = "deploy-smoke-exec"
+description = "Exec-runner canary: argv, workdir and env literal reach a no-side-effect job"
+tags = ["canary", "runner-exec"]
+schedule = "*/15 * * * *"
+noise = true
+
+[candybar.runner]
+kind = "exec"
+argv = ["/bin/sh", "-c", "head -c 8000000 /dev/zero | tail -c 1 >/dev/null; echo \"smoke-exec $SMOKE_LITERAL\""]
+workdir = "/tmp"
+env = { SMOKE_LITERAL = "ok" }
+timeout_s = 60

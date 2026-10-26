@@ -1,0 +1,13 @@
+# Canary for the systemd runner (Story 7.3): starts deploy/host/candybar-smoke.service.
+# Proves the drop-in env, `start --wait`, the holder reference, metering and
+# the journal path on a real unit with nothing to lose.
+[candybar]
+name = "deploy-smoke-systemd"
+description = "Systemd-runner canary: starts candybar-smoke.service and meters it from the unit"
+tags = ["canary", "runner-systemd"]
+schedule = "*/15 * * * *"
+noise = true
+
+[candybar.runner]
+kind = "systemd"
+unit = "candybar-smoke.service"

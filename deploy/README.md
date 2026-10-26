@@ -87,7 +87,7 @@ The executor starts a candybar as an `exec` argv or a `systemd` unit (README,
 Neither is something to edit by hand; the runner restores both if they drift.
 Retiring a migrated unit's timer leaves its drop-in and holder line in place
 (harmless). The canaries `deploy-smoke-exec` and `deploy-smoke-systemd` are the
-live proof of both kinds after a redeploy (`candybar run <id>`; no side effects).
+live proof of both kinds after a redeploy (`candybar run <id>`; no side effects; manifests in `deploy/smoke/`, registered with `candybar register`).
 
 ### Deploying (a pair)
 
