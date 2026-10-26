@@ -89,6 +89,8 @@ Production smoke (live bus + live registry): registered a temporary `smoke-exec`
 
 ## Spec Change Log
 
+- 2026-10-26 (3cf089f, deferred hard-kill fix): the row-first design gains a pre-spawn **claim**. `claim_invocation` commits the `invocations` row with `result` NULL, keyed by the idempotency key, before the child spawns, and the terminal write finalizes it with an UPDATE guarded by `result IS NULL`. Counter accounting changes: `total_invoked` counts at claim, once per key, and `total_successful` counts at finalize. A redelivered command whose key is claimed but unfinished (executor SIGKILL/OOM, or a failed terminal write) is recorded `fail` ("abandoned: ...") and is not re-run, unless the candybar carries the `retry-on-abandon` tag (bounded to 3 deliveries). Child text (stderr tail, messages) is scrubbed of NUL/lone surrogates before the write. Running invocations now read back with `result: null`.
+
 ## Review Triage Log
 
 Review run inline because no subagent-spawn tool was available to this session; blind, edge-case, and verification-gap checks applied to the owned diff (/tmp/story-1-6-diff.txt, 92kB). Finding floor N=min(floor(sqrt(92)+1),10)=10. Findings and routes:

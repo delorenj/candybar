@@ -54,8 +54,8 @@ development_status:
   2-4-skip-the-rest-of-a-day: done
   epic-2-retrospective: optional
 
-  epic-3: in-progress
-  3-1-memory-peak-and-average-cpu-load-per-invocation: review  # AC3 blocked: deferred pre-exec cgroup join (deferred-work.md)
+  epic-3: done
+  3-1-memory-peak-and-average-cpu-load-per-invocation: done  # AC3 holds after the pre-exec cgroup join (3cf089f)
   3-2-average-gpu-load-per-invocation-nvidia-smi-or-zero: done
   3-3-token-spend-counter-and-full-exemplar-coverage: done
   epic-3-retrospective: optional

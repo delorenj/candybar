@@ -146,3 +146,11 @@ A second reviewer, not the implementer, reviewed commits `8527960` + `15f8805` (
 | R3 | edge | A NaN could reach the measures, pass the PG `>= 0` check (PG sorts NaN above every number), and then fail `InvocationMetrics(ge=0)` on every republish | low | Not reachable: cpu/memory come from integer cgroupfs fields, and pmon prints integer or `-` SM values. **reject**. |
 
 Verdict: **stays at review**. AC 3 is blocked on the deferred pre-exec join (R1). Every other AC and constraint holds.
+
+### Deferred pre-exec join landed (2026-10-26, 3cf089f)
+
+The deferred pre-exec join (R1/R2, deferred-work.md) is fixed. The parent opens the scope's `cgroup.procs` (O_CLOEXEC) before spawn, and a `preexec_fn` writes `0` in the forked child, so the job is in its scope before exec. This supersedes the frozen "post-spawn join" design note. The tradeoff (preexec_fn over a clone3 helper) is recorded in deferred-work.md.
+- AC 1 still holds: the real-cgroup suite ran as root on the host, 6/6. It now includes `test_sub_millisecond_job_is_metered_from_its_first_instruction` (40/40 instant runs metered) and `test_child_sees_itself_in_its_scope_at_exec`, and both fail on the pre-fix code.
+- AC 3 now holds. After the redeploy, the first `deploy-smoke` fire (tick:29883738, 14:18 UTC) recorded memory_peak_bytes 262144 and cpu_load 0.1099. Every earlier `deploy-smoke` row read 0.
+
+Verdict: **done**.
