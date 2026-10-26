@@ -134,10 +134,14 @@ def skips_rig(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> Rig:  # noqa: F811
     async def fire_results(session: Any, keys: Any) -> dict[str, str]:
         return {}
 
+    async def skip_stored(session: Any, skip_id: UUID) -> bool:
+        return skip_id in rig.stored  # type: ignore[attr-defined]
+
     monkeypatch.setattr(app_module, "add_occurrence_skip", add_occurrence_skip)
     monkeypatch.setattr(app_module, "add_rest_of_day_skip", add_rest_of_day_skip)
     monkeypatch.setattr(app_module, "list_skips", list_skips)
     monkeypatch.setattr(app_module, "fire_results", fire_results)
+    monkeypatch.setattr(app_module, "skip_stored", skip_stored)
     return rig
 
 
@@ -299,10 +303,11 @@ def test_repeat_skip_publishes_nothing_and_stores_once(skips_rig: Rig) -> None:
     assert c.post(f"/candybars/{row.id}/skip", json=body).status_code == 200
     assert c.post(f"/candybars/{row.id}/skip", json=body).status_code == 200
     assert len(stored_of(skips_rig, row)) == 1
-    # Both calls publish (the route cannot know beforehand), with the SAME
-    # deterministic id, so the broker dedupes the retry.
+    # The repeat publishes nothing at all: the route sees the stored row and
+    # answers 200 from it (the deterministic id only matters for a concurrent
+    # twin racing the check, which the broker dedupes).
     facts = skip_facts(skips_rig)
-    assert len(facts) == 2 and facts[0].id == facts[1].id
+    assert len(facts) == 1
 
 
 def test_skip_occurrence_coexisting_with_day_skip(skips_rig: Rig) -> None:
@@ -556,9 +561,13 @@ def test_route_fact_feeds_skip_applied(
     async def list_skips(session: Any, start: Any, end: Any = None) -> list[Any]:
         return []
 
+    async def not_stored(session: Any, skip_id: UUID) -> bool:
+        return False
+
     monkeypatch.setattr(app_module, "add_occurrence_skip", noop_add)
     monkeypatch.setattr(app_module, "add_rest_of_day_skip", noop_add)
     monkeypatch.setattr(app_module, "list_skips", list_skips)
+    monkeypatch.setattr(app_module, "skip_stored", not_stored)
     # The hub reads the registry itself (stream.py's own imports).
     async def hub_get(session: Any, candybar_id: UUID) -> Row | None:
         return rig.rows.get(candybar_id)

@@ -100,6 +100,7 @@ from candybar.registry import (
     name_taken,
     occurrence_skip_id,
     rest_of_day_skip_id,
+    skip_stored,
     update_candybar,
     uuid7,
 )
@@ -540,9 +541,9 @@ def create_app(
         passed stores inertly (the Epic 2 precedent). The published fact is
         the same `skipped` fact the dispatcher emits for the fire — the SSE
         hub turns it into `skip.applied` with no stream changes — and its id
-        is the store's deterministic skip id, so a retried POST broker-dedupes
-        against its own first publish. A repeat of a stored skip publishes
-        nothing and keeps the first row.
+        is the store's deterministic skip id, so a concurrent twin that slips
+        past the repeat check broker-dedupes against it. A repeat of a stored
+        skip publishes nothing and keeps the first row.
         """
         async with session_factory() as session:
             row = await get_candybar(session, candybar_id)
@@ -579,6 +580,17 @@ def create_app(
                 kind = SKIP_REST_OF_DAY
                 target = first
                 skip_id = rest_of_day_skip_id(candybar_id, day)
+            if await skip_stored(session, skip_id):
+                # A repeat of a stored skip: 200, nothing published, nothing
+                # written — the first row and its note stand. (A concurrent
+                # twin that slips past this check republishes the SAME
+                # deterministic event id, which the broker dedupes.)
+                body = {"skipped": True}
+                if fire_time is not None:
+                    body["fireTime"] = utc_iso(fire)
+                else:
+                    body["date"] = day.isoformat()
+                return JSONResponse(content=body)
             event = build_candybar_skipped(
                 candybar_id=candybar_id,
                 name=row.name,
@@ -596,15 +608,9 @@ def create_app(
                     "could not publish candybar.skipped; the skip is not stored, retry the request",
                 )
             if fire_time is not None:
-                _entry, created = await add_occurrence_skip(session, candybar_id, fire)
+                await add_occurrence_skip(session, candybar_id, fire)
             else:
-                _entry, created = await add_rest_of_day_skip(session, candybar_id, day)
-            if not created:
-                # The skip was already stored: the first row and note stand.
-                # The fact went out for this request too (the route cannot
-                # know beforehand), but it carries the deterministic skip id,
-                # so the broker dedupes it against the first publish.
-                log.debug("skip already stored for %s (%s)", candybar_id, kind)
+                await add_rest_of_day_skip(session, candybar_id, day)
             body: dict[str, Any] = {"skipped": True}
             if fire_time is not None:
                 body["fireTime"] = utc_iso(fire)

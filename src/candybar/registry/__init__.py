@@ -54,6 +54,7 @@ from .store import (
     record_terminal_invocation,
     rest_of_day_skip_id,
     session_scope,
+    skip_stored,
     update_candybar,
 )
 
@@ -101,6 +102,7 @@ __all__ = [
     "record_terminal_invocation",
     "rest_of_day_skip_id",
     "session_scope",
+    "skip_stored",
     "update_candybar",
     "uuid7",
 ]

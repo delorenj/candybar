@@ -248,6 +248,16 @@ def rest_of_day_skip_id(candybar_id: UUID, day: date) -> UUID:
     return uuid5(SKIP_NAMESPACE, f"{SKIP_REST_OF_DAY}:{candybar_id}:{day.isoformat()}")
 
 
+async def skip_stored(session: AsyncSession, skip_id: UUID) -> bool:
+    """Whether a skip row with this (deterministic) id already exists (Story 5.6).
+
+    The API's repeat-POST check: a skip already stored publishes no second
+    fact. Skip ids are derived from the skip itself, so the read is a plain
+    primary-key lookup.
+    """
+    return await session.get(Skip, skip_id) is not None
+
+
 async def add_rest_of_day_skip(
     session: AsyncSession, candybar_id: UUID, day: date, *, reason: str | None = None
 ) -> tuple[SkipEntry, bool]:
