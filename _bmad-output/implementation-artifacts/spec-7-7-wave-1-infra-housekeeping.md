@@ -2,7 +2,7 @@
 title: 'Story 7.7: Wave 1 — infra housekeeping (10 jobs)'
 type: 'chore'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'in-review'
 route: 'dispatch'
 baseline_commit: '8576544b215cbf3d0b98df755e4ace6d226301ad'
 review_loop_iteration: 0
@@ -58,10 +58,10 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `~/code/infra/systemd/user/*.timer` — retired-notice headers on the 7 tracked wave-1 timers; import gnome-shell-restart/srvls-metrics/srvls-snapshot units; re-link live; commit+push — no re-install can resurrect a retired timer without seeing the notice
-- [ ] `~/code/srvls/srvls` + `README.md` — candybar collector + unit-snippet pointer to infra; commit+push — inventory must not under-report after cutover
-- [ ] `deploy/migration/ledger.yaml` — 10 entries via `plan --write`; commit+push — the cutover record
-- [ ] cutover ×10, manual run ×10, rollback demo on zellij-ark, verify fast jobs — the wave itself
+- [x] `~/code/infra/systemd/user/*.timer` — retired-notice headers on the 7 tracked wave-1 timers; import gnome-shell-restart/srvls-metrics/srvls-snapshot units; re-link live; commit+push — no re-install can resurrect a retired timer without seeing the notice
+- [x] `~/code/srvls/srvls` + `README.md` — candybar collector + unit-snippet pointer to infra; commit+push — inventory must not under-report after cutover
+- [x] `deploy/migration/ledger.yaml` — 10 entries via `plan --write`; commit+push — the cutover record
+- [x] cutover ×10, manual run ×10, rollback demo on zellij-ark, verify fast jobs — the wave itself
 - [ ] `_bmad-output/implementation-artifacts/sprint-status.yaml` + this spec — status updates; commit+push
 
 **Acceptance Criteria:**
