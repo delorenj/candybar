@@ -2,7 +2,7 @@
 title: 'Story 5.5: Noise collection endpoints'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-review'
+status: 'done'
 baseline_commit: '02b1559e16246ff137a744cc94d656e580d2b985'
 route: 'dispatch'
 review_loop_iteration: 0
