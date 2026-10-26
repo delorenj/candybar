@@ -1562,9 +1562,9 @@ jobs:
   - systemctl --user disable --now zellij-ark.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/zellij-ark.timer
-  status: rolled-back
+  status: cutover
   candybar_id: 01a17941-ac64-7f65-bd20-f20d8d84e0bf
-  cutover_at: '2026-10-26T17:28:30.029554Z'
+  cutover_at: '2026-10-26T17:34:37.621030Z'
   verification:
     invocation_id: null
     result: null
@@ -1587,6 +1587,10 @@ jobs:
     action: rollback
     outcome: ok
     detail: candybar 01a17941-ac64-7f65-bd20-f20d8d84e0bf disabled
+  - at: '2026-10-26T17:34:37.621030Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-ac64-7f65-bd20-f20d8d84e0bf enabled; first fire 2026-10-26T17:36:00Z
 - id: systemd:gnome-shell-restart.timer
   wave: '7.7'
   candybar:
@@ -1959,9 +1963,9 @@ jobs:
   - systemctl --user disable --now forever-ago-vault.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/forever-ago-vault.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17947-520d-738a-9d21-e6de2dd10e64
+  cutover_at: '2026-10-26T17:34:40.168941Z'
   verification:
     invocation_id: null
     result: null
@@ -1976,6 +1980,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:34:40.168941Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17947-520d-738a-9d21-e6de2dd10e64 enabled; first fire 2026-10-27T07:00:00Z
 - id: systemd:restic-vault
   wave: '7.9'
   candybar:
@@ -2451,9 +2459,9 @@ jobs:
   - systemctl --user disable --now holocene-pad-roster.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/33GOD/holocene/services/pad-roster/holocene-pad-roster.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17947-3ec2-7286-84ea-41f2ee8ba9ee
+  cutover_at: '2026-10-26T17:34:35.207349Z'
   verification:
     invocation_id: null
     result: null
@@ -2464,6 +2472,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:34:35.207349Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17947-3ec2-7286-84ea-41f2ee8ba9ee enabled; first fire 2026-10-26T17:36:00Z
 - id: systemd:hermes-single-install-guard.timer
   wave: '7.8'
   candybar:
