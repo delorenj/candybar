@@ -20,3 +20,8 @@ node_modules/
 
 # Rust SDK (story 4.3): cargo build output (sdks/rust and its example crates)
 sdks/**/target/
+
+# This is a scheduler manifest for a job named milkshake-ledger-backup,
+# not a backup copy. The machine-wide *-backup ignore otherwise hides it.
+!deploy/migration/manifests/milkshake-ledger-backup/
+!deploy/migration/manifests/milkshake-ledger-backup/candybar.toml

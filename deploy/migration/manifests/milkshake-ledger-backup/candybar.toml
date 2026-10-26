@@ -1,0 +1,14 @@
+# Migrated from systemd:milkshake-ledger-backup.timer (wave 7.9, AD-18/AD-21).
+# Cutover, verification and exact rollback: deploy/migration/ledger.yaml.
+# For systemd runners the .service keeps its environment, timeout and OnFailure;
+# only the .timer retires. The crontab exec runner uses no systemd unit.
+[candybar]
+name = "milkshake-ledger-backup"
+description = "Daily verified Milkshake ledger copy, offsite restic snapshot to gdrive:backups/milkshake, 14d local prune, .last-success stamp for infra-doctor"
+tags = ["migrated", "backups"]
+schedule = "30 2 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "milkshake-ledger-backup.service"
