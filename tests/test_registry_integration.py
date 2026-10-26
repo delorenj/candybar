@@ -639,3 +639,65 @@ def test_definitions_crud_round_trip_through_the_api(migrated_db: str) -> None:
     assert renamed.status_code == 200 and renamed.json()["name"] == "crud-c"
     assert sink.events[0].data.name == "crud-c"
     assert client.patch(f"/candybars/{uuid7()}", json={"noise": True}).status_code == 404
+
+
+def test_definition_update_lock_serializes_and_maps_rename_clash(migrated_db: str) -> None:
+    """Story 5.1 store primitives on real Postgres.
+
+    `lock_candybar` holds the row FOR UPDATE: a second locker waits until the
+    first commits and then sees the committed values (so a PATCH never diffs
+    against a stale before-image). `update_candybar` maps a rename onto a
+    taken name to DuplicateNameError via the real unique constraint.
+    """
+    import asyncio
+
+    from candybar.registry import lock_candybar, update_candybar
+
+    async def scenario() -> None:
+        engine = create_registry_engine(migrated_db)
+        try:
+            async with session_scope(engine) as session:
+                a = await insert_candybar(
+                    session, CandybarManifest(name="lock-a", schedule="* * * * *",
+                                              entrypoint="/bin/true"),
+                )
+                await insert_candybar(
+                    session, CandybarManifest(name="lock-b", schedule="* * * * *",
+                                              entrypoint="/bin/true"),
+                )
+
+            first_locked = asyncio.Event()
+            release = asyncio.Event()
+
+            async def holder() -> None:
+                async with session_scope(engine) as session:
+                    row = await lock_candybar(session, a.id)
+                    first_locked.set()
+                    await release.wait()
+                    await update_candybar(session, row, {"schedule": "0 * * * *"})
+
+            async def second() -> str:
+                async with session_scope(engine) as session:
+                    row = await lock_candybar(session, a.id)
+                    return row.schedule
+
+            hold = asyncio.create_task(holder())
+            await first_locked.wait()
+            waiter = asyncio.create_task(second())
+            done, _ = await asyncio.wait({waiter}, timeout=0.5)
+            assert not done, "second lock_candybar did not wait for the first transaction"
+            release.set()
+            await hold
+            assert await asyncio.wait_for(waiter, timeout=5) == "0 * * * *"
+
+            with pytest.raises(DuplicateNameError):
+                async with session_scope(engine) as session:
+                    row = await lock_candybar(session, a.id)
+                    await update_candybar(session, row, {"name": "lock-b"})
+            async with session_scope(engine) as session:
+                assert (await lock_candybar(session, a.id)).name == "lock-a"
+                assert await lock_candybar(session, uuid7()) is None
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

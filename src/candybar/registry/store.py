@@ -386,7 +386,9 @@ async def update_candybar(
         await session.flush()
     except IntegrityError as exc:
         if "candybars_name_key" in str(exc):
-            raise DuplicateNameError(str(changes.get("name", row.name))) from exc
+            # Never touch `row` here: the failed flush expired it, and any
+            # attribute load raises PendingRollbackError instead of this.
+            raise DuplicateNameError(str(changes.get("name", ""))) from exc
         raise
     return row
 

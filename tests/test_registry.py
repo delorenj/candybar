@@ -230,3 +230,27 @@ def test_sole_writer_guard_sanity_registry_does_touch_it() -> None:
     # The guard above is meaningless if nothing can ever match: the registry
     # module must contain DB imports for the scan to be real.
     assert _offenders(SRC, allow_registry=False) != []
+
+
+def test_update_candybar_refuses_registry_owned_fields_before_touching_the_db() -> None:
+    """Story 5.1: ids, timestamps and counters are never caller-updatable."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from candybar.registry import UPDATABLE_FIELDS, update_candybar
+
+    assert set(UPDATABLE_FIELDS) == {"name", "description", "tags", "schedule", "entrypoint", "noise"}
+    row = SimpleNamespace(name="x", total_invoked=0)
+    for field in ("id", "total_invoked", "created_at"):
+        with pytest.raises(ValueError, match="not updatable"):
+            asyncio.run(update_candybar(None, row, {field: 1}))  # type: ignore[arg-type]
+    assert row.total_invoked == 0
+
+
+def test_manifest_rejects_blank_tags() -> None:
+    """A blank tag would break the created/updated event payload (NonBlank tags)."""
+    for tags in ([""], ["ok", "   "]):
+        with pytest.raises(ValueError, match="non-blank"):
+            CandybarManifest(name="t", schedule="* * * * *", entrypoint="/bin/true", tags=tags)
+    assert CandybarManifest(name="t", schedule="* * * * *", entrypoint="/bin/true",
+                            tags=["a"]).tags == ["a"]
