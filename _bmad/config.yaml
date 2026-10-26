@@ -1,0 +1,9 @@
+document_output_language: "English"
+output_folder: "{project-root}/_bmad-output"
+g33:
+  # managed by g33 installer; rerun replaces only this section
+  name: "33GOD Integration"
+  description: "Routes 33GOD ecosystem work to owner components and turns worker evidence into BMAD implementation handoffs."
+  version: "1.1.0"
+  ecosystem_root: "."
+  g33_output_folder: "{project-root}/_bmad-output/implementation-artifacts"

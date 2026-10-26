@@ -1,0 +1,14 @@
+# g33 team override for bmad-code-review (supported customize.toml keys only).
+# Sparse: scalars would replace defaults; arrays append in order.
+
+[workflow]
+
+activation_steps_prepend = [
+  "Consult the g33 evidence-to-handoff separation (implemented/tested/installed/deployed/outstanding) when reviewing claims.",
+]
+
+activation_steps_append = []
+
+persistent_facts = [
+  "33GOD: reviewer must not be the implementer; check evidence paths in the handoff, see modules.g33 in _bmad/custom/config.toml.",
+]

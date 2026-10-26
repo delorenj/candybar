@@ -1,0 +1,14 @@
+# g33 team override for bmad-architecture (supported customize.toml keys only).
+# Sparse: scalars would replace defaults; arrays append in order.
+
+[workflow]
+
+activation_steps_prepend = [
+  "Consult the g33 ecosystem owner map (assets/ecosystem-map.toml) before producing architecture artifacts; route ownership via g33 ecosystem-route.",
+]
+
+activation_steps_append = []
+
+persistent_facts = [
+  "33GOD: architecture artifacts belong to the owning BMAD workflow; the g33 module map (modules.g33 in _bmad/custom/config.toml) records the ecosystem routing and doctrine pointer.",
+]
