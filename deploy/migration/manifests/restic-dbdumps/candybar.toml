@@ -1,0 +1,14 @@
+# Migrated from systemd:restic-dbdumps (wave 7.9, AD-18/AD-21).
+# Cutover, verification and exact rollback: deploy/migration/ledger.yaml.
+# For systemd runners the .service keeps its environment, timeout and OnFailure;
+# only the .timer retires. The crontab exec runner uses no systemd unit.
+[candybar]
+name = "restic-dbdumps"
+description = "Daily offsite restic snapshot of the nightly Postgres dumps and Hindsight manual dumps to gdrive:backups/postgres-dumps, plus forget/prune"
+tags = ["migrated", "backups"]
+schedule = "15 9 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "restic-dbdumps.service"

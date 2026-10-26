@@ -1,0 +1,14 @@
+# Migrated from systemd:delodocs-inbox-cleanup.timer (wave 7.9, AD-18/AD-21).
+# Cutover, verification and exact rollback: deploy/migration/ledger.yaml.
+# For systemd runners the .service keeps its environment, timeout and OnFailure;
+# only the .timer retires. The crontab exec runner uses no systemd unit.
+[candybar]
+name = "delodocs-inbox-cleanup"
+description = "DeLoDocs Inbox cleanup every 10 min — upload non-markdown attachments to MinIO delodocs-attachments, hold PDFs in Wax, delete deterministic junk"
+tags = ["migrated", "vault"]
+schedule = "*/10 * * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "delodocs-inbox-cleanup.service"

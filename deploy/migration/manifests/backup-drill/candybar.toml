@@ -1,0 +1,14 @@
+# Migrated from systemd:backup-drill.timer (wave 7.9, AD-18/AD-21).
+# Cutover, verification and exact rollback: deploy/migration/ledger.yaml.
+# For systemd runners the .service keeps its environment, timeout and OnFailure;
+# only the .timer retires. The crontab exec runner uses no systemd unit.
+[candybar]
+name = "backup-drill"
+description = "Monthly restore drill — verify and restore the newest forever-ago tarball and a restic sample, byte-compare against the live vault"
+tags = ["migrated", "backups"]
+schedule = "0 9 1 * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "backup-drill.service"

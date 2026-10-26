@@ -1,0 +1,14 @@
+# Migrated from systemd:ifvault-nightly.timer (wave 7.9, AD-18/AD-21).
+# Cutover, verification and exact rollback: deploy/migration/ledger.yaml.
+# For systemd runners the .service keeps its environment, timeout and OnFailure;
+# only the .timer retires. The crontab exec runner uses no systemd unit.
+[candybar]
+name = "ifvault-nightly"
+description = "Nightly IntelliForia vault backup — snapshot over ssh from the droplet, verify, docker boot test, restic to gdrive:backups/ifvault"
+tags = ["migrated", "backups", "intelliforia"]
+schedule = "40 1 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "ifvault-nightly.service"

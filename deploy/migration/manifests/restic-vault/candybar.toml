@@ -1,0 +1,14 @@
+# Migrated from systemd:restic-vault (wave 7.9, AD-18/AD-21).
+# Cutover, verification and exact rollback: deploy/migration/ledger.yaml.
+# For systemd runners the .service keeps its environment, timeout and OnFailure;
+# only the .timer retires. The crontab exec runner uses no systemd unit.
+[candybar]
+name = "restic-vault"
+description = "Nightly offsite restic snapshot of the DeLoDocs vault to gdrive:backups/delodocs, plus forget/prune (7d/4w/12m/3y)"
+tags = ["migrated", "backups"]
+schedule = "30 4 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "restic-vault.service"

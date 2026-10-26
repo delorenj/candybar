@@ -1,0 +1,14 @@
+# Migrated from systemd:forever-ago-vault.timer (wave 7.9, AD-18/AD-21).
+# Cutover, verification and exact rollback: deploy/migration/ledger.yaml.
+# For systemd runners the .service keeps its environment, timeout and OnFailure;
+# only the .timer retires. The crontab exec runner uses no systemd unit.
+[candybar]
+name = "forever-ago-vault"
+description = "Nightly local tarball snapshot of the DeLoDocs vault (keep newest 3); offsite history via restic-vault"
+tags = ["migrated", "backups"]
+schedule = "0 3 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "forever-ago-vault.service"

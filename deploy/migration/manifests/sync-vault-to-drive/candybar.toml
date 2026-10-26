@@ -1,0 +1,17 @@
+# Migrated from crontab:22 (wave 7.9, AD-18/AD-21).
+# Cutover, verification and exact rollback: deploy/migration/ledger.yaml.
+# For systemd runners the .service keeps its environment, timeout and OnFailure;
+# only the .timer retires. The crontab exec runner uses no systemd unit.
+[candybar]
+name = "sync-vault-to-drive"
+description = "rclone sync of the DeLoDocs vault (~/d) to gdrive:ObsidianVault with flock, 100m self-timeout and vox announcements"
+tags = ["migrated", "vault"]
+schedule = "30 */2 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "exec"
+argv = ["/home/delorenj/.local/bin/sync-vault-to-drive"]
+workdir = "/home/delorenj"
+env = {}
+timeout_s = 7200

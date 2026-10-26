@@ -2818,7 +2818,7 @@ jobs:
   source_of_truth:
     repo: delorenj/infra
     path: scripts/dev-journal-hermes-nightly.sh
-    commit: 4cd59522819cbd97b3dbfbde244f790b6ad46905
+    commit: 7c1b7d2129cdc099de084d66c6549f601b00ee8d
   disable:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 8da3f24263f9 --scheduler external'
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron pause 8da3f24263f9'
@@ -2838,6 +2838,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17951-0470-7f83-8bbd-dfa5c7ce30f2 enabled; first fire 2026-10-27T10:00:00Z
+  - at: '2026-10-26T17:52:02.620983Z'
+    action: source-of-truth
+    outcome: updated
+    detail: delorenj/infra scripts/dev-journal-hermes-nightly.sh @ 7c1b7d2129cdc099de084d66c6549f601b00ee8d (tracked wrapper home / executable source)
 - id: systemd:dev-journal-ensure-nightly.timer
   wave: '7.15'
   candybar:
@@ -3021,8 +3025,8 @@ jobs:
   native_failing: false
   source_of_truth:
     repo: delorenj/agents
-    path: tools/jev-clairic/hermes/cron-jobs.json
-    commit: 584098d9ec560584b10252ce4b326cd47f5b0378
+    path: tools/jev-clairic/hermes/jev-rollup-cadence.sh
+    commit: 9a1cce1d7664b8276d80018ab841c7a7bdc74471
   disable:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 9b5dadbd1e4d --scheduler external'
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron pause 9b5dadbd1e4d'
@@ -3066,6 +3070,10 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation 0aa5d24a-2ca8-578e-baeb-c96c9592adc5 (scheduled) success exit=0 runtime=290ms memory=16482304B cpu=0.659
+  - at: '2026-10-26T17:52:02.621013Z'
+    action: source-of-truth
+    outcome: updated
+    detail: delorenj/agents tools/jev-clairic/hermes/jev-rollup-cadence.sh @ 9a1cce1d7664b8276d80018ab841c7a7bdc74471 (tracked wrapper home / executable source)
 - id: systemd:ipm-metrics.timer
   wave: '7.14'
   candybar:
