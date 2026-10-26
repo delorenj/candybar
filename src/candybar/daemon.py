@@ -10,12 +10,15 @@ the process exits rather than running half-alive.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 
 from .api.role import run_api
 from .dispatcher.role import run_dispatcher
 from .executor.role import run_executor
 from .heartbeat.role import run_heartbeat
+
+log = logging.getLogger(__name__)
 
 RoleFn = Callable[[asyncio.Event], Awaitable[None]]
 
@@ -48,6 +51,10 @@ def resolve_roles(requested: str) -> list[str]:
 
 async def run_daemon(roles: list[str], stop: asyncio.Event) -> None:
     """Run the selected roles concurrently until `stop` is set or one crashes."""
+    if "executor" in roles and "api" not in roles:
+        # /metrics rides the api role's server (Story 1.7): an executor-only
+        # process records series nobody can scrape.
+        log.warning("executor role running without api role: /metrics is not exposed")
     async with asyncio.TaskGroup() as tg:
         for role in roles:
             tg.create_task(ROLES[role](stop), name=f"candybar-role-{role}")

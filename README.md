@@ -85,3 +85,33 @@ minute boundary (`tick_id = tick:<unix_epoch_minute>`, JetStream `Nats-Msg-Id`
 = event id for dedupe). It is the only component allowed to own a clock (AD-1).
 Live-bus tests: `CANDYBAR_TEST_NATS=1 uv run pytest tests/test_heartbeat_integration.py`
 (add `CANDYBAR_TICK_E2E=1` for the literal 5-minute subscriber window).
+
+## Metrics (Prometheus, AD-9)
+
+The api role serves `GET /metrics` (same port as the API) for everything the
+executor records in the same process. Series are labeled `{candybar_id, result}`
+only (`result` is `success` or `fail`). Each invocation's id is attached as an
+`invocation_id` **exemplar**, never as a label, so cardinality stays at two
+series per candybar.
+
+| metric | type | unit |
+|---|---|---|
+| `candybar_invocations_total` | counter | invocations |
+| `candybar_invocation_runtime_milliseconds` | histogram (10ms–1h buckets) | wall ms |
+
+Exemplars are only emitted in the OpenMetrics format, which the endpoint
+negotiates from the `Accept` header. Prometheus 3.x asks for it by default, but
+it stores exemplars only with `--enable-feature=exemplar-storage`.
+
+```promql
+# success vs fail rate per candybar
+sum by (candybar_id, result) (rate(candybar_invocations_total[5m]))
+# failure ratio per candybar (0, not "no data", for a candybar that never failed)
+sum by (candybar_id) (rate(candybar_invocations_total{result="fail"}[5m]))
+  / sum by (candybar_id) (rate(candybar_invocations_total[5m]))
+# p95 runtime per candybar (ms)
+histogram_quantile(0.95, sum by (candybar_id, le) (rate(candybar_invocation_runtime_milliseconds_bucket[5m])))
+```
+
+These queries are unit-tested by promtool in CI
+(`deploy/prometheus/candybar-queries.test.yml`).

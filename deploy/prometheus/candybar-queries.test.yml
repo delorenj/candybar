@@ -1,0 +1,79 @@
+# promtool unit test for the Candybar PromQL documented in README.md (Story 1.7).
+#
+#   docker run --rm -v "$PWD/deploy/prometheus:/w" --entrypoint promtool \
+#     prom/prometheus:v3.5.0 test rules /w/candybar-queries.test.yml
+#
+# Input series use the exporter's exact names and label set ({candybar_id,
+# result} only); tests/test_metrics.py fails if they drift from the code.
+rule_files: []
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      # candybar A: one success per minute, one failure every other minute.
+      - series: 'candybar_invocations_total{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success"}'
+        values: '0+1x10'
+      - series: 'candybar_invocations_total{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="fail"}'
+        values: '0 0 1 1 2 2 3 3 4 4 5'
+      # candybar B: only successes. The exporter materializes the fail series
+      # at zero on first observation, so the ratio below yields 0, not no-data.
+      - series: 'candybar_invocations_total{candybar_id="0199a1b2-0000-7000-8000-00000000000b",result="success"}'
+        values: '0+2x10'
+      - series: 'candybar_invocations_total{candybar_id="0199a1b2-0000-7000-8000-00000000000b",result="fail"}'
+        values: '0x10'
+      # runtime histogram for A: every observation lands in the 500ms bucket.
+      - series: 'candybar_invocation_runtime_milliseconds_bucket{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success",le="250"}'
+        values: '0x10'
+      - series: 'candybar_invocation_runtime_milliseconds_bucket{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success",le="500"}'
+        values: '0+1x10'
+      - series: 'candybar_invocation_runtime_milliseconds_bucket{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success",le="+Inf"}'
+        values: '0+1x10'
+      - series: 'candybar_invocation_runtime_milliseconds_count{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success"}'
+        values: '0+1x10'
+      - series: 'candybar_invocation_runtime_milliseconds_sum{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success"}'
+        values: '0+400x10'
+
+    promql_expr_test:
+      # Success vs fail rate per candybar (per second over 10m).
+      - expr: sum by (candybar_id, result) (increase(candybar_invocations_total[10m]))
+        eval_time: 10m
+        exp_samples:
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success"}'
+            value: 10
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="fail"}'
+            value: 5
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000b",result="success"}'
+            value: 20
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000b",result="fail"}'
+            value: 0
+
+      # Failure ratio per candybar.
+      - expr: |
+          sum by (candybar_id) (rate(candybar_invocations_total{result="fail"}[10m]))
+            / sum by (candybar_id) (rate(candybar_invocations_total[10m]))
+        eval_time: 10m
+        exp_samples:
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a"}'
+            value: 0.3333333333333333
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000b"}'
+            value: 0
+
+      # Mean runtime (ms) per candybar and result.
+      - expr: |
+          sum by (candybar_id, result) (rate(candybar_invocation_runtime_milliseconds_sum[10m]))
+            / sum by (candybar_id, result) (rate(candybar_invocation_runtime_milliseconds_count[10m]))
+        eval_time: 10m
+        exp_samples:
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success"}'
+            value: 400
+
+      # p95 runtime (ms) per candybar.
+      - expr: |
+          histogram_quantile(0.95,
+            sum by (candybar_id, le) (rate(candybar_invocation_runtime_milliseconds_bucket[10m])))
+        eval_time: 10m
+        exp_samples:
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a"}'
+            value: 487.5

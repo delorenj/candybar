@@ -1,6 +1,8 @@
 """FastAPI app factory for the candybar API role.
 
-Story 1.4 scope: `POST /candybars` (register) only. The flow follows the
+Story 1.4 scope: `POST /candybars` (register). Story 1.7 adds `GET /metrics`
+(Prometheus exposition of the process registry, OpenMetrics-negotiated so the
+executor's `invocation_id` exemplars survive the scrape). The register flow follows the
 spine's state rule — the `bloodbank.cron.candybar.created` fact is published
 FIRST, then the registry row commits in the same request flow; a publish
 failure means no row (503), a unique-violation race maps to 409.
@@ -18,7 +20,9 @@ from typing import Any
 import nats.errors
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import REGISTRY, CollectorRegistry
+from prometheus_client.exposition import choose_encoder
 from pydantic import BaseModel, ConfigDict
 
 from candybar.events.builders import build_candybar_created
@@ -82,8 +86,20 @@ def candybar_row_json(row: Any) -> dict[str, Any]:
     }
 
 
-def create_app(*, session_factory: SessionFactory, sink: Any) -> FastAPI:
+def create_app(
+    *,
+    session_factory: SessionFactory,
+    sink: Any,
+    metrics_registry: CollectorRegistry = REGISTRY,
+) -> FastAPI:
     app = FastAPI(title="candybar", docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.get("/metrics")
+    async def metrics(request: Request) -> Response:
+        # Prometheus asks for application/openmetrics-text when it can store
+        # exemplars; anything else gets the classic text format 0.0.4.
+        encoder, content_type = choose_encoder(request.headers.get("accept", ""))
+        return Response(content=encoder(metrics_registry), media_type=content_type)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_problem(_request: Request, exc: RequestValidationError) -> JSONResponse:

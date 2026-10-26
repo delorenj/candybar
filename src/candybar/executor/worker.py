@@ -34,6 +34,7 @@ from ..events.envelope import (
 )
 from ..registry.models import Invocation
 from ..registry.store import TerminalInvocation
+from .metrics import EXECUTOR_METRICS, ExecutorMetrics
 from .runner import ProcessRegistry, RunOutcome, run_invocation
 
 log = logging.getLogger(__name__)
@@ -155,6 +156,7 @@ class Executor:
         publish: Callable[[Envelope], Awaitable[None]],
         run: Callable[..., Awaitable[RunOutcome]] = run_invocation,
         registry: ProcessRegistry | None = None,
+        metrics: ExecutorMetrics | None = None,
     ) -> None:
         self._by_key = by_key
         self._entrypoint = entrypoint
@@ -162,7 +164,20 @@ class Executor:
         self._publish = publish
         self._run = run
         self.registry = registry or ProcessRegistry()
+        self.metrics = metrics if metrics is not None else EXECUTOR_METRICS
         self._inflight: set[str] = set()
+
+    def _observe(self, rec: TerminalInvocation) -> None:
+        """Metrics never fail an invocation: log and carry on."""
+        try:
+            self.metrics.observe(
+                candybar_id=rec.candybar_id,
+                result=rec.result,
+                invocation_id=rec.invocation_id,
+                runtime_ms=rec.runtime_ms or 0,
+            )
+        except Exception:
+            log.exception("metric recording failed for invocation %s", rec.invocation_id)
 
     async def handle_message(self, msg: object) -> None:
         """Terminate poison payloads; nak operational failures; ack terminal states."""
@@ -270,6 +285,10 @@ class Executor:
             else:  # pragma: no cover - winner rolled back too; retry cleanly
                 await msg.nak(delay=1)  # type: ignore[attr-defined]
             return
+
+        # The committed row is the once-per-execution anchor: metrics are
+        # observed here and never on the redelivery/republish path (AD-9).
+        self._observe(rec)
 
         try:
             await self._publish(terminal_event_for(envelope, rec))

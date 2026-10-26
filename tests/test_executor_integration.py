@@ -13,7 +13,7 @@ import json
 import os
 import stat
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import nats
 import pytest
@@ -25,6 +25,7 @@ from nats.js.api import (
     StreamConfig,
 )
 from nats.js.errors import NotFoundError
+from prometheus_client import CollectorRegistry
 from sqlalchemy import select
 
 from candybar.events import build_candybar_invoke, parse_envelope
@@ -33,7 +34,7 @@ from candybar.events.envelope import (
     CandybarFailedEvent,
     CandybarInvokedEvent,
 )
-from candybar.executor import ProcessRegistry, run_invocation
+from candybar.executor import ExecutorMetrics, ProcessRegistry, run_invocation
 from candybar.executor.worker import Executor
 from candybar.registry import (
     CandybarManifest,
@@ -164,6 +165,7 @@ def test_command_to_terminal_row_end_to_end(tmp_path: Path, monkeypatch) -> None
                 spawns += 1
                 return await run_invocation(**kwargs)
 
+            metrics = ExecutorMetrics(CollectorRegistry())
             executor = Executor(
                 by_key=by_key,
                 entrypoint=entrypoint,
@@ -171,7 +173,14 @@ def test_command_to_terminal_row_end_to_end(tmp_path: Path, monkeypatch) -> None
                 publish=publish,
                 run=counting_run,
                 registry=ProcessRegistry(),
+                metrics=metrics,
             )
+
+            def metric(name: str, cid: UUID, result: str) -> float:
+                value = metrics.registry.get_sample_value(
+                    name, {"candybar_id": str(cid), "result": result}
+                )
+                return value or 0.0
 
             ok_command = build_candybar_invoke(
                 candybar_id=ok_id,
@@ -220,6 +229,13 @@ def test_command_to_terminal_row_end_to_end(tmp_path: Path, monkeypatch) -> None
                     )
                 )
                 assert len(count.scalars().all()) == 1
+            # Story 1.7: metrics agree with the registry counters — the
+            # redelivery did not recount; runtime observed once, from the row.
+            assert metric("candybar_invocations_total", ok_id, "success") == 1
+            assert metric("candybar_invocation_runtime_milliseconds_count", ok_id, "success") == 1
+            assert metric("candybar_invocation_runtime_milliseconds_sum", ok_id, "success") == (
+                row.runtime_ms
+            )
 
             # Failure path: exit 3 -> failed event, counters +1/+0.
             fail_command = build_candybar_invoke(
@@ -245,6 +261,8 @@ def test_command_to_terminal_row_end_to_end(tmp_path: Path, monkeypatch) -> None
             assert info.state.messages == 4
             last = parse_envelope(json.loads((await js.get_msg(events_stream, seq=4)).data))
             assert isinstance(last, CandybarFailedEvent)
+            assert metric("candybar_invocations_total", fail_id, "fail") == 1
+            assert metric("candybar_invocations_total", fail_id, "success") == 0
         finally:
             for stream in (commands_stream, events_stream):
                 try:
@@ -258,5 +276,60 @@ def test_command_to_terminal_row_end_to_end(tmp_path: Path, monkeypatch) -> None
                         await session.delete(row)  # cascades invocations
             await engine.dispose()
             await nc.drain()
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=60))
+
+
+def test_concurrent_terminal_records_never_lose_counter_updates() -> None:
+    """Regression (found by the Story 1.7 live smoke): parallel executions of
+    one candybar each commit their terminal row; the counters must equal the
+    row count. An ORM read-modify-write lost updates under READ COMMITTED."""
+    _ensure_schema()
+
+    async def scenario() -> None:
+        from datetime import UTC, datetime
+
+        engine = create_registry_engine()
+        cid = uuid4()
+        manifest = CandybarManifest.model_validate(
+            {"name": f"itest-race-{uuid4().hex[:12]}", "schedule": "* * * * *",
+             "entrypoint": "/bin/true"}
+        )
+        try:
+            async with session_scope(engine) as session:
+                await insert_candybar(session, manifest, candybar_id=cid)
+
+            async def one(i: int) -> None:
+                now = datetime.now(UTC)
+                rec = TerminalInvocation(
+                    invocation_id=uuid4(),
+                    candybar_id=cid,
+                    trigger="manual",
+                    tick_id=None,
+                    idempotency_key=f"candybar:{cid}:manual:{uuid4()}",
+                    result="success" if i % 3 else "fail",
+                    exit_code=0 if i % 3 else 1,
+                    runtime_ms=i,
+                    error_message=None,
+                    stderr_tail=None,
+                    token_spend=0,
+                    cost_usd=None,
+                    started_at=now,
+                    finished_at=now,
+                )
+                async with session_scope(engine) as session:
+                    await record_terminal_invocation(session, rec)
+
+            await asyncio.gather(*(one(i) for i in range(12)))
+            async with session_scope(engine) as session:
+                candybar = await session.get(Candybar, cid)
+                assert candybar.total_invoked == 12
+                assert candybar.total_successful == 8  # i % 3 != 0 for 8 of 0..11
+        finally:
+            async with session_scope(engine) as session:
+                row = await session.get(Candybar, cid)
+                if row is not None:
+                    await session.delete(row)
+            await engine.dispose()
 
     asyncio.run(asyncio.wait_for(scenario(), timeout=60))
