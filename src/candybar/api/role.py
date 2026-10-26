@@ -113,8 +113,12 @@ async def run_api(stop: asyncio.Event) -> None:
         )
     )
     feed = None
+    starting: asyncio.Task[None] | None = None
     try:
-        await hub.start()
+        # The first current row reads the registry: run it alongside, so REST
+        # (and /healthz) never wait on a slow database. The hub lock orders it
+        # with the first facts.
+        starting = asyncio.create_task(hub.start(), name="candybar-api-stream-start")
         try:
             feed = await subscribe_feed(nc, hub)
         except (nats.errors.Error, OSError, TimeoutError) as exc:
@@ -127,6 +131,9 @@ async def run_api(stop: asyncio.Event) -> None:
         await serve
     finally:
         hub.close()
+        if starting is not None and not starting.done():
+            starting.cancel()
+            await asyncio.gather(starting, return_exceptions=True)
         if feed is not None:
             try:
                 await feed.unsubscribe()

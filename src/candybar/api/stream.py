@@ -19,7 +19,9 @@ hub. Events are kept in a bounded ring buffer, and a reconnect whose
 `Last-Event-ID` is still in the buffer replays exactly the events after it.
 Any other id gets a `reset`: the client refetches `/schedule`. Payloads are
 absolute state under a stable patch `key`, so applying one twice changes
-nothing. The stream event names are API-level only, NOT Bloodbank types.
+nothing. `seq` counts within one boot only: after a `reset` the client also
+forgets the seqs it applied, since a restarted hub counts from 1 again. The
+stream event names are API-level only, NOT Bloodbank types.
 
 Client patch rule: on `current.advanced`, every row with `fireTime < cut` is
 `past`, the row matching `current` is `current`, and the rest are
@@ -215,6 +217,17 @@ class ScheduleStream:
     def _status(self) -> dict[str, Any]:
         return {"cut": utc_iso(first_tick_after(self._now())), "current": self._current_json}
 
+    def _notice(self, type_: str, seq: int, **extra: Any) -> dict[str, Any]:
+        """A `ready`/`reset` payload: no patch, but the same envelope fields as one."""
+        return {
+            "type": type_,
+            "seq": seq,
+            "key": type_,
+            "at": utc_iso(self._clock()),
+            **extra,
+            **self._status(),
+        }
+
     # ------------------------------------------------------------------
     # Facts in.
 
@@ -238,7 +251,9 @@ class ScheduleStream:
                 log.exception("live stream: could not handle %s %s", fact.type, fact.id)
                 if not self._degraded:
                     self._degraded = True
-                    self._emit(EVENT_RESET, {"reason": "update_failed", **self._status()})
+                    notice = self._notice(EVENT_RESET, 0, reason="update_failed")
+                    del notice["type"], notice["seq"]  # _emit stamps both
+                    self._emit(EVENT_RESET, notice)
                 return
             self._degraded = False
 
@@ -427,7 +442,8 @@ class ScheduleStream:
     def _resume_after(self, last_event_id: str) -> int | None:
         """The seq to replay after, or None when the id cannot be resumed exactly."""
         boot, sep, n = last_event_id.strip().rpartition("-")
-        if not sep or boot != self.boot or not n.isdigit():
+        # ASCII digits only: str.isdigit() also accepts e.g. "²", which int() refuses.
+        if not sep or boot != self.boot or not (n.isascii() and n.isdigit()):
             return None
         seq = int(n)
         floor = self._buffer[0].seq - 1 if self._buffer else self._seq
@@ -441,11 +457,11 @@ class ScheduleStream:
         self._subscribers.add(sub)
         opening_id = self._id(self._seq)
         if last_event_id is None:
-            body = {"type": EVENT_READY, "seq": self._seq, **self._status()}
+            body = self._notice(EVENT_READY, self._seq)
             return sub, sse_frame(opening_id, EVENT_READY, body), []
         after = self._resume_after(last_event_id)
         if after is None:
-            body = {"type": EVENT_RESET, "seq": self._seq, "reason": "unresumable", **self._status()}
+            body = self._notice(EVENT_RESET, self._seq, reason="unresumable")
             return sub, sse_frame(opening_id, EVENT_RESET, body), []
         return sub, "", [event for event in self._buffer if event.seq > after]
 
@@ -482,7 +498,7 @@ class ScheduleStream:
                 body = {**body, "rows": await self._rows(event.candybar, window)}
             except Exception:
                 log.exception("live stream: could not render rows for %s", event.body.get("key"))
-                reset = {"type": EVENT_RESET, "seq": event.seq, "reason": "render_failed", **self._status()}
+                reset = self._notice(EVENT_RESET, event.seq, reason="render_failed")
                 return sse_frame(event_id, EVENT_RESET, reset)
         return sse_frame(event_id, event.type, body)
 

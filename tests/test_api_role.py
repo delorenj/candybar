@@ -147,6 +147,45 @@ def test_run_api_wires_engine_app_server_and_drains(monkeypatch: Any) -> None:
     assert "durable" not in kwargs and callable(kwargs["cb"])
     assert nc.feed.unsubscribed
     assert hub._closed
+    # A client that stopped reading is cancelled by uvicorn's backstop, not docker's SIGKILL.
+    assert server.config.timeout_graceful_shutdown == role_mod.GRACEFUL_SHUTDOWN_SECONDS < 10
+
+
+def test_run_api_computes_the_first_current_row_without_holding_rest(monkeypatch: Any) -> None:
+    """hub.start() reads the registry. A database that hangs must not stop
+    uvicorn (and /healthz) from serving, and stop must not wait on it."""
+    nc = _FakeNC()
+    engine = _FakeEngine()
+    servers: list[_FakeServer] = []
+    started: list[asyncio.Event] = []
+
+    class HangingHub(ScheduleStream):
+        async def start(self) -> None:
+            started.append(asyncio.Event())
+            await asyncio.Event().wait()  # the registry never answers
+
+    async def fake_connect_nats(url: str, **kwargs: Any) -> Any:
+        return nc
+
+    monkeypatch.setattr(role_mod, "ScheduleStream", HangingHub)
+    monkeypatch.setattr(role_mod, "connect_nats", fake_connect_nats)
+    monkeypatch.setattr(role_mod, "create_registry_engine", lambda: engine)
+    monkeypatch.setattr(role_mod, "create_app", lambda **kwargs: "the-app")
+    monkeypatch.setattr(
+        role_mod.uvicorn, "Server", lambda config: servers.append(_FakeServer(config)) or servers[0]
+    )
+
+    async def drive() -> None:
+        stop = asyncio.Event()
+        task = asyncio.create_task(role_mod.run_api(stop))
+        await asyncio.sleep(0.1)
+        assert started, "hub.start() must be called"
+        assert servers[0].served, "uvicorn must serve while hub.start() is still reading"
+        stop.set()
+        await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(drive())
+    assert nc.drained and engine.disposed
 
 
 def test_run_api_serves_rest_when_the_live_feed_cannot_attach(monkeypatch: Any) -> None:

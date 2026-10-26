@@ -736,6 +736,9 @@ def test_ready_carries_the_resume_point(world: World) -> None:
         [ready] = await client.read()
         assert ready["event"] == EVENT_READY and ready["id"] == f"{hub.boot}-1"
         assert client.raw[0].startswith("retry: ")
+        # Not a patch, but the same envelope fields as one.
+        assert ready["data"]["key"] == "ready" and ready["data"]["seq"] == 1
+        assert ready["data"]["at"] == world.now.isoformat()
         await client.close()
         await hub.handle(invoked(alpha, at(10, 10)))
         again = Client(hub, last_event_id=ready["id"])
@@ -753,8 +756,9 @@ def test_ready_carries_the_resume_point(world: World) -> None:
         lambda hub: "garbage",
         lambda hub: f"{hub.boot}-x",
         lambda hub: "",
+        lambda hub: f"{hub.boot}-\u00b2",  # str.isdigit() is True, int() refuses it
     ],
-    ids=["other-boot", "future", "evicted", "garbage", "non-numeric", "empty"],
+    ids=["other-boot", "future", "evicted", "garbage", "non-numeric", "empty", "unicode-digit"],
 )
 def test_matrix_unresumable_ids_reset(world: World, make_id) -> None:
     alpha = world.add("alpha", "*/5 * * * *")
@@ -768,6 +772,7 @@ def test_matrix_unresumable_ids_reset(world: World, make_id) -> None:
         assert reset["event"] == EVENT_RESET
         assert reset["data"]["reason"] == "unresumable"
         assert reset["id"] == f"{hub.boot}-5"  # the next reconnect resumes from here
+        assert {"type", "seq", "key", "at", "cut", "current"} <= set(reset["data"])
         await hub.handle(invoked(alpha, at(10, 25)))
         assert [f["id"] for f in await client.read()] == [f"{hub.boot}-6"]
 
@@ -843,6 +848,8 @@ def test_matrix_db_down_resets_once_per_failure_streak(world: World) -> None:
         await hub.handle(tick(at(10, 16)))
         [reset] = dispatched(await client.read())
         assert reset["event"] == EVENT_RESET and reset["data"]["reason"] == "update_failed"
+        assert reset["data"]["key"] == "reset" and reset["data"]["seq"] == 1
+        assert reset["id"] == f"{hub.boot}-1"  # buffered: a resume replays it
         world.db_down = False
         world.now = at(10, 17, 1)
         await hub.handle(tick(at(10, 17)))  # recovered: alpha@10:20 is current
@@ -997,3 +1004,25 @@ def test_route_refuses_a_bad_window_as_problem_json(world: World, params) -> Non
     assert response.status_code == 422
     assert response.headers["content-type"] == "application/problem+json"
     assert response.json()["status"] == 422
+
+
+def test_an_app_built_without_a_hub_still_serves_the_stream(world: World) -> None:
+    """create_app's default hub (tests, tools): a ready frame and a clean end."""
+
+    async def scenario() -> httpx2.Response:
+        app = create_app(session_factory=world.session, sink=None, now=lambda: world.now)
+        hub = app.state.stream
+        assert isinstance(hub, ScheduleStream)
+        transport = httpx2.ASGITransport(app=app)
+        async with httpx2.AsyncClient(transport=transport, base_url="http://t") as client:
+            request = asyncio.create_task(client.get("/schedule/stream"))
+            for _ in range(100):
+                if hub.subscriber_count:
+                    break
+                await asyncio.sleep(0.01)
+            hub.close()
+            return await request
+
+    response = asyncio.run(scenario())
+    assert response.status_code == 200
+    assert [f["event"] for f in parse_sse(response.text)] == [EVENT_READY]

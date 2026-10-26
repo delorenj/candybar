@@ -144,7 +144,7 @@ curl -N 'https://candybar.delo.sh/schedule/stream?from=2026-10-26T00:00:00Z&to=2
 #
 # id: 3f9c1a7e02b4-0
 # event: ready
-# data: {"type":"ready","seq":0,"cut":"...","current":{...row...}}
+# data: {"type":"ready","seq":0,"key":"ready","at":"...","cut":"...","current":{...row...}}
 #
 # id: 3f9c1a7e02b4-1
 # event: current.advanced
@@ -183,7 +183,8 @@ Every payload is absolute, so applying one twice changes nothing.
 Ids are `<boot>-<n>`, and the last 1,024 events are kept. A reconnect whose
 `Last-Event-ID` is still in that buffer replays exactly the missed events. Any
 other id gets a `reset`: refetch `/schedule`. So does an api restart, which
-changes the boot.
+changes the boot. `seq` counts within one boot, so on a `reset` also forget the
+seqs you applied.
 
 Each tick sends a `: keepalive` comment, so there is no timer of its own. Stop
 closes every stream, so the role still stops inside docker's grace.
