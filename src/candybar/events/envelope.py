@@ -125,6 +125,9 @@ class CandybarCreatedData(BaseModel):
     description: str
     tags: list[NonBlank]
     schedule: NonBlank
+    # IANA zone the schedule is read in (Story 7.1, AD-16). Additive: absent
+    # on facts published before Epic 7, which read as UTC.
+    timezone: NonBlank = "UTC"
     noise: bool = False
 
 

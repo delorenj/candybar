@@ -72,7 +72,7 @@ from prometheus_client.exposition import choose_encoder
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from candybar.dispatcher.schedule import group_skips
+from candybar.dispatcher.schedule import group_skips, widen_skip_window
 from candybar.events.builders import (
     build_candybar_created,
     build_candybar_invoke,
@@ -142,6 +142,7 @@ class RegisterRequest(BaseModel):
     description: str = ""
     tags: list[str] = []
     schedule: str
+    timezone: str = "UTC"
     entrypoint: str
     noise: bool = False
 
@@ -166,6 +167,7 @@ class UpdateRequest(BaseModel):
     description: str = Field(default=None)  # type: ignore[assignment]
     tags: list[str] = Field(default=None)  # type: ignore[assignment]
     schedule: str = Field(default=None)  # type: ignore[assignment]
+    timezone: str = Field(default=None)  # type: ignore[assignment]
     entrypoint: str = Field(default=None)  # type: ignore[assignment]
     noise: bool = Field(default=None)  # type: ignore[assignment]
 
@@ -262,6 +264,7 @@ def definition_of(row: Any) -> dict[str, Any]:
         "description": row.description,
         "tags": list(row.tags),
         "schedule": row.schedule,
+        "timezone": row.timezone,
         "entrypoint": row.entrypoint,
         "noise": row.noise,
     }
@@ -365,6 +368,7 @@ def create_app(
                     description=manifest.description,
                     tags=list(manifest.tags),
                     schedule=manifest.schedule,
+                    timezone=manifest.timezone,
                     noise=manifest.noise,
                 )
                 try:
@@ -646,7 +650,7 @@ def create_app(
 
     @app.post("/candybars/{candybar_id}/skip-rest-of-day")
     async def skip_rest_of_day(candybar_id: UUID, body: SkipDayRequest) -> JSONResponse:
-        """Skip the rest of a UTC date: no fire of that day dispatches."""
+        """Skip the rest of a candybar-local date: no fire of that day dispatches (AD-16)."""
         return await _store_skip(candybar_id, fire_time=None, day=body.date)
 
     @app.post("/candybars/{candybar_id}/invoke", status_code=202)
@@ -738,7 +742,12 @@ def create_app(
         instant = clock()
         async with session_factory() as session:
             candybars = [WindowCandybar.of(row) for row in await list_candybars(session)]
-            skips = group_skips(await list_skips(session, skip_read_start(start, instant), end))
+            # Day rows are candybar-local dates: read the widened window and
+            # let each candybar's SkipSet (with its zone) decide precisely.
+            skips = group_skips(
+                await list_skips(session, *widen_skip_window(skip_read_start(start, instant), end)),
+                {c.id: c.tz for c in candybars},
+            )
         try:
             # croniter is CPU-bound and the api shares the daemon's event loop
             # with the heartbeat and dispatcher: compute off the loop.
@@ -763,7 +772,10 @@ def create_app(
         instant = clock()
         async with session_factory() as session:
             candybars = [WindowCandybar.of(row) for row in await list_candybars(session)]
-            skips = group_skips(await list_skips(session, first_tick_after(instant)))
+            skips = group_skips(
+                await list_skips(session, widen_skip_window(first_tick_after(instant), None)[0]),
+                {c.id: c.tz for c in candybars},
+            )
         row = await asyncio.to_thread(next_row, candybars, now=instant, skips=skips)
         if row is None:
             return problem(

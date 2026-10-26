@@ -24,7 +24,7 @@ RESULTS = ("success", "fail")
 # Skip kinds (Epic 2 owns the vocabulary). The kind is also the `skipped`
 # event's `data.reason` for an operator skip.
 SKIP_OCCURRENCE = "occurrence"  # one fire `{candybar_id, fire_time}` (Story 2.3)
-SKIP_REST_OF_DAY = "rest_of_day"  # one UTC date `{candybar_id, day}` (Story 2.4)
+SKIP_REST_OF_DAY = "rest_of_day"  # one candybar-local date `{candybar_id, day}` (Story 2.4, AD-16)
 SKIP_KINDS = (SKIP_OCCURRENCE, SKIP_REST_OF_DAY)
 
 
@@ -40,6 +40,9 @@ class Candybar(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     schedule: Mapped[str] = mapped_column(Text, nullable=False)
+    # IANA zone the cron is read in (Story 7.1, AD-16, migration 0005); every
+    # stored and emitted timestamp stays UTC.
+    timezone: Mapped[str] = mapped_column(Text, nullable=False, default="UTC", server_default="UTC")
     entrypoint: Mapped[str] = mapped_column(Text, nullable=False)
     noise: Mapped[bool] = mapped_column(nullable=False, default=False)
     total_invoked: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)

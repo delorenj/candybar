@@ -44,7 +44,7 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
 
-from ..dispatcher.schedule import NO_SKIPS, group_skips
+from ..dispatcher.schedule import NO_SKIPS, group_skips, widen_skip_window
 from ..events import parse_envelope
 from ..events import vocabulary as voc
 from ..events.envelope import Envelope
@@ -93,7 +93,7 @@ STREAM_TRIGGERS: dict[str, str] = {
 
 # The contract definition fields a `definition.changed` may report: the
 # entrypoint is executor-internal and is never echoed (Story 5.1).
-VISIBLE_FIELDS = frozenset({"name", "description", "tags", "schedule", "noise"})
+VISIBLE_FIELDS = frozenset({"name", "description", "tags", "schedule", "timezone", "noise"})
 
 BUFFER_SIZE = 1024  # events kept for Last-Event-ID replay
 QUEUE_SIZE = 1024  # undelivered events per subscriber before it is closed
@@ -275,9 +275,12 @@ class ScheduleStream:
         cut = first_tick_after(instant)
         async with self._session_factory() as session:
             candybars = {row.id: WindowCandybar.of(row) for row in await list_candybars(session)}
-            skips = group_skips(await list_skips(session, cut))
+            skip_rows = await list_skips(session, widen_skip_window(cut, None)[0])
         if overlay is not None:
             candybars[overlay.id] = overlay
+        # After the overlay: a skip's local dates follow the zone the fire
+        # times are computed in.
+        skips = group_skips(skip_rows, {c.id: c.tz for c in candybars.values()})
         row = await asyncio.to_thread(next_row, list(candybars.values()), now=instant, skips=skips)
         body = row.to_json() if row is not None else None
         self._current = (row.fire_time, row.candybar_id) if row is not None else None
@@ -366,6 +369,7 @@ class ScheduleStream:
                     "description": stored.description,
                     "tags": list(stored.tags),
                     "schedule": stored.schedule,
+                    "timezone": stored.timezone,
                     "noise": stored.noise,
                     "created_at": stored.created_at,
                 }
@@ -382,6 +386,7 @@ class ScheduleStream:
                     "description": data.description,
                     "tags": list(data.tags),
                     "schedule": data.schedule,
+                    "timezone": data.timezone,
                     "noise": data.noise,
                     "created_at": fact.time,
                 }
@@ -507,7 +512,10 @@ class ScheduleStream:
         start, end = window
         instant = self._now()
         async with self._session_factory() as session:
-            skips = group_skips(await list_skips(session, start, end)).get(candybar.id, NO_SKIPS)
+            skips = group_skips(
+                await list_skips(session, *widen_skip_window(start, end)),
+                {candybar.id: candybar.tz},
+            ).get(candybar.id, NO_SKIPS)
         rows = await asyncio.to_thread(
             candybar_rows, candybar, start, end, now=instant, skips=skips, current=self._current
         )

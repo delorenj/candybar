@@ -434,3 +434,15 @@ def test_tick_event_id_is_a_pure_function_of_tick_id():
     assert build_tick_fired(MINUTE, event_id=explicit).id == explicit
     with pytest.raises(ValueError, match="tick_id"):
         voc.tick_event_id("29883066")
+
+
+def test_created_fact_timezone_is_additive_and_defaults_to_utc():
+    """Story 7.1 (AD-16): `timezone` rides the created fact; facts that predate it read as UTC."""
+    event = build_candybar_created(
+        candybar_id=uuid4(), name="ifvault", description="", tags=[], schedule="40 1 * * *",
+        timezone="America/New_York",
+    )
+    assert parse_envelope(event.model_dump(mode="json")).data.timezone == "America/New_York"
+    legacy = event.model_dump(mode="json")
+    del legacy["data"]["timezone"]
+    assert parse_envelope(legacy).data.timezone == "UTC"

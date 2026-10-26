@@ -43,7 +43,9 @@ PROBLEM = "application/problem+json"
 
 
 def test_contract_parse_found_the_documented_fields() -> None:
-    assert LIST_KEYS == {"id", "name", "description", "tags", "schedule", "noise", "createdAt"}
+    assert LIST_KEYS == {
+        "id", "name", "description", "tags", "schedule", "timezone", "noise", "createdAt"
+    }
     assert dict(LIST_FIELDS)["tags"] == "list" and dict(LIST_FIELDS)["noise"] == "bool"
     assert {n for n, _ in EXTRA_SINGLE_FIELDS} == {"totalInvoked", "totalSuccessful"}
     assert set(FIELD_CHECKS) == SINGLE_KEYS
@@ -66,6 +68,7 @@ class Row:
     updated_at: datetime
     total_invoked: int = 0
     total_successful: int = 0
+    timezone: str = "UTC"
 
 
 class FakeSink:
@@ -143,7 +146,7 @@ def rig(monkeypatch: pytest.MonkeyPatch) -> Rig:
             manifest.name, id=candybar_id, description=manifest.description,
             tags=list(manifest.tags), schedule=manifest.schedule,
             entrypoint=manifest.entrypoint, noise=manifest.noise,
-            created_at=datetime.now(UTC),
+            timezone=manifest.timezone, created_at=datetime.now(UTC),
         )
 
     monkeypatch.setattr(app_module, "list_candybars", list_candybars)

@@ -88,6 +88,7 @@ class Def:
     created_at: datetime = DAY - timedelta(days=30)
     description: str = ""
     tags: list[str] = field(default_factory=list)
+    timezone: str = "UTC"
 
 
 @dataclass
@@ -338,7 +339,7 @@ def updated(d: Def, **changes: Any):
 def created(d: Def):
     return build_candybar_created(
         candybar_id=d.id, name=d.name, description=d.description, tags=list(d.tags),
-        schedule=d.schedule, noise=d.noise,
+        schedule=d.schedule, timezone=d.timezone, noise=d.noise,
     )
 
 
@@ -631,7 +632,7 @@ def test_created_before_commit_builds_the_definition_from_the_fact(world: World)
         [definition] = [f for f in frames if f["event"] == EVENT_DEFINITION_CHANGED]
         assert definition["data"]["definition"] == {
             "id": str(ghost.id), "name": "delta", "description": "", "tags": ["ops"],
-            "schedule": "*/30 * * * *", "noise": False, "createdAt": at(9, 59, 30).isoformat(),
+            "schedule": "*/30 * * * *", "timezone": "UTC", "noise": False, "createdAt": at(9, 59, 30).isoformat(),
         }
         assert [r["fireTime"] for r in definition["data"]["rows"]] == [
             at(10).isoformat(),

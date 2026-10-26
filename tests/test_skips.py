@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from candybar.dispatcher import Dispatcher
+from candybar.dispatcher.firetimes import ONE_DAY
 from candybar.dispatcher.schedule import (
     NO_SKIPS,
     SkipSet,
@@ -288,7 +289,7 @@ def test_overrides_are_read_for_the_tick_minute_only_without_a_gap():
     job = entry()
     h = Harness([job], [skip(job, at(10, 10))], FakeCursor(at(10, 9)))
     h.tick(at(10, 10))
-    assert h.windows == [(at(10, 10), at(10, 11))]
+    assert h.windows == [(at(10, 10) - ONE_DAY, at(10, 11) + ONE_DAY)]  # widened for local dates (AD-16)
 
 
 def test_backlog_tick_reads_no_overrides_and_publishes_nothing():
@@ -312,7 +313,7 @@ def test_skipped_latest_missed_fire_hands_the_misfire_run_to_the_previous_fire()
     assert (run.data.trigger, run.data.tick_id) == ("misfire", tid(at(10, 20)))
     (fact,) = h.skipped()
     assert (fact.data.reason, fact.data.tick_id) == ("occurrence", tid(at(10, 25)))
-    assert h.windows == [(at(10, 16), at(10, 29))]  # read back to the cursor
+    assert h.windows == [(at(10, 16) - ONE_DAY, at(10, 29) + ONE_DAY)]  # back to the cursor, widened
 
 
 def test_skip_on_an_earlier_missed_fire_is_recorded_with_its_own_reason_in_order():

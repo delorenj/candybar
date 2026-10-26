@@ -701,3 +701,70 @@ def test_definition_update_lock_serializes_and_maps_rename_clash(migrated_db: st
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_timezone_column_default_round_trip_and_migration_keeps_old_rows_utc() -> None:
+    """Story 7.1: migration 0005 adds `timezone` (NOT NULL, default UTC); a row that
+    predates it reads as UTC after upgrade, and a registered timezone round-trips."""
+    import asyncio
+
+    from alembic import command
+    from alembic.config import Config
+
+    from candybar.registry import get_candybar
+    from candybar.registry.store import list_schedules
+
+    cfg = Config(str(ALEMBC_INI))
+    cfg.set_main_option("sqlalchemy.url", _sync_url())
+    cfg.set_main_option("script_location", str(REPO_ROOT / "deploy" / "alembic"))
+    command.upgrade(cfg, "0004")
+    try:
+        with create_engine(_sync_url()).begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO candybars (id, name, description, tags, schedule, entrypoint, "
+                    "noise, total_invoked, total_successful, created_at, updated_at) VALUES "
+                    "(:id, 'pre-epic-7', '', '[]', '0 * * * *', '/bin/true', false, 0, 0, now(), now())"
+                ),
+                {"id": str(uuid7())},
+            )
+        command.upgrade(cfg, "head")
+
+        async def scenario() -> list[tuple[str, str]]:
+            engine = create_registry_engine(_sync_url())
+            try:
+                async with session_scope(engine) as session:
+                    ny = await insert_candybar(
+                        session,
+                        CandybarManifest(
+                            name="ifvault", schedule="40 1 * * *", entrypoint="/bin/true",
+                            timezone="America/New_York",
+                        ),
+                    )
+                    plain = await insert_candybar(
+                        session,
+                        CandybarManifest(name="plain", schedule="0 * * * *", entrypoint="/bin/true"),
+                    )
+                async with session_scope(engine) as session:
+                    assert (await get_candybar(session, ny.id)).timezone == "America/New_York"
+                    assert (await get_candybar(session, plain.id)).timezone == "UTC"
+                    entries = await list_schedules(session)
+                return sorted((e.name, e.timezone) for e in entries)
+            finally:
+                await engine.dispose()
+
+        assert asyncio.run(scenario()) == [
+            ("ifvault", "America/New_York"),
+            ("plain", "UTC"),
+            ("pre-epic-7", "UTC"),
+        ]
+        with create_engine(_sync_url()).connect() as conn:
+            col = conn.execute(
+                text(
+                    "SELECT is_nullable, column_default FROM information_schema.columns "
+                    "WHERE table_name = 'candybars' AND column_name = 'timezone'"
+                )
+            ).one()
+            assert col[0] == "NO" and "UTC" in col[1]
+    finally:
+        command.downgrade(cfg, "base")

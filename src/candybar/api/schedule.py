@@ -9,9 +9,10 @@ module is the pure computation, without a DB or a clock: the routes read the
 registry and the wall clock and pass them in, and 5.4 (stream payloads)
 reuses the same rows.
 
-Fire times come from the dispatcher's own helpers (`dispatcher/schedule.py`):
-the same croniter UTC evaluation, and the same `SkipSet` deciding which fires
-an operator skip covers. So a row is `skipped` exactly when the dispatcher
+Fire times come from the dispatcher's own helpers (`dispatcher/schedule.py`,
+over the one `fire_times` source, AD-16): the same evaluation of each
+candybar's cron in its own timezone, and the same `SkipSet` deciding which
+fires an operator skip covers. So a row is `skipped` exactly when the dispatcher
 publishes a `skipped` fact instead of a command for that tick.
 
 States, relative to `cut` = the first tick minute strictly after `now`:
@@ -25,12 +26,14 @@ row. Everything else is `upcoming`.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Any
 from uuid import UUID
 
+from ..dispatcher.firetimes import local_day_start
 from ..dispatcher.schedule import (
     NO_SKIPS,
     ONE_MINUTE,
@@ -41,6 +44,9 @@ from ..dispatcher.schedule import (
     next_fire,
 )
 from ..events.vocabulary import scheduled_idempotency_key, tick_id_for_minute
+from ..timezones import DEFAULT_TIMEZONE, TimezoneError, resolve_timezone
+
+log = logging.getLogger(__name__)
 
 # Bounds on one request. The api shares the daemon's event loop, and croniter
 # costs ~10µs per fire: a day of ten minutely crons is 14,400 rows.
@@ -65,6 +71,18 @@ class WindowCandybar:
     schedule: str
     noise: bool
     created_at: datetime
+    timezone: str = DEFAULT_TIMEZONE
+
+    @property
+    def tz(self) -> tzinfo:
+        """The zone the cron is read in. A stored name that no longer resolves
+        (written around the API) reads as UTC here, loudly: the read API must
+        keep answering for every other candybar."""
+        try:
+            return resolve_timezone(self.timezone)
+        except TimezoneError as exc:
+            log.error("candybar %s: %s; reading its schedule as UTC", self.name, exc)
+            return UTC
 
     @classmethod
     def of(cls, row: Any) -> WindowCandybar:
@@ -74,6 +92,7 @@ class WindowCandybar:
             schedule=row.schedule,
             noise=row.noise,
             created_at=row.created_at.astimezone(UTC),
+            timezone=getattr(row, "timezone", DEFAULT_TIMEZONE),
         )
 
 
@@ -197,11 +216,13 @@ def is_fire_of(candybar: WindowCandybar, fire: datetime) -> bool:
     dispatched under an older schedule has no row in a refetch, so the
     stream does not invent one either.
     """
-    return fire >= _registered_floor(candybar) and matches_tick(candybar.schedule, fire)
+    return fire >= _registered_floor(candybar) and matches_tick(
+        candybar.schedule, fire, candybar.tz
+    )
 
 
 def fires_on_day(candybar: WindowCandybar, day: date) -> datetime | None:
-    """The candybar's first fire on the UTC date `day`, or None (Story 5.6).
+    """The candybar's first fire on the candybar-local date `day`, or None (Story 5.6).
 
     None means the schedule never fires that day — the skip API's 404 for a
     fireless `{date}`. The returned fire doubles as the day fact's tick: it
@@ -209,11 +230,15 @@ def fires_on_day(candybar: WindowCandybar, day: date) -> datetime | None:
     immediately. Fires are day-bounded, so one `fires_between` call over the
     day answers both.
     """
-    start = datetime.combine(day, time(0), tzinfo=UTC)
-    end = start + timedelta(days=1)
+    tz = candybar.tz
+    start = local_day_start(day, tz)
+    end = local_day_start(day + timedelta(days=1), tz)
     if end <= _registered_floor(candybar):
         return None  # the whole day predates registration: no rows that day
-    return next(fires_between(candybar.schedule, max(start, _registered_floor(candybar)), end), None)
+    return next(
+        fires_between(candybar.schedule, max(start, _registered_floor(candybar)), end, tz=tz),
+        None,
+    )
 
 
 def schedule_row(
@@ -242,7 +267,7 @@ def _fires_in(candybar: WindowCandybar, start: datetime, end: datetime) -> Itera
     lo = max(start, _registered_floor(candybar))
     if lo >= end:
         return ()
-    return fires_between(candybar.schedule, lo, end)
+    return fires_between(candybar.schedule, lo, end, tz=candybar.tz)
 
 
 def next_fire_of(
@@ -254,7 +279,12 @@ def next_fire_of(
     skips + skipped days passed). None when the schedule never fires again.
     """
     try:
-        return next_fire(candybar.schedule, max(cut, _registered_floor(candybar)), skips=skips)
+        return next_fire(
+            candybar.schedule,
+            max(cut, _registered_floor(candybar)),
+            tz=candybar.tz,
+            skips=skips,
+        )
     except OverflowError:  # no fire before year 9999
         return None
 

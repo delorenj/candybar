@@ -18,8 +18,9 @@ Base: REST over HTTPS at a `*.delo.sh` hostname, plus one streaming channel for 
 
 ### Definitions
 
-- `GET /candybars` → list of registered Candybars: `{ id, name, description, tags[], schedule (standard cron string), noise: bool, createdAt }`.
-- `POST /candybars` → register a new Candybar (definition create path used by the Definitions tab).
+- `GET /candybars` → list of registered Candybars: `{ id, name, description, tags[], schedule (standard cron string), timezone (IANA zone name the cron is read in), noise: bool, createdAt }`.
+- `POST /candybars` → register a new Candybar (definition create path used by the Definitions tab). The body may carry `timezone` (IANA zone name, default `"UTC"`, validated against the zoneinfo database); `PATCH /candybars/{id}` may change it.
+- `timezone` (added 2026-10-26, Epic 7 / AD-16) is the zone the `schedule` cron string is evaluated in, as local wall time with Vixie-cron DST rules; `skip-rest-of-day`'s `date` is a date in that zone. It is additive and changes nothing else: every timestamp (`fireTime`, `createdAt`, stream events) stays ISO 8601 UTC, so the view still renders countdowns from `fireTime`.
 - `GET /candybars/{id}` → single definition plus registry metadata `{ totalInvoked, totalSuccessful }`.
 
 ### Schedule window

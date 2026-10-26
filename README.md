@@ -59,7 +59,8 @@ A candybar is a directory with a `candybar.toml` manifest (AD-8):
 name = "my-job"            # unique lowercase slug
 description = "what it does"
 tags = ["team-x"]
-schedule = "*/5 * * * *"   # standard 5-field cron, evaluated in UTC
+schedule = "*/5 * * * *"   # standard 5-field cron, read as wall time in `timezone`
+timezone = "UTC"           # optional IANA zone, e.g. "America/New_York" (default "UTC")
 entrypoint = "./run.sh"    # resolved against the manifest dir; must exist
 noise = false              # optional
 ```
@@ -69,9 +70,34 @@ uv run candybar daemon --roles api   # serves POST /candybars on 127.0.0.1:8700
 uv run candybar register ./my-job    # -> 201 + row + bloodbank.cron.candybar.created
 ```
 
-Invalid cron/name → `application/problem+json` (422); duplicate name → 409;
+Invalid cron/name/timezone → `application/problem+json` (422); duplicate name → 409;
 bus down → 503 and no row. API bind: `CANDYBAR_API_HOST`/`CANDYBAR_API_PORT`;
 CLI target: `CANDYBAR_API_URL`.
+
+## Timezones and DST (Story 7.1, AD-16)
+
+A candybar's cron is read as **local wall time** in its `timezone` (an IANA
+name, default `UTC`, so every pre-Epic-7 candybar is unchanged). The cron string
+is stored exactly as written; only which UTC instants it selects depends on the
+zone. Ticks, `tick_id`, idempotency keys, events and every API timestamp stay
+UTC.
+
+One helper, `dispatcher/firetimes.fire_times(schedule, tz, start_utc, end_utc)`,
+is the only source of fire instants. The dispatcher's tick match, the schedule
+window and next-fire reads, misfire planning and the skip walks all call it, so
+they cannot disagree. It applies the Vixie-cron DST rules (croniter alone fires
+`40 1 * * *` twice on the fall-back night):
+
+| Case | Rule | `America/New_York` example |
+| --- | --- | --- |
+| Repeated hour, fixed hour field | fires once, at the first occurrence | `40 1 * * *` on 2026-11-01 fires at 05:40Z only |
+| Repeated hour, hour field `*` | fires at both occurrences (real-time cadence) | `*/30 * * * *`, `0 * * * *` run every real 30 min / hour |
+| Gap, fixed hour field | fires once at the first existing minute after the gap | `30 2 * * *` on 2027-03-14 fires at 07:00Z (03:00 EDT) |
+| Gap, hour field `*` | the skipped wall minutes are not caught up | `30 * * * *` has no 02:30 that day |
+
+`skip-rest-of-day`'s `date` is a date in the candybar's zone. `GET /candybars`
+and the `created` / `updated` facts carry `timezone`; `PATCH /candybars/{id}`
+can change it.
 
 ## Definitions API (CAP-8, Story 5.1)
 
@@ -141,8 +167,8 @@ curl -X POST https://candybar.delo.sh/candybars/<id>/skip-rest-of-day \
 
 `POST /candybars/{id}/skip` skips the single fire `fireTime` (a UTC minute;
 any offset is converted). `POST /candybars/{id}/skip-rest-of-day` suppresses
-every fire of that UTC date — `date` covers the whole date, and the next UTC
-day dispatches normally. The dispatcher honors both on its next tick:
+every fire of that date in the candybar's timezone (UTC unless it has one) —
+`date` covers the whole local date, and the next local day dispatches normally. The dispatcher honors both on its next tick:
 `/schedule` rows for the suppressed fires read `skipped: true` with the
 upcoming times recomputed, and the stream's `skip.applied` event arrives with
 the write itself (the route publishes the `bloodbank.cron.candybar.skipped`
@@ -162,8 +188,9 @@ curl 'https://candybar.delo.sh/schedule?from=2026-10-26T00:00:00Z&to=2026-10-27T
 ```
 
 You get one row per fire of every registered candybar in `from <= fireTime < to`,
-ordered by `(fireTime, name)`. Fire times come from the dispatcher's own croniter
-evaluation and skip helpers. They are UTC, and only fires after the candybar's
+ordered by `(fireTime, name)`. Fire times come from the dispatcher's own
+`fire_times` helper and skip helpers (each cron read in its candybar's
+timezone). `fireTime` is always UTC, and only fires after the candybar's
 registration are listed. `from` and `to` need an offset; use `Z`, because a raw
 `+` in a query string decodes as a space.
 
@@ -337,9 +364,9 @@ Write a skip through `registry.store.add_occurrence_skip`. It is idempotent
 and rejects an unknown candybar. The HTTP endpoint lands with Story 5.6.
 
 **Skipping the rest of a day (AD-13).** A `skips` row with
-`kind=rest_of_day` and a UTC `day` suppresses every fire of that candybar on
-that UTC date — no invoke commands and no `invocations` rows until the next
-UTC midnight, then the schedule dispatches normally again. Each suppressed
+`kind=rest_of_day` and a `day` (a date in the candybar's timezone) suppresses
+every fire of that candybar on that local date — no invoke commands and no
+`invocations` rows until the next local midnight, then the schedule dispatches normally again. Each suppressed
 fire is recorded as `bloodbank.cron.candybar.skipped` with
 `reason=rest_of_day` at the tick it would have fired (a gap that spans a
 skipped day records its fires when the gap closes). The same gap rules as

@@ -41,6 +41,7 @@ from candybar.api.schedule import (
     window_rows,
 )
 from candybar.dispatcher import Dispatcher
+from candybar.dispatcher.firetimes import ONE_DAY
 from candybar.dispatcher.schedule import group_skips, matches_tick
 from candybar.events import build_tick_fired, parse_envelope
 from candybar.events.envelope import CandybarInvokeCommand, CandybarSkippedEvent
@@ -308,7 +309,7 @@ def test_future_window_has_no_current_when_an_earlier_fire_comes_first(rig: Rig)
     rows = rig.get(z(at(11)), z(at(11, 15)))
     assert [r["state"] for r in rows] == ["upcoming"] * 3
     assert rig.result_reads == []  # no past rows, no result query
-    assert rig.skip_reads == [(at(10, 13), at(11, 15))]  # [cut, end)
+    assert rig.skip_reads == [(at(10, 13) - ONE_DAY, at(11, 15) + ONE_DAY)]  # [cut, end), widened for local dates
 
 
 def test_future_window_current_when_every_earlier_fire_is_skipped(rig: Rig) -> None:

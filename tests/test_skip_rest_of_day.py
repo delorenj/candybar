@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from candybar.dispatcher import Dispatcher
+from candybar.dispatcher.firetimes import ONE_DAY
 from candybar.dispatcher.schedule import (
     NO_SKIPS,
     SkipSet,
@@ -288,7 +289,7 @@ def test_a_skip_for_another_date_is_inert():
     assert h.skipped() == []
     # The window for the tick covers only the 26th, so the 25th's row is not
     # even read: list_skips's day-intersection contract.
-    assert h.windows == [(at(10, 10), at(10, 11))]
+    assert h.windows == [(at(10, 10) - ONE_DAY, at(10, 11) + ONE_DAY)]  # widened for local dates (AD-16)
 
 
 def test_dispatch_count_excludes_day_skipped_fires():
@@ -316,7 +317,7 @@ def test_gap_covering_a_fully_skipped_day_runs_the_next_days_fire_as_misfire():
         (tid(at(hour, 0)), "rest_of_day") for hour in range(1, 24)
     ]
     assert isinstance(h.sent[-1], CandybarInvokeCommand)
-    assert h.windows == [(at(0, 6), at(0, 31, 27))]  # read back to the cursor
+    assert h.windows == [(at(0, 6) - ONE_DAY, at(0, 31, 27) + ONE_DAY)]  # back to the cursor, widened
 
 
 def test_gap_entirely_inside_the_skipped_day_runs_nothing():

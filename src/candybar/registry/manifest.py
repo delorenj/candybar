@@ -14,6 +14,7 @@ import croniter
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from ..text import has_unsafe_text
+from ..timezones import DEFAULT_TIMEZONE, TimezoneError, resolve_timezone
 
 MANIFEST_FILENAME = "candybar.toml"
 
@@ -38,6 +39,8 @@ class CandybarManifest(BaseModel):
     description: str = ""
     tags: list[str] = []
     schedule: str
+    # IANA zone the cron is read in as local wall time (AD-16); UTC by default.
+    timezone: str = DEFAULT_TIMEZONE
     entrypoint: str
     noise: bool = False
 
@@ -45,7 +48,7 @@ class CandybarManifest(BaseModel):
     def _text_is_storable(self) -> CandybarManifest:
         # Postgres text rejects NUL and UTF-8 cannot encode a lone surrogate:
         # refuse here (422) instead of a 500 out of the insert or the event.
-        for field in ("description", "schedule", "entrypoint"):
+        for field in ("description", "schedule", "timezone", "entrypoint"):
             if has_unsafe_text(getattr(self, field)):
                 raise ValueError(f"{field} must not contain NUL or lone surrogate characters")
         if any(has_unsafe_text(tag) for tag in self.tags):
@@ -69,6 +72,15 @@ class CandybarManifest(BaseModel):
         # here so a blank tag is a 422, never a 500 out of the event builder.
         if any(not tag.strip() for tag in value):
             raise ValueError("tags must be non-blank strings")
+        return value
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone_is_iana(cls, value: str) -> str:
+        try:
+            resolve_timezone(value)
+        except TimezoneError as exc:
+            raise ValueError(str(exc)) from exc
         return value
 
     @field_validator("entrypoint")

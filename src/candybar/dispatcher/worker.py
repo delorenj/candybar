@@ -9,7 +9,7 @@ catch-up window are recorded as `skipped` (`reason=misfire_coalesced`).
 Operator skips (Stories 2.3/2.4, AD-13) are registry override rows applied
 before any invoke command is emitted: a skipped fire publishes `skipped` with
 the skip kind as its reason (`occurrence` for one fire, `rest_of_day` for a
-whole UTC date) instead of a command, on the tick path and inside a gap
+whole date in the candybar's timezone) instead of a command, on the tick path and inside a gap
 alike, and coalescing runs the latest NON-skipped missed fire.
 """
 
@@ -34,6 +34,7 @@ from ..events.envelope import (
 )
 from ..events.vocabulary import tick_id_for_minute
 from ..registry.store import ScheduleEntry, SkipEntry
+from ..timezones import TimezoneError
 from .schedule import (
     NO_SKIPS,
     ONE_MINUTE,
@@ -43,6 +44,7 @@ from .schedule import (
     group_skips,
     matches_tick,
     previous_fire,
+    widen_skip_window,
 )
 
 log = logging.getLogger(__name__)
@@ -173,12 +175,14 @@ def plan_misfires(
         floor = cursor + ONE_MINUTE
         if entry.created_at is not None:
             floor = max(floor, ceil_minute(entry.created_at))
-        latest = previous_fire(entry.schedule, minute, skips=overrides)
+        latest = previous_fire(entry.schedule, minute, tz=entry.tz, skips=overrides)
         if latest is not None and latest < floor:
             latest = None  # the newest runnable fire predates the gap
         coalesced: list[datetime] = []
         overridden: list[datetime] = []
-        for fire in fires_between(entry.schedule, max(floor, window_start), minute):
+        for fire in fires_between(
+            entry.schedule, max(floor, window_start), minute, tz=entry.tz
+        ):
             if fire == latest:
                 continue
             if overrides.covers(fire):
@@ -191,6 +195,25 @@ def plan_misfires(
             MisfirePlan(entry=entry, latest=latest, skipped=coalesced, overridden=overridden)
         )
     return plans
+
+
+def _with_usable_timezone(entries: list[ScheduleEntry]) -> list[ScheduleEntry]:
+    """Entries whose stored timezone still resolves (AD-16).
+
+    A name the host's tz database does not know (a row written around the
+    API, or a database moved to a host with older tzdata) must not wedge the
+    tick for every other candybar, and must not fire at the wrong hour: that
+    one candybar is left out and logged, loudly, every tick.
+    """
+    usable: list[ScheduleEntry] = []
+    for entry in entries:
+        try:
+            entry.tz  # noqa: B018 - resolving it is the check
+        except TimezoneError as exc:
+            log.error("candybar %s (%s) is not dispatched: %s", entry.name, entry.id, exc)
+            continue
+        usable.append(entry)
+    return usable
 
 
 class TickCursor(Protocol):
@@ -265,19 +288,22 @@ class Dispatcher:
             )
             return 0
 
-        entries = await self._schedules()
+        entries = _with_usable_timezone(await self._schedules())
         gap = ahead and minute - last > ONE_MINUTE  # type: ignore[operator]
         # Overrides are read once per dispatched tick, before any command
         # goes out (AD-13); a gap reads them back to the cursor.
         overrides: dict[UUID, SkipSet] = {}
         if self._skips is not None:
             start = last + ONE_MINUTE if gap else minute  # type: ignore[operator]
-            overrides = group_skips(await self._skips(start, minute + ONE_MINUTE))
+            # A rest-of-day date is candybar-local (AD-16): read the day rows
+            # that can cover a fire in the window whatever the candybar's zone.
+            rows = await self._skips(*widen_skip_window(start, minute + ONE_MINUTE))  # type: ignore[misc]
+            overrides = group_skips(rows, {entry.id: entry.tz for entry in entries})
         if gap:
             await self._coalesce(entries, last, tick, overrides)  # type: ignore[arg-type]
         count = 0
         for entry in entries:
-            if matches_tick(entry.schedule, minute):
+            if matches_tick(entry.schedule, minute, entry.tz):
                 reason = overrides.get(entry.id, NO_SKIPS).reason_for(minute)
                 if reason is not None:
                     await self._publish(operator_skipped_for(entry, minute, reason, tick))

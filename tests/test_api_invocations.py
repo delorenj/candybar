@@ -238,7 +238,7 @@ def test_candybar_rows_are_serialized_in_utc_too() -> None:
 
     row = SimpleNamespace(
         id=CANDYBAR, name="x", description="", tags=[], schedule="* * * * *",
-        entrypoint="/bin/true", noise=False,
+        timezone="UTC", entrypoint="/bin/true", noise=False,
         created_at=datetime(2026, 10, 26, 2, 0, tzinfo=timezone(timedelta(hours=-4))),
     )
     assert candybar_row_json(row)["createdAt"] == "2026-10-26T06:00:00+00:00"

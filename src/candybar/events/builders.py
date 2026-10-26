@@ -82,6 +82,7 @@ def build_candybar_created(
     tags: list[str],
     schedule: str,
     noise: bool = False,
+    timezone: str = "UTC",
     correlationid: UUID | None = None,
     causationid: UUID | None = None,
 ) -> CandybarCreatedEvent:
@@ -101,6 +102,7 @@ def build_candybar_created(
             description=description,
             tags=tags,
             schedule=schedule,
+            timezone=timezone,
             noise=noise,
         ),
     )

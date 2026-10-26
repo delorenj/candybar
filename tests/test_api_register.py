@@ -38,6 +38,7 @@ class FakeRow:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     total_invoked: int = 0
     total_successful: int = 0
+    timezone: str = "UTC"
 
 
 class FakeSink:

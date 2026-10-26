@@ -64,7 +64,13 @@
         "schedule": {
           "type": "string",
           "minLength": 1,
-          "description": "Standard 5-field cron expression, evaluated in UTC."
+          "description": "Standard 5-field cron expression, evaluated as local wall time in `timezone`."
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1,
+          "default": "UTC",
+          "description": "IANA timezone name the schedule is read in (e.g. America/New_York). Optional and additive: facts published before it existed read as UTC. Every timestamp in the event stays UTC."
         },
         "noise": {
           "type": "boolean",

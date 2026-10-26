@@ -274,7 +274,9 @@ def test_update_candybar_refuses_registry_owned_fields_before_touching_the_db() 
 
     from candybar.registry import UPDATABLE_FIELDS, update_candybar
 
-    assert set(UPDATABLE_FIELDS) == {"name", "description", "tags", "schedule", "entrypoint", "noise"}
+    assert set(UPDATABLE_FIELDS) == {
+        "name", "description", "tags", "schedule", "timezone", "entrypoint", "noise"
+    }
     row = SimpleNamespace(name="x", total_invoked=0)
     for field in ("id", "total_invoked", "created_at"):
         with pytest.raises(ValueError, match="not updatable"):

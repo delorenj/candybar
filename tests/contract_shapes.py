@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
+from zoneinfo import available_timezones
 
 CONTRACT = (
     Path(__file__).resolve().parent.parent
@@ -64,6 +65,7 @@ FIELD_CHECKS: dict[str, Any] = {
     "description": lambda v: isinstance(v, str),
     "tags": lambda v: isinstance(v, list) and all(isinstance(t, str) for t in v),
     "schedule": lambda v: isinstance(v, str) and len(v.split()) == 5,
+    "timezone": lambda v: isinstance(v, str) and v in available_timezones(),
     "noise": lambda v: isinstance(v, bool),
     "createdAt": _utc_iso,
     "totalInvoked": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,

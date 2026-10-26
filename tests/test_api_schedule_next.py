@@ -26,7 +26,6 @@ from fastapi.testclient import TestClient
 
 import candybar.api.app as app_module
 import candybar.api.schedule as schedule_module
-import candybar.dispatcher.schedule as dispatcher_schedule
 from candybar.api.app import create_app
 from candybar.api.schedule import (
     STATE_CURRENT,
@@ -36,6 +35,8 @@ from candybar.api.schedule import (
     next_row,
     window_rows,
 )
+from candybar.dispatcher import firetimes
+from candybar.dispatcher.firetimes import ONE_DAY
 from candybar.dispatcher.schedule import ceil_minute, fires_between, group_skips
 from candybar.registry import SKIP_OCCURRENCE, SKIP_REST_OF_DAY, SkipEntry
 from contract_shapes import NEXT_ROUTE, assert_schedule_row, contract_route_line
@@ -212,14 +213,22 @@ def test_the_read_is_future_skips_only_and_no_window_walk(
     monkeypatch.setattr(schedule_module, "fires_between", walk)
     monkeypatch.setattr(app_module, "window_rows", walk)
     assert fire_of(get_next(rig)) == at(10, 15)
-    assert rig.skip_reads == [(at(10, 13), None)]  # [cut, ∞)
+    assert rig.skip_reads == [(at(10, 13) - ONE_DAY, None)]  # [cut, ∞), widened for local dates
     assert rig.result_reads == []
+
+
+# croniter `get_next` calls one candybar's next-fire lookup may spend (Story 7.1
+# chunked walk): a minutely candybar steps its skipped day's first fires, jumps
+# to tomorrow, and steps its three occurrence skips; an hourly one walks two
+# chunks past its skipped hour. Fires of the skipped day are never stepped.
+MINUTELY_STEPS = 16
+HOURLY_STEPS = 12
 
 
 def test_croniter_steps_are_bounded_by_the_skips_not_by_the_fires(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    real = dispatcher_schedule.croniter
+    real = firetimes.croniter
     steps = {"seed": 0, "next": 0}
 
     class Counting:
@@ -233,7 +242,7 @@ def test_croniter_steps_are_bounded_by_the_skips_not_by_the_fires(
             steps["next"] += 1
             return self._it.get_next(*args, **kwargs)
 
-    monkeypatch.setattr(dispatcher_schedule, "croniter", Counting)
+    monkeypatch.setattr(firetimes, "croniter", Counting)
     created = DAY - timedelta(days=1)
     candybars, entries, bound = [], [], 0
     for i in range(100):  # minutely: today day-skipped, tomorrow 00:00-00:02 skipped
@@ -243,22 +252,22 @@ def test_croniter_steps_are_bounded_by_the_skips_not_by_the_fires(
         for minute in range(3):
             fire = at(0, minute, day=27)
             entries.append(SkipEntry(uuid4(), c.id, SKIP_OCCURRENCE, fire, None, None, DAY))
-        bound += 1 + 1 + 3  # one step, plus one per skipped day and per occurrence passed
+        bound += MINUTELY_STEPS
     for i in range(99):  # hourly, its 11:00 skipped
         c = WindowCandybar(uuid4(), f"hourly-{i:03}", "0 * * * *", False, created)
         candybars.append(c)
         entries.append(SkipEntry(uuid4(), c.id, SKIP_OCCURRENCE, at(11), None, None, DAY))
-        bound += 1 + 1
+        bound += HOURLY_STEPS
     candybars.append(WindowCandybar(uuid4(), "feb30", "0 0 30 2 *", False, created))
     bound += 1
 
     row = next_row(candybars, now=at(10, 12, 30), skips=group_skips(entries))
     assert row is not None and (row.name, row.fire_time) == ("hourly-000", at(12))
-    assert steps["next"] <= bound == 699
+    assert steps["next"] <= bound
     # One window walk alone steps every minute of the skipped day per minutely
     # candybar: 100 x 827 remaining minutes of today.
     assert steps["next"] < 100 * 827
-    assert steps["seed"] <= len(candybars) + 100  # a re-seed per skipped day
+    assert steps["seed"] <= len(candybars) * 8  # a few chunk seeds per candybar
 
 
 def _budget_registry(rig: Rig) -> None:

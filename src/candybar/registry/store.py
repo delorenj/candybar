@@ -11,7 +11,7 @@ import os
 from collections.abc import AsyncIterator, Collection
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from uuid import UUID, uuid5
 
@@ -32,6 +32,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from ..text import scrub_optional
+from ..timezones import DEFAULT_TIMEZONE, resolve_timezone
 from .ids import uuid7
 from .manifest import CandybarManifest
 from .models import (
@@ -113,16 +114,32 @@ class ScheduleEntry:
     # Fires before registration are never "missed" (Story 2.2). None = unknown:
     # no floor beyond the dispatcher cursor.
     created_at: datetime | None = None
+    # IANA zone the schedule is read in (AD-16). A stored name that no longer
+    # resolves raises TimezoneError from `tz`: the dispatcher skips that one
+    # candybar rather than fire it at the wrong hour.
+    timezone: str = DEFAULT_TIMEZONE
+
+    @property
+    def tz(self) -> tzinfo:
+        return resolve_timezone(self.timezone)
 
 
 async def list_schedules(session: AsyncSession) -> list[ScheduleEntry]:
     """Read the current registry inventory without exposing ORM to dispatchers."""
     result = await session.execute(
-        select(Candybar.id, Candybar.name, Candybar.schedule, Candybar.created_at)
+        select(
+            Candybar.id,
+            Candybar.name,
+            Candybar.schedule,
+            Candybar.created_at,
+            Candybar.timezone,
+        )
     )
     return [
-        ScheduleEntry(id=id, name=name, schedule=schedule, created_at=created_at)
-        for id, name, schedule, created_at in result
+        ScheduleEntry(
+            id=id, name=name, schedule=schedule, created_at=created_at, timezone=timezone
+        )
+        for id, name, schedule, created_at, timezone in result
     ]
 
 
@@ -345,6 +362,7 @@ async def insert_candybar(
         description=manifest.description,
         tags=list(manifest.tags),
         schedule=manifest.schedule,
+        timezone=manifest.timezone,
         entrypoint=manifest.entrypoint,
         noise=manifest.noise,
         total_invoked=0,
@@ -408,7 +426,7 @@ async def lock_noise_batch(session: AsyncSession, ids: Collection[UUID]) -> list
 
 # Definition fields a caller may change (Story 5.1); ids, timestamps and
 # counters are registry-owned.
-UPDATABLE_FIELDS = ("name", "description", "tags", "schedule", "entrypoint", "noise")
+UPDATABLE_FIELDS = ("name", "description", "tags", "schedule", "timezone", "entrypoint", "noise")
 
 
 async def update_candybar(

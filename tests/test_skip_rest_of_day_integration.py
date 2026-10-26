@@ -25,6 +25,7 @@ import contextlib
 import os
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import nats
@@ -392,3 +393,73 @@ def test_stored_day_skip_suppresses_until_utc_midnight_live(tmp_path: Path, monk
                 await nc.drain()
 
     asyncio.run(asyncio.wait_for(scenario(), timeout=180))
+
+
+@needs_pg
+def test_rest_of_day_is_a_candybar_local_date_through_the_real_registry() -> None:
+    """Story 7.1 (AD-16): a New York candybar's rest-of-day skip for Nov 1 covers the
+    local day (04:00Z Nov 1 .. 04:59Z Nov 2), including a fire at 04:30Z Nov 2 whose
+    UTC date is Nov 2 — so the dispatcher's skip read must reach the Nov 1 row."""
+    from candybar.dispatcher import Dispatcher
+    from candybar.dispatcher.schedule import ONE_MINUTE
+    from candybar.events import vocabulary as voc
+    from candybar.registry.store import list_schedules
+
+    _ensure_schema()
+
+    async def scenario() -> tuple[list[str], list[str]]:
+        engine = create_registry_engine()
+        cid = uuid4()
+        name = f"itest-ny-day-{cid.hex[:8]}"
+        sent: list[Any] = []
+
+        async def publish(event: Any) -> None:
+            sent.append(event)
+
+        async def schedules() -> list[Any]:
+            async with session_scope(engine) as session:
+                return [e for e in await list_schedules(session) if e.name == name]
+
+        async def skips(start: datetime, end: datetime) -> list[Any]:
+            async with session_scope(engine) as session:
+                return await list_skips(session, start, end)
+
+        try:
+            async with session_scope(engine) as session:
+                await insert_candybar(
+                    session,
+                    CandybarManifest.model_validate(
+                        {
+                            "name": name, "schedule": "*/30 * * * *", "entrypoint": "/bin/true",
+                            "timezone": "America/New_York",
+                        }
+                    ),
+                    candybar_id=cid,
+                )
+            async with session_scope(engine) as session:
+                await add_rest_of_day_skip(session, cid, date(2026, 11, 1))
+            dispatcher = Dispatcher(schedules, publish, skips=skips)
+            # 03:30Z Nov 1 (23:30 EDT Oct 31) .. 05:30Z Nov 2 (00:30 EST Nov 2).
+            minute = datetime(2026, 11, 1, 3, 30, tzinfo=UTC)
+            while minute < datetime(2026, 11, 2, 5, 30, tzinfo=UTC):
+                await dispatcher.dispatch(build_tick_fired(minute))
+                minute += ONE_MINUTE
+            ran = [e.data.tick_id for e in sent if e.type == voc.TYPE_CANDYBAR_INVOKE]
+            skipped = [e.data.tick_id for e in sent if e.type == voc.TYPE_CANDYBAR_SKIPPED]
+            return ran, skipped
+        finally:
+            async with session_scope(engine) as session:
+                await session.execute(delete(Candybar).where(Candybar.id == cid))
+            await engine.dispose()
+
+    ran, skipped = asyncio.run(scenario())
+    first_local_day = datetime(2026, 11, 1, 4, tzinfo=UTC)
+    after_local_day = datetime(2026, 11, 2, 5, tzinfo=UTC)
+    every_half_hour = [
+        first_local_day + timedelta(minutes=30 * i)
+        for i in range(int((after_local_day - first_local_day) / timedelta(minutes=30)))
+    ]
+    # 03:30Z (23:30 EDT Oct 31) runs; the whole 25-hour local day is skipped, half
+    # hour by half hour, through the fall-back; 05:00Z Nov 2 (00:00 EST) runs again.
+    assert ran == [tid(datetime(2026, 11, 1, 3, 30, tzinfo=UTC)), tid(after_local_day)]
+    assert skipped == [tid(fire) for fire in every_half_hour]

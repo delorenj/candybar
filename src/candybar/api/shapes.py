@@ -26,6 +26,7 @@ def candybar_row_json(row: Any) -> dict[str, Any]:
         "description": row.description,
         "tags": list(row.tags),
         "schedule": row.schedule,
+        "timezone": row.timezone,
         "noise": row.noise,
         "createdAt": utc_iso(row.created_at),
     }
