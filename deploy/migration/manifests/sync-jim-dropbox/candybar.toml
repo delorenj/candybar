@@ -1,0 +1,13 @@
+# Migrated from systemd:sync-jim-dropbox (wave 7.14, AD-18/AD-21).
+# The .service stays unchanged; only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "sync-jim-dropbox"
+description = "Migrated sync-jim-dropbox systemd user service (wave 7.14)"
+tags = ["migrated", "james-brennan"]
+schedule = "*/10 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "sync-jim-dropbox.service"

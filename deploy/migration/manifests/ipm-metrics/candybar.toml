@@ -1,0 +1,13 @@
+# Migrated from systemd:ipm-metrics.timer (wave 7.14, AD-18/AD-21).
+# The .service stays unchanged; only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "ipm-metrics"
+description = "Migrated ipm-metrics systemd user service (wave 7.14)"
+tags = ["migrated", "james-brennan"]
+schedule = "*/5 * * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "ipm-metrics.service"

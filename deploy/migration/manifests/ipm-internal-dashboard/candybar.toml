@@ -1,0 +1,13 @@
+# Migrated from systemd:ipm-internal-dashboard.timer (wave 7.14, AD-18/AD-21).
+# The .service stays unchanged; only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "ipm-internal-dashboard"
+description = "Migrated ipm-internal-dashboard systemd user service (wave 7.14)"
+tags = ["migrated", "james-brennan"]
+schedule = "1-59/5 * * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "ipm-internal-dashboard.service"

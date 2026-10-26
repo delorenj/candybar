@@ -1,0 +1,13 @@
+# Migrated from systemd:activity-report@james-brennan.timer (wave 7.14, AD-18/AD-21).
+# The .service stays unchanged; only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "activity-report-james-brennan"
+description = "Migrated activity-report-james-brennan systemd user service (wave 7.14)"
+tags = ["migrated", "james-brennan"]
+schedule = "30 3 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "activity-report@james-brennan.service"

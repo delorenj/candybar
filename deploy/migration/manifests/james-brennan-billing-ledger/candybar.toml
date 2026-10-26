@@ -1,0 +1,13 @@
+# Migrated from systemd:james-brennan-billing-ledger.timer (wave 7.14, AD-18/AD-21).
+# The .service stays unchanged; only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "james-brennan-billing-ledger"
+description = "Migrated james-brennan-billing-ledger systemd user service (wave 7.14)"
+tags = ["migrated", "james-brennan"]
+schedule = "17 6 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "james-brennan-billing-ledger.service"

@@ -1,0 +1,13 @@
+# Migrated from systemd:james-brennan-daily-update.timer (wave 7.14, AD-18/AD-21).
+# The .service stays unchanged; only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "james-brennan-daily-update"
+description = "Migrated james-brennan-daily-update systemd user service (wave 7.14)"
+tags = ["migrated", "james-brennan"]
+schedule = "0 3 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "james-brennan-daily-update.service"
