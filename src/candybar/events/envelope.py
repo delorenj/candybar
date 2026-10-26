@@ -150,13 +150,19 @@ class CandybarInvokedData(InvocationIdentity):
     pass
 
 
+TOKEN_SPEND_MAX = 2**63 - 1  # invocations.token_spend is a Postgres BIGINT
+
+
 class SelfReportedMetrics(BaseModel):
     """What a candybar may report about itself in its AD-8 result file."""
 
     model_config = ConfigDict(extra="forbid")
 
-    token_spend: int = Field(default=0, ge=0)
-    cost_usd: float | None = Field(default=None, ge=0)
+    # Bounded to what the registry stores (BIGINT) and JSON can carry (finite):
+    # an out-of-range value is an invalid result file, never a failed insert
+    # (which would nak and re-execute) or an unserializable API record.
+    token_spend: int = Field(default=0, ge=0, le=TOKEN_SPEND_MAX)
+    cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class InvocationMetrics(SelfReportedMetrics):

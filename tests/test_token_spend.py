@@ -11,7 +11,6 @@ The API read surface is tests/test_api_invocations.py.
 from __future__ import annotations
 
 import asyncio
-import os
 import stat
 import sys
 from decimal import Decimal
@@ -295,8 +294,6 @@ def test_sdk_authored_candybar_spend_reaches_the_counter(tmp_path: Path, monkeyp
         by_key=store.by_key, entrypoint=store.get_entrypoint, record=store.record,
         publish=bus.publish, run=real_run, metrics=m,
     )
-    env_path = os.pathsep.join(p for p in sys.path if p)
-    monkeypatch.setenv("PYTHONPATH", env_path)
     msg = handle(executor, make_command())
     assert msg.acked == 1, store.records
     rec = store.records[0]
@@ -306,3 +303,38 @@ def test_sdk_authored_candybar_spend_reaches_the_counter(tmp_path: Path, monkeyp
     assert tokens(m, "success") == 1234
     completed = bus.events[-1]
     assert completed.data.metrics.token_spend == 1234 and completed.data.metrics.cost_usd == 0.25
+
+
+@pytest.mark.parametrize(
+    "metrics",
+    [
+        '{"token_spend": 9223372036854775808}',  # > BIGINT: the insert would fail and re-execute
+        '{"cost_usd": Infinity}',  # json.loads accepts it; JSON responses cannot carry it
+        '{"cost_usd": 1e400}',  # overflows to inf
+        '{"cost_usd": NaN}',
+    ],
+)
+def test_out_of_range_self_report_is_an_invalid_result_file(
+    tmp_path: Path, monkeypatch: Any, metrics: str
+) -> None:
+    monkeypatch.setenv("CANDYBAR_WORK_ROOT", str(tmp_path / "work"))
+    script = tmp_path / "bad.sh"
+    script.write_text(
+        f"#!/bin/sh\nprintf '{{\"status\":\"success\",\"metrics\":{metrics}}}' "
+        '> "$CANDYBAR_RESULT_FILE"\n'
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    outcome = asyncio.run(
+        run_invocation(
+            entrypoint=str(script), invocation_id=uuid4(), candybar_id=CANDYBAR_ID,
+            trigger="manual", tick_id=None, root="",
+        )
+    )
+    assert outcome.exit_code == 0 and outcome.result is None
+    assert outcome.result_error is not None and "invalid result file" in outcome.result_error
+
+
+def test_int64_max_token_spend_is_accepted() -> None:
+    from candybar.events.envelope import TOKEN_SPEND_MAX
+
+    assert SelfReportedMetrics(token_spend=TOKEN_SPEND_MAX).token_spend == 2**63 - 1
