@@ -72,6 +72,17 @@ context: []
 
 ## Implementation Notes
 
+- Foundation re-verified live before any cutover: timezone column serving (7.1), `candybar-executor.service` active (7.2), `deploy-smoke-systemd` canary succeeding with metering (7.3), ledger CLI (7.5), watchdog green (7.6).
+- Source-of-truth commits, landed BEFORE cutover: delorenj/infra `cc73838` (RETIRED notices on the 7 tracked timers, keeping `[Install]` so path-based rollback still works; gnome-shell-restart + srvls-metrics + srvls-snapshot imported to `systemd/user/`, live plain files replaced by symlinks, daemon-reload clean, timers kept firing natively until their cutover) and delorenj/srvls `5defafc` (`collect_candybar()` reads `$CANDYBAR_API_URL/candybars` in every output mode + inspect branch; README integration section repointed at infra). The srvls README pointer commit rides along with the code commit; the ledger records infra as each entry's source of truth.
+- Manifests live in `deploy/migration/manifests/<name>/candybar.toml` (the convention the concurrently-running wave 7.13 established; matches the task's "where the architecture addendum says manifests live").
+- All 10 cutovers ran clean through `candybar migrate cutover` (register disabled → `systemctl --user disable --now <timer>` → enable), each committed. `zellij-ark` needed one `--wait` cycle past its 30s (period/4) guard.
+- All 10 manual `candybar run`s succeeded with full metering (memory peaks 4.6 MB–915 MB, cpu_load 0.10–1.04): invocations d30580ac, b197abc4, 7a0720f2, 4f3e159e, ef42c283, 6d32509b, acb70b62, 2707f582, 133db47c, 4eae4554.
+- Rollback demonstrated on `zellij-ark` per the AC: `migrate rollback` re-enabled the timer by path (systemd 257 link-removal behavior), the candybar was disabled, one native fire observed at 13:34:00 EDT (`ExecMainStartTimestamp` advanced), then re-cut over and verified by its 17:36Z scheduled fire (invocation 0093d4a5, success, metered).
+- `srvls-metrics` verified by its 17:40Z scheduled fire (df5c10a9, success, metered).
+- **Incident (recovered):** the shared ledger suffers a stale-write race when a wave agent hand-edits `ledger.yaml` instead of loading under the CLI lock — wave 7.8's plan commit (6a011dc) dropped all other waves' entries including live cutover records. Detected within minutes; restored by union of ae7cba7 + the 7.8/7.9 additions (my reconstruction matched the wave-7.13 agent's concurrent restore, committed as 1365145). No cutover state was lost. Follow-up filed in deferred-work.md (ledger needs a CLI add-entry verb / writers must never hand-write without a locked fresh load).
+- No daemon code changed; no container redeploy and no executor restart were needed.
+- Remaining verifications are time-gated by the jobs' own schedules: gnome-shell-restart 18:00Z, cache-prune-codex-tmp 18:17Z (this session), the five 04:10–05:41 ET dailies tomorrow morning, cache-prune Sunday 05:07 ET.
+
 ## Spec Change Log
 
 ## Review Triage Log
