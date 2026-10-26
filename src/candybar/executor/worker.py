@@ -115,7 +115,7 @@ def _tick_fire(tick_id: str | None) -> datetime | None:
         return None
     try:
         return datetime.fromtimestamp(int(tick_id[5:]) * 60, UTC)
-    except ValueError:
+    except (ValueError, OverflowError, OSError):
         return None
 
 

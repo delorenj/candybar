@@ -420,6 +420,13 @@ def test_backlog_uses_shared_dst_fire_times(
     assert fact.data.reason == expected and msg.acked == 1
 
 
+def test_tick_fire_out_of_range_naks_or_handles_without_crashing() -> None:
+    from candybar.executor.worker import _tick_fire
+
+    assert _tick_fire("tick:999999999999999999999999999999999") is None
+    assert _tick_fire("tick:not-a-number") is None
+
+
 def test_without_backlog_ports_a_stale_command_runs_as_before() -> None:
     executor, store, _bus, runs, _reads = make()  # ports unwired
     fire = minute_floor(datetime.now(UTC)) - 60 * ONE_MINUTE
