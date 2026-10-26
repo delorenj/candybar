@@ -133,3 +133,12 @@ Publish-failure policy (spine silent): retry the SAME event object (same id → 
 - `uv run ruff check .` -- clean.
 - `uv run candybar --help` / `uv run candybar daemon --help` -- exit 0.
 - `uv run candybar daemon --roles bogus` -- exit != 0.
+
+## Independent Review (2026-10-26)
+
+Fresh-context reviewer (not the implementer), bmad-code-review over the story's commits and the CURRENT tree (later epics reshaped shared modules). No subagent capability in this session, so the blind / edge-case / verification-gap / acceptance layers ran inline. Evidence classes: implemented + tested = unit suite 749 passed (`uv run pytest -q`), ruff clean; deployed = container rebuilt and redeployed per deploy/README.md after the patches, `/healthz` 200, next tick `tick:29883724` fired `deploy-smoke` (success, 19ms).
+
+### Review Findings
+
+- [x] [Review][Patch] A stop during a NATS outage hung every role until SIGKILL [src/candybar/bus.py:connect_nats] — medium. With `max_reconnect_attempts=-1`, nats-py retries the INITIAL connect forever inside `nats.connect` (`_select_next_server` never gives up), so it never raises while the bus is down: the stop-interruptible retry loop was dead code, the matrix row "NATS down at startup → stop event set → clean exit" did not hold, and nats-py's default error_cb logged a full traceback every 2s (the flood the 1.3 triage thought it had fixed). Verified live: `nats.connect` to a refused port only returned when an outer `wait_for` cut it at 7s. Fixed in 68b878a: each attempt is raced against `stop` and cancelled, and a one-line `error_cb` replaces the traceback. Pinned against the REAL client on a refused port (`test_connect_nats_real_client_stops_during_bus_outage`; times out without the fix). The existing tests used a raising double that nats-py never behaves like (verification gap, closed by the same test).
+- Rejected: early wake (wall vs monotonic skew) can make the loop re-capture the same boundary and publish its tick twice — low: the tick event id is deterministic (`tick_event_id`), so `Nats-Msg-Id` dedupes the second publish and consumers key on `tick_id`; the fix would add state for no observable harm.

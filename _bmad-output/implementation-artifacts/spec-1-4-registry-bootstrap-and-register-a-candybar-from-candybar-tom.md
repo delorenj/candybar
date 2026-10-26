@@ -140,3 +140,13 @@ Spine-silent decisions (recorded, decided in-session per workflow no-user-intera
 - `uv run alembic -c deploy/alembic.ini upgrade head` (from the repo root) / `downgrade base` -- migration round-trips clean.
 - `uv run ruff check .` -- clean.
 - `uv run candybar register <path>` against a running `candybar daemon --roles api` -- 201 + row + event; invalid manifest exits nonzero.
+
+## Independent Review (2026-10-26)
+
+Fresh-context reviewer (not the implementer), bmad-code-review over the story's commits and the CURRENT tree (later epics reshaped shared modules). No subagent capability in this session, so the blind / edge-case / verification-gap / acceptance layers ran inline. Evidence classes: implemented + tested = unit suite 749 passed (`uv run pytest -q`), ruff clean; deployed = container rebuilt and redeployed per deploy/README.md after the patches, `/healthz` 200, next tick `tick:29883724` fired `deploy-smoke` (success, 19ms).
+
+### Review Findings
+
+- [x] [Review][Patch] The API stored a relative entrypoint that could never run [src/candybar/api/app.py:register, PATCH] — medium. `RegisterRequest` claimed "the API stores the resolved path", but the route only checked `Path(entrypoint).is_file()` against the api process's CWD and stored the string verbatim; the executor then execs it with `cwd` = the entrypoint's own parent (a relative path with a slash resolves twice, to a different file or none) or via PATH (no slash). The CLI always sends an absolute path, so only direct API callers (holocene, curl) hit it. Fixed in 41f8518: `entrypoint_problem` 422s unless the entrypoint is absolute and exists, on register and PATCH. Tests fail without the fix; live-verified (`bin/true` → 422 "must be an absolute path").
+- [x] [Review][Patch] croniter's random `R` field token passed validation [src/candybar/registry/manifest.py:_schedule_is_standard_cron] — medium. `R * * * *`, `0 r * * *`, `R(0-30) * * * *`, `0 R/2 * * *` are accepted by croniter and re-rolled on every parse; the dispatcher parses per tick, so such a candybar fired at random minutes and the read API's fire times never matched. Not standard 5-field cron (spine). Fixed in ece0de9: whole H/R tokens are refused (named months/days such as `mar`/`fri` and `L`/`#` extensions still pass). Parametrized tests fail without the fix; live-verified (422).
+- Rejected: none new; the build-session triage stands.

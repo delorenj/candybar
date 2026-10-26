@@ -129,3 +129,12 @@ I ran the review inline because no subagent-spawn tool was available (same devia
 - Found during implementation rather than review: the prior-story lost-update race in the registry counters. Verdict: high. Fixed in `7595742` with a regression test; see Implementation Notes.
 
 Zero bad_spec or intent_gap entries, so no loopback was needed.
+
+## Independent Review (2026-10-26)
+
+Fresh-context reviewer (not the implementer), bmad-code-review over the story's commits and the CURRENT tree (later epics reshaped shared modules). No subagent capability in this session, so the blind / edge-case / verification-gap / acceptance layers ran inline. Evidence classes: implemented + tested = unit suite 749 passed (`uv run pytest -q`), ruff clean; deployed = container rebuilt and redeployed per deploy/README.md after the patches, `/healthz` 200, next tick `tick:29883724` fired `deploy-smoke` (success, 19ms).
+
+### Review Findings
+
+- No `decision-needed`, `patch` or `defer` findings. Series carry exactly `{candybar_id, result}`, every counter/histogram observation stamps the `invocation_id` exemplar, metrics are observed once after the terminal row commits (never on redelivery), and `/metrics` negotiates OpenMetrics via `choose_encoder` (tests/test_metrics.py). The live scrape + exemplar storage landed with 1.9.
+- Rejected: counters restart from zero on each redeploy — false as a defect: Prometheus `rate()` handles counter resets by design.

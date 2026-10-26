@@ -116,3 +116,12 @@ Pinned-version guard test parses `pyproject.toml` via stdlib `tomllib` and compa
 - `uv run pytest -q` -- expected: all scaffold tests pass.
 - `uv run ruff check .` -- expected: clean.
 - `python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/ci.yml'))"` -- expected: workflow YAML parses.
+
+## Independent Review (2026-10-26)
+
+Fresh-context reviewer (not the implementer), bmad-code-review over the story's commits and the CURRENT tree (later epics reshaped shared modules). No subagent capability in this session, so the blind / edge-case / verification-gap / acceptance layers ran inline. Evidence classes: implemented + tested = unit suite 749 passed (`uv run pytest -q`), ruff clean; deployed = container rebuilt and redeployed per deploy/README.md after the patches, `/healthz` 200, next tick `tick:29883724` fired `deploy-smoke` (success, 19ms).
+
+### Review Findings
+
+- No `decision-needed`, `patch` or `defer` findings. ACs hold on the current tree: the layout and pin guards in tests/test_scaffold.py pass, `candybar --help` exits 0 (CI step `uv run candybar --help` exercises the installed console script), and ci.yml runs ruff + pytest on `ubuntu-latest` (public repo).
+- Rejected: none raised beyond the build-session triage log, which was re-checked and stands.

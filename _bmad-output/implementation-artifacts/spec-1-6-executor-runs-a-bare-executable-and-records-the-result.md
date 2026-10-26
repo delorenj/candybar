@@ -124,3 +124,13 @@ Executions run as concurrent asyncio tasks (a 10-minute job must not head-of-lin
 - `uv run ruff check .` — lint green.
 - `CANDYBAR_TEST_NATS=1 uv run pytest tests/test_executor_integration.py -q` — live JetStream consume/dedupe green.
 - `CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py -q` — full path: command in, real script executed, row + counters + terminal event verified.
+
+## Independent Review (2026-10-26)
+
+Fresh-context reviewer (not the implementer), bmad-code-review over the story's commits and the CURRENT tree (later epics reshaped shared modules). No subagent capability in this session, so the blind / edge-case / verification-gap / acceptance layers ran inline. Evidence classes: implemented + tested = unit suite 749 passed (`uv run pytest -q`), ruff clean; deployed = container rebuilt and redeployed per deploy/README.md after the patches, `/healthz` 200, next tick `tick:29883724` fired `deploy-smoke` (success, 19ms).
+
+### Review Findings
+
+- [x] [Review][Patch] A command picked up as stop began spawned a child nothing would terminate [src/candybar/executor/worker.py:_handle_claimed, runner.py:ProcessRegistry] — medium. The role's `finally` runs `terminate_all` (no await inside) BEFORE tasks created by the last `fetch` — or tasks still in their dedupe read/invoked publish — ever spawn, so their children were never signalled, ran to completion during shutdown past docker's 10s grace, and a SIGKILL left no row (re-execution after the 1h ack_wait). Reachable on every redeploy that lands on a fire minute. Fixed in 50be4fe: a command handled after stop began is nak'd back unexecuted (no invoked fact, no row), and a child whose spawn raced `terminate_all` is SIGTERMed on arrival (`ProcessRegistry.add`) and recorded `failed` ("executor stopped") per the matrix. Both new tests fail without the fix (the runner one times out with the 30s child still running); `test_shutdown_marks_running_child_failed` now stops mid-run, which is what it names.
+- Rejected: `msg.in_progress()` raising inside the wait loop would orphan the child — low: it only raises on a closed/draining connection, which the role reaches only after every task is gathered. Unbounded executor concurrency (consumer default max_ack_pending 1000) — false as a defect: no spine/spec cap exists. The lost-race winner read was unguarded — real, fixed concurrently by the Epic 2 reviewer (f6a7a4a).
+- Out of scope by instruction: stderr NUL scrubbing, pre-spawn claim rows, pre-exec cgroup join (owned by a dedicated agent, deferred-work.md).

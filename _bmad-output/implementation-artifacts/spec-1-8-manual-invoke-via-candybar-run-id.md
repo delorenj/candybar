@@ -121,3 +121,11 @@ CI after this story: run 40272270059 on `128f7cc` is green. That includes the ex
 
 **Manual checks (if no CLI):**
 - Throwaway smoke: `candybar daemon --roles api,executor` with BLOODBANK_COMMANDS/EVENTS streams on a throwaway NATS; `candybar register` then `candybar run <id>` → row `trigger=manual`, `/metrics` shows the count; `candybar run <random-uuid>` → exit 1 with a 404 problem+json.
+
+## Independent Review (2026-10-26)
+
+Fresh-context reviewer (not the implementer), bmad-code-review over the story's commits and the CURRENT tree (later epics reshaped shared modules). No subagent capability in this session, so the blind / edge-case / verification-gap / acceptance layers ran inline. Evidence classes: implemented + tested = unit suite 749 passed (`uv run pytest -q`), ruff clean; deployed = container rebuilt and redeployed per deploy/README.md after the patches, `/healthz` 200, next tick `tick:29883724` fired `deploy-smoke` (success, 19ms).
+
+### Review Findings
+
+- No `decision-needed`, `patch` or `defer` findings. `POST /candybars/{id}/invoke` checks the registry before publishing, mints a fresh command/invocation id per request with `Nats-Msg-Id` = command id, answers 202/404/422/503 as problem+json, and the CLI prints the body and exits 1 on errors (tests/test_api_invoke.py, tests/test_cli_run.py incl. the real-app contract test). The 1.6 shutdown patch also covers manual invokes arriving during a stop.

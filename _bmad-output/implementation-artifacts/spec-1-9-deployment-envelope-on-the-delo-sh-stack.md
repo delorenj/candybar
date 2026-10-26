@@ -126,3 +126,12 @@ Compose networking: `bloodbank-network` (external) carries the `nats:4222` alias
 
 **Manual checks (if no CLI):**
 - Live smoke: compose up; `curl https://candybar.delo.sh/healthz` → 200; prometheus UI/API shows candybar target up and `query_exemplars` returns ids; `docker restart candybar` → registry shows no duplicate invocation rows for the rejoin window.
+
+## Independent Review (2026-10-26)
+
+Fresh-context reviewer (not the implementer), bmad-code-review over the story's commits and the CURRENT tree (later epics reshaped shared modules). No subagent capability in this session, so the blind / edge-case / verification-gap / acceptance layers ran inline. Evidence classes: implemented + tested = unit suite 749 passed (`uv run pytest -q`), ruff clean; deployed = container rebuilt and redeployed per deploy/README.md after the patches, `/healthz` 200, next tick `tick:29883724` fired `deploy-smoke` (success, 19ms).
+
+### Review Findings
+
+- No `decision-needed`, `patch` or `defer` findings. One container runs all roles on `proxy` + `bloodbank-network` with Traefik labels for candybar.delo.sh; secrets only as `op://` refs; the hygiene gate fails loudly; live: rebuilt and redeployed this session, `/healthz` 200, next tick fired `deploy-smoke`. The 1.3 bus patch (68b878a) closes a fast-stop hole this story's FAST_STOP row assumed: a SIGTERM during a NATS outage now exits instead of hanging into docker's SIGKILL; the 1.6 patch keeps late-fetched commands from outliving the stop grace.
+- Rejected: a non-SystemExit crash of the uvicorn serve task would leave the api role waiting on stop — low: uvicorn's bind failure exits via SystemExit (loud), and no other crash path was shown.

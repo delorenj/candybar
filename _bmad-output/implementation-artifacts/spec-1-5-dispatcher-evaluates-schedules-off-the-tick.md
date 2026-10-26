@@ -90,3 +90,12 @@ Stable UUIDv5 command and invocation ids scoped to `(candybar_id,tick_id)` make 
 - `uv run pytest -q` — unit suite green.
 - `uv run ruff check .` — lint green.
 - `CANDYBAR_TEST_NATS=1 uv run pytest tests/test_dispatcher_integration.py -q` — JetStream command delivery/dedupe green.
+
+## Independent Review (2026-10-26)
+
+Fresh-context reviewer (not the implementer), bmad-code-review over the story's commits and the CURRENT tree (later epics reshaped shared modules). No subagent capability in this session, so the blind / edge-case / verification-gap / acceptance layers ran inline. Evidence classes: implemented + tested = unit suite 749 passed (`uv run pytest -q`), ruff clean; deployed = container rebuilt and redeployed per deploy/README.md after the patches, `/healthz` 200, next tick `tick:29883724` fired `deploy-smoke` (success, 19ms).
+
+### Review Findings
+
+- No `decision-needed`, `patch` or `defer` findings. Single durable pull consumer, UTC evaluation from the validated tick payload (`matches_tick` refuses non-UTC minutes), stable UUIDv5 command/event ids per (candybar, tick), ack only after every publish, poison ticks termed — all hold on the current tree (now extended by Epic 2's cursor/skips).
+- Rejected: a `msg.ack()`/`term()` that raises would crash the daemon — false: nats-py buffers publishes while reconnecting, and the connection is only closed/draining after the loop exits.
