@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Install (or refresh) the host executor unit (AD-17, Story 7.2). Idempotent.
+# Install (or refresh) the host executor unit (AD-17, Story 7.2) and the unit
+# holder the systemd runner depends on (AD-18, Story 7.3). Idempotent.
 #
 #   deploy/host/install.sh            # render env, link unit, enable, (re)start
 #   deploy/host/install.sh --no-start # everything but the (re)start
@@ -28,8 +29,15 @@ chmod 700 "$conf"
 sed -i 's#@host\.docker\.internal:#@localhost:#' "$env_file"
 chmod 600 "$env_file"
 
-systemctl --user enable "$here/candybar-executor.service"
+# The holder keeps each candybar-started systemd unit loaded after it finishes,
+# so the runner can read its MemoryPeak / CPUUsageNSec (a successful oneshot is
+# otherwise garbage-collected, accounting and all). It is a plain `sleep`: it
+# never needs a restart, and the runner maintains its drop-in.
+systemctl --user enable "$here/candybar-executor.service" "$here/candybar-unit-holder.service"
+# The systemd-runner canary's unit: linked, never enabled (no install section).
+systemctl --user link "$here/candybar-smoke.service" 2>/dev/null || true
 systemctl --user daemon-reload
+systemctl --user start candybar-unit-holder.service
 if (( start )); then
   systemctl --user restart candybar-executor.service
   sleep 2

@@ -49,7 +49,8 @@ from ..registry.models import Invocation
 from ..registry.store import InvocationClaim, TerminalInvocation
 from ..text import scrub_optional, scrub_text
 from .metrics import EXECUTOR_METRICS, ExecutorMetrics
-from .runner import ProcessRegistry, RunOutcome, run_invocation
+from .runner import ProcessRegistry, RunOutcome
+from .targets import run_on_failure, run_target
 
 log = logging.getLogger(__name__)
 
@@ -98,7 +99,9 @@ def resolve_outcome(outcome: RunOutcome, *, stopped: bool = False) -> Resolved:
     if outcome.exit_code is None:  # unreachable without spawn_error; stay safe
         return Resolved(False, "child never started", InvocationMetrics())
     if outcome.exit_code != 0:
-        message = None
+        # The runner's own diagnosis (a timeout, a systemd Result) beats a
+        # bare exit code; a message the job wrote itself beats both.
+        message = outcome.detail
         if outcome.result is not None and outcome.result.message:
             message = outcome.result.message
         return Resolved(False, _cap(message or f"exit code {outcome.exit_code}"), _metrics(outcome))
@@ -185,18 +188,23 @@ class Executor:
         self,
         *,
         by_key: Callable[[str], Awaitable[Invocation | None]],
-        entrypoint: Callable[[UUID], Awaitable[str | None]],
+        entrypoint: Callable[[UUID], Awaitable[str | dict | None]],
         record: Callable[[TerminalInvocation], Awaitable[bool]],
         publish: Callable[[Envelope], Awaitable[None]],
-        run: Callable[..., Awaitable[RunOutcome]] = run_invocation,
+        run: Callable[..., Awaitable[RunOutcome]] = run_target,
         registry: ProcessRegistry | None = None,
         metrics: ExecutorMetrics | None = None,
         claim: Callable[[InvocationClaim], Awaitable[bool]] | None = None,
         retry_abandoned: Callable[[UUID], Awaitable[bool]] | None = None,
+        on_failure: Callable[..., Awaitable[None]] = run_on_failure,
     ) -> None:
-        """`claim` commits the pre-spawn running row (True) or reports the key
-        already taken (False); without it no claim is written. `retry_abandoned`
-        says whether a candybar opted into re-running a lost run."""
+        """`entrypoint` resolves what to run: the bare entrypoint path (a `str`,
+        the exec default) or the stored runner dict (Story 7.3), None when the
+        candybar is unknown. `claim` commits the pre-spawn running row (True) or
+        reports the key already taken (False); without it no claim is written.
+        `retry_abandoned` says whether a candybar opted into re-running a lost
+        run. `on_failure` fires a runner's hook after a recorded failure."""
+        self._on_failure = on_failure
         self._claim = claim
         self._retry_abandoned = retry_abandoned
         self._by_key = by_key
@@ -383,9 +391,11 @@ class Executor:
                 await self._lost_claim_race(envelope, key, msg)
                 return
 
+        # A str is the bare-entrypoint exec default; a dict is a runner (7.3).
+        target = {"entrypoint": entrypoint} if isinstance(entrypoint, str) else {"runner": entrypoint}
         try:
             outcome = await self._run(
-                entrypoint=entrypoint,
+                **target,
                 invocation_id=invocation_id,
                 candybar_id=envelope.data.candybar_id,
                 trigger=envelope.data.trigger,
@@ -421,7 +431,13 @@ class Executor:
             cpu_load=outcome.cpu_load,
             gpu_load=outcome.gpu_load,
         )
-        await self._finalize(rec, envelope, key, msg)
+        await self._finalize(
+            rec,
+            envelope,
+            key,
+            msg,
+            hook=entrypoint if isinstance(entrypoint, dict) else None,
+        )
 
     async def _lost_claim_race(self, envelope: CandybarInvokeCommand, key: str, msg: object) -> None:
         """Another delivery claimed this key between our dedupe read and claim."""
@@ -440,9 +456,21 @@ class Executor:
         await msg.ack()  # type: ignore[attr-defined]
 
     async def _finalize(
-        self, rec: TerminalInvocation, envelope: CandybarInvokeCommand, key: str, msg: object
+        self,
+        rec: TerminalInvocation,
+        envelope: CandybarInvokeCommand,
+        key: str,
+        msg: object,
+        *,
+        hook: dict | None = None,
     ) -> None:
-        """Record the terminal row, observe, publish the terminal fact, ack."""
+        """Record the terminal row, observe, publish the terminal fact, ack.
+
+        `hook` is the runner dict whose `on_failure` fires once, right after a
+        FRESH failure is recorded (never on a redelivery's republish path, so
+        it cannot run twice) and not for a failure the executor's own shutdown
+        caused.
+        """
         try:
             inserted = await self._record(rec)
         except Exception:
@@ -469,6 +497,20 @@ class Executor:
         # The committed row is the once-per-execution anchor: metrics are
         # observed here and never on the redelivery/republish path (AD-9).
         self._observe(rec)
+        if hook is not None and rec.result == "fail" and not self.registry.stopping:
+            try:
+                await self._on_failure(
+                    hook,
+                    invocation_id=rec.invocation_id,
+                    candybar_id=rec.candybar_id,
+                    trigger=rec.trigger,
+                    tick_id=rec.tick_id,
+                    message=rec.error_message,
+                )
+            except Exception:
+                # Best-effort by definition: the failure is already recorded, and
+                # an uncaught error here would strand the command until ack_wait.
+                log.exception("on_failure hook crashed for invocation %s", rec.invocation_id)
 
         try:
             await self._publish(terminal_event_for(envelope, rec))

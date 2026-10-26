@@ -30,7 +30,7 @@ from ..registry.store import (
     candybar_tags,
     claim_invocation,
     create_registry_engine,
-    get_entrypoint,
+    get_run_target,
     invocation_by_key,
     record_terminal_invocation,
     session_scope,
@@ -94,9 +94,9 @@ async def _run_executor(stop: asyncio.Event) -> None:
             async with session_scope(engine) as session:
                 return await invocation_by_key(session, key)
 
-        async def entrypoint(candybar_id) -> str | None:
+        async def entrypoint(candybar_id) -> str | dict | None:
             async with session_scope(engine) as session:
-                return await get_entrypoint(session, candybar_id)
+                return await get_run_target(session, candybar_id)
 
         async def record(rec: TerminalInvocation) -> bool:
             try:

@@ -74,6 +74,73 @@ Invalid cron/name/timezone → `application/problem+json` (422); duplicate name 
 bus down → 503 and no row. API bind: `CANDYBAR_API_HOST`/`CANDYBAR_API_PORT`;
 CLI target: `CANDYBAR_API_URL`.
 
+## Runner kinds (Story 7.3, AD-18)
+
+A candybar defines how the executor starts it with **exactly one** of
+`entrypoint` (above: a bare executable, the `exec` default) or a `[candybar.runner]`
+table. A runner names things on the host the executor runs on, so neither the
+CLI nor the API checks the files it points at.
+
+```toml
+# exec: an argv in its own cgroup scope, fully metered
+[candybar.runner]
+kind = "exec"
+argv = ["/usr/bin/restic", "backup", "--quiet"]   # absolute path or a bare command (PATH)
+workdir = "/srv/vault"                            # absolute; default: the user's home
+env = { RESTIC_REPOSITORY = "/mnt/backups" }      # non-secret literals only
+timeout_s = 6000                                  # SIGTERM, then SIGKILL after 10s
+on_failure = ["ntfy-publish", "--topic", "alerts"]
+```
+
+```toml
+# systemd: start an existing user service and meter it from the unit
+[candybar.runner]
+kind = "systemd"
+unit = "cache-prune.service"
+```
+
+| | `exec` | `systemd` |
+| --- | --- | --- |
+| Starts | `argv` as a child of the executor | `systemctl --user start --wait <unit>` |
+| Keeps | nothing but what you give it | the unit's `EnvironmentFile`, hardening, `TimeoutStartSec`, `OnFailure=`; only its `.timer` retires |
+| Verdict | exit code, refined by the AD-8 result file | `Result` / `ExecMainStatus` of the unit |
+| Memory | cgroup `memory.peak` of the scope | the unit's `MemoryPeak` |
+| CPU load | scope `cpu.stat` delta / wall runtime | `CPUUsageNSec` / (`ExecMainExitTimestamp` - `ExecMainStartTimestamp`) |
+| Stderr tail | the child's stderr | the journal for that run's `InvocationID` (failures only; stdout and stderr are merged there) |
+| GPU | pmon pids in the process tree | pmon pids in the unit's cgroup |
+
+- **Env for systemd jobs.** The AD-8 vars reach a unit through a drop-in the
+  runner installs once, `~/.config/systemd/user/<unit>.d/50-candybar.conf`
+  (`EnvironmentFile=-%t/candybar/inv/%n.env`), and an env file it rewrites before
+  each start: no `daemon-reload` per run. A unit that never reads them is
+  unaffected. A `CANDYBAR_RESULT_FILE` the unit writes is honoured like an
+  exec job's; a unit under `ProtectSystem=strict` may not be able to, and then
+  the exit code decides.
+- **Why there is a holder.** systemd 257 garbage-collects a *successful*
+  oneshot the instant it stops, taking `MemoryPeak`, `CPUUsageNSec` and the
+  `InvocationID` with it (a failed one stays loaded). The runner therefore lists
+  every unit it starts as `After=` of `candybar-unit-holder.service`
+  (`deploy/host/`, a plain `sleep infinity`), because systemd keeps a unit loaded
+  while an active unit references it. `After=` adds the reference and no
+  behaviour. Without the holder everything still runs and passes or fails
+  correctly; the unit just meters 0.
+- **`on_failure`** (either kind) is an argv run once, best effort and unmetered,
+  right after a recorded failure, with the AD-8 env plus
+  `CANDYBAR_FAILURE_MESSAGE`; it is capped at 60s. It is skipped, with a
+  warning, for a `systemd` runner whose unit already has `OnFailure=` (that unit
+  pages for itself), for a redelivery, and for a failure the executor's own
+  shutdown caused.
+- **Overlap.** A unit that is already starting or running is refused, not
+  joined. Until AD-20's `skipped(reason=overlap)` lands, that is a recorded
+  failure.
+- **Executor restart.** Stopping the executor terminates the `systemctl` client,
+  not the unit: a long unit keeps running under systemd, and its invocation is
+  recorded `failed` ("executor stopped").
+- Read what a candybar runs with `GET /candybars/<id>/runner`
+  (`{runner, entrypoint}`, exactly one non-null); it is outside the Holocene
+  contract. `PATCH` with a `runner` replaces the entrypoint and the other way
+  round. The hermes runner is Story 7.4's.
+
 ## Timezones and DST (Story 7.1, AD-16)
 
 A candybar's cron is read as **local wall time** in its `timezone` (an IANA
@@ -114,13 +181,13 @@ curl -X PATCH https://candybar.delo.sh/candybars/<id> -H 'content-type: applicat
 ```
 
 `PATCH` takes any non-empty subset of `name`, `description`, `tags`,
-`schedule`, `entrypoint`, `noise`. The merged definition is validated like a
+`schedule`, `timezone`, `entrypoint`, `runner`, `noise`. The merged definition is validated like a
 manifest. If anything actually changed, one `bloodbank.cron.candybar.updated`
 fact goes out first, with `changes` = only the changed fields, and then the
 row is written. Sending the stored values back is a 200 with no fact. Unknown
 or read-only keys and `null` → 422; unknown id → 404; name taken → 409; bus
 down → 503 with the row unchanged. `createdAt` is always UTC. The executor's
-`entrypoint` is accepted on writes but never echoed.
+`entrypoint` and `runner` (Story 7.3) are accepted on writes but never echoed.
 
 ### Noise collection (Story 5.5)
 

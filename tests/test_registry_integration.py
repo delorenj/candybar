@@ -768,3 +768,95 @@ def test_timezone_column_default_round_trip_and_migration_keeps_old_rows_utc() -
             assert col[0] == "NO" and "UTC" in col[1]
     finally:
         command.downgrade(cfg, "base")
+
+
+def test_runner_column_is_nullable_jsonb_and_old_rows_keep_running_their_entrypoint() -> None:
+    """Story 7.3: migration 0006 adds `candybars.runner` (jsonb, NULLABLE). A row that
+    predates it has SQL NULL and resolves to its entrypoint; a runner round-trips and
+    resolves to the runner dict; PATCH-style updates switch between the two shapes."""
+    import asyncio
+
+    from alembic import command
+    from alembic.config import Config
+
+    from candybar.registry import get_run_target, lock_candybar, update_candybar
+    from candybar.runners import runner_label
+
+    cfg = Config(str(ALEMBC_INI))
+    cfg.set_main_option("sqlalchemy.url", _sync_url())
+    cfg.set_main_option("script_location", str(REPO_ROOT / "deploy" / "alembic"))
+    command.upgrade(cfg, "0005")
+    old_id = uuid7()
+    try:
+        with create_engine(_sync_url()).begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO candybars (id, name, description, tags, schedule, entrypoint, "
+                    "noise, total_invoked, total_successful, created_at, updated_at) VALUES "
+                    "(:id, 'pre-runner', '', '[]', '0 * * * *', '/bin/true', false, 0, 0, now(), now())"
+                ),
+                {"id": str(old_id)},
+            )
+        command.upgrade(cfg, "head")
+        systemd = {"kind": "systemd", "unit": "cache-prune.service"}
+        exec_runner = {"kind": "exec", "argv": ["/usr/bin/job", "--x"], "env": {"A": "1"}}
+
+        async def scenario() -> None:
+            engine = create_registry_engine(_sync_url())
+            try:
+                async with session_scope(engine) as session:
+                    unit = await insert_candybar(
+                        session,
+                        CandybarManifest(name="prune", schedule="0 3 * * *", runner=systemd),
+                    )
+                    job = await insert_candybar(
+                        session,
+                        CandybarManifest(name="job", schedule="* * * * *", runner=exec_runner),
+                    )
+                async with session_scope(engine) as session:
+                    assert await get_run_target(session, old_id) == "/bin/true"
+                    assert await get_run_target(session, unit.id) == systemd
+                    assert await get_run_target(session, job.id) == {
+                        **exec_runner,
+                    }
+                    assert await get_run_target(session, uuid7()) is None
+                # The NOT NULL entrypoint column holds the runner's label.
+                with create_engine(_sync_url()).connect() as conn:
+                    rows = dict(
+                        conn.execute(
+                            text("SELECT name, entrypoint FROM candybars ORDER BY name")
+                        ).all()
+                    )
+                    assert rows["prune"] == "systemd:cache-prune.service"
+                    assert rows["job"] == "/usr/bin/job"
+                    # SQL NULL, not JSON null, for a bare-entrypoint row.
+                    assert conn.execute(
+                        text("SELECT runner IS NULL FROM candybars WHERE name = 'pre-runner'")
+                    ).scalar() is True
+                # An entrypoint replaces the runner; a runner replaces the entrypoint.
+                async with session_scope(engine) as session:
+                    row = await lock_candybar(session, unit.id)
+                    await update_candybar(session, row, {"entrypoint": "/bin/true", "runner": None})
+                async with session_scope(engine) as session:
+                    assert await get_run_target(session, unit.id) == "/bin/true"
+                async with session_scope(engine) as session:
+                    row = await lock_candybar(session, old_id)
+                    await update_candybar(session, row, {"runner": exec_runner})
+                async with session_scope(engine) as session:
+                    assert await get_run_target(session, old_id) == exec_runner
+                    row = await lock_candybar(session, old_id)
+                    assert row.entrypoint == runner_label(exec_runner)
+            finally:
+                await engine.dispose()
+
+        asyncio.run(scenario())
+        with create_engine(_sync_url()).connect() as conn:
+            col = conn.execute(
+                text(
+                    "SELECT is_nullable, data_type FROM information_schema.columns "
+                    "WHERE table_name = 'candybars' AND column_name = 'runner'"
+                )
+            ).one()
+            assert col == ("YES", "jsonb")
+    finally:
+        command.downgrade(cfg, "base")

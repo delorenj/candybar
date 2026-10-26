@@ -39,6 +39,7 @@ class FakeRow:
     total_invoked: int = 0
     total_successful: int = 0
     timezone: str = "UTC"
+    runner: dict | None = None
 
 
 class FakeSink:

@@ -43,7 +43,12 @@ class Candybar(Base):
     # IANA zone the cron is read in (Story 7.1, AD-16, migration 0005); every
     # stored and emitted timestamp stays UTC.
     timezone: Mapped[str] = mapped_column(Text, nullable=False, default="UTC", server_default="UTC")
+    # The exec default for rows without a runner; for a runner row it holds the
+    # runner's short label (`runners.runner_label`) so it stays NOT NULL.
     entrypoint: Mapped[str] = mapped_column(Text, nullable=False)
+    # How the executor starts the job (Story 7.3, AD-18, migration 0006):
+    # `{kind: exec|systemd, ...}`, or SQL NULL for the bare-entrypoint default.
+    runner: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     noise: Mapped[bool] = mapped_column(nullable=False, default=False)
     total_invoked: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_successful: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)

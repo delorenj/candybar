@@ -31,6 +31,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
+from ..runners import runner_label
 from ..text import scrub_optional
 from ..timezones import DEFAULT_TIMEZONE, resolve_timezone
 from .ids import uuid7
@@ -363,7 +364,8 @@ async def insert_candybar(
         tags=list(manifest.tags),
         schedule=manifest.schedule,
         timezone=manifest.timezone,
-        entrypoint=manifest.entrypoint,
+        entrypoint=manifest.entrypoint_label,
+        runner=dict(manifest.runner) if manifest.runner is not None else None,
         noise=manifest.noise,
         total_invoked=0,
         total_successful=0,
@@ -426,7 +428,16 @@ async def lock_noise_batch(session: AsyncSession, ids: Collection[UUID]) -> list
 
 # Definition fields a caller may change (Story 5.1); ids, timestamps and
 # counters are registry-owned.
-UPDATABLE_FIELDS = ("name", "description", "tags", "schedule", "timezone", "entrypoint", "noise")
+UPDATABLE_FIELDS = (
+    "name",
+    "description",
+    "tags",
+    "schedule",
+    "timezone",
+    "entrypoint",
+    "runner",
+    "noise",
+)
 
 
 async def update_candybar(
@@ -441,6 +452,11 @@ async def update_candybar(
         raise ValueError(f"not updatable: {sorted(unknown)}")
     for field_name, value in changes.items():
         setattr(row, field_name, list(value) if field_name == "tags" else value)  # type: ignore[arg-type]
+    if changes.get("runner") is not None:
+        # A runner row keeps its short label in the NOT NULL entrypoint column.
+        row.entrypoint = runner_label(changes["runner"])  # type: ignore[arg-type]
+    elif "entrypoint" in changes and "runner" not in changes:
+        row.runner = None  # an entrypoint replaces the runner (the exec default)
     row.updated_at = datetime.now(UTC)
     try:
         await session.flush()
@@ -457,6 +473,22 @@ async def get_entrypoint(session: AsyncSession, candybar_id: UUID) -> str | None
     """The registered entrypoint for a candybar id, or None when unknown."""
     result = await session.execute(select(Candybar.entrypoint).where(Candybar.id == candybar_id))
     return result.scalar_one_or_none()
+
+
+async def get_run_target(session: AsyncSession, candybar_id: UUID) -> str | dict | None:
+    """What to run for a candybar id: its runner dict, else the entrypoint path.
+
+    None when the candybar is unknown. A `str` is the exec default of a row
+    with no runner; a `dict` is the stored runner definition (Story 7.3).
+    """
+    result = await session.execute(
+        select(Candybar.entrypoint, Candybar.runner).where(Candybar.id == candybar_id)
+    )
+    row = result.first()
+    if row is None:
+        return None
+    entrypoint, runner = row
+    return dict(runner) if runner is not None else entrypoint
 
 
 async def invocation_by_key(session: AsyncSession, idempotency_key: str) -> Invocation | None:

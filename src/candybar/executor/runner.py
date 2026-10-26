@@ -100,6 +100,9 @@ class RunOutcome:
     cpu_load: float = 0.0
     # Executor-measured via nvidia-smi pmon (Story 3.2); 0 when GPU-less.
     gpu_load: float = 0.0
+    # Why a nonzero exit failed, when the runner knows better than the code
+    # (a timeout, a systemd unit's Result); used as the failure message.
+    detail: str | None = None
 
 
 @dataclass
@@ -127,16 +130,16 @@ class ProcessRegistry:
             self.terminate(proc)
 
     @staticmethod
-    def terminate(proc: asyncio.subprocess.Process) -> None:
+    def terminate(proc: asyncio.subprocess.Process, sig: int = signal.SIGTERM) -> None:
         if proc.returncode is not None:
             return
         try:
             # Children spawn in their own session: kill the whole
             # group so grandchildren can't hold the pipes open.
-            os.killpg(proc.pid, signal.SIGTERM)
+            os.killpg(proc.pid, sig)
         except (ProcessLookupError, PermissionError, OSError):
             try:
-                proc.terminate()
+                proc.send_signal(sig)
             except ProcessLookupError:
                 pass  # exited between the check and the signal
 
@@ -156,9 +159,16 @@ def child_env(
     trigger: str,
     tick_id: str | None,
     result_file: Path,
+    extra: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """The AD-8 env contract, layered over the daemon's own environment."""
+    """The AD-8 env contract, layered over the daemon's own environment.
+
+    `extra` is an exec runner's non-secret literals; they sit between the
+    daemon's environment and the protocol vars, so the protocol always wins.
+    """
     env = dict(os.environ)
+    if extra:
+        env.update(extra)
     env.update(
         {
             "CANDYBAR_INVOCATION_ID": str(invocation_id),
@@ -241,17 +251,36 @@ def _read_result_file(path: Path) -> tuple[ResultFile | None, str | None]:
 
 async def run_invocation(
     *,
-    entrypoint: str,
     invocation_id: UUID,
     candybar_id: UUID,
     trigger: str,
     tick_id: str | None,
+    entrypoint: str | None = None,
+    argv: list[str] | None = None,
+    workdir: str | None = None,
+    env: dict[str, str] | None = None,
+    timeout_s: float | None = None,
     registry: ProcessRegistry | None = None,
     on_wait: Callable[[], Awaitable[None]] | None = None,
     root: str | None = None,
     gpu: GpuSampler | None = None,
 ) -> RunOutcome:
-    """Spawn the entrypoint, wait for exit, and gather the AD-8 outcome."""
+    """Spawn the job, wait for exit, and gather the AD-8 outcome.
+
+    Two shapes share one spawn path. `entrypoint` is the bare-executable exec
+    default: argv is just that path, run from its own directory. `argv` (+
+    `workdir`, `env`, `timeout_s`) is the Story 7.3 exec runner: run from
+    `workdir`, or the user's home when unset (the directory cron and
+    `systemd --user` give their jobs), killed after `timeout_s`.
+    """
+    if (entrypoint is None) == (argv is None):
+        raise ValueError("run_invocation needs exactly one of entrypoint and argv")
+    if entrypoint is not None:
+        argv = [entrypoint]
+        workdir = str(Path(entrypoint).parent)
+    elif workdir is None:
+        workdir = str(Path.home())
+    assert argv is not None
     scope_root = cgroup_root() if root is None else root
     work_dir = Path(tempfile.mkdtemp(prefix=f"{invocation_id}-", dir=_ensure_work_root()))
     result_path = work_dir / "result.json"
@@ -268,14 +297,15 @@ async def run_invocation(
         cpu_baseline = metering.read_cpu_usage_usec(scope)
         try:
             proc = await asyncio.create_subprocess_exec(
-                entrypoint,
-                cwd=str(Path(entrypoint).parent),
+                *argv,
+                cwd=workdir,
                 env=child_env(
                     invocation_id=invocation_id,
                     candybar_id=candybar_id,
                     trigger=trigger,
                     tick_id=tick_id,
                     result_file=result_path,
+                    extra=env,
                 ),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -302,15 +332,34 @@ async def run_invocation(
         gpu_session = (GPU_SAMPLER if gpu is None else gpu).track(proc.pid, scope)
         if registry is not None:
             registry.add(proc)
+        timed_out = False
         try:
             try:
                 communicate = asyncio.create_task(proc.communicate())
+                deadline = None if timeout_s is None else t0 + timeout_s
                 while not communicate.done():
                     # Bounded wait on the pipes — never a sleep-until (AD-1).
-                    await asyncio.wait({communicate}, timeout=WAIT_SLICE_SECONDS)
-                    if not communicate.done() and on_wait is not None:
+                    slice_s = WAIT_SLICE_SECONDS
+                    if deadline is not None:
+                        slice_s = max(min(slice_s, deadline - time.monotonic()), 0.0)
+                    await asyncio.wait({communicate}, timeout=slice_s)
+                    if communicate.done():
+                        break
+                    if deadline is not None and time.monotonic() >= deadline:
+                        timed_out = True
+                        await _stop_timed_out(proc, communicate)
+                        break
+                    if on_wait is not None:
                         await on_wait()
-                stdout, stderr = communicate.result()
+                if communicate.done():
+                    stdout, stderr = communicate.result()
+                else:
+                    # Killed, but a grandchild in another session still holds
+                    # the pipes: take what we have rather than wait on it.
+                    communicate.cancel()
+                    await asyncio.gather(communicate, return_exceptions=True)
+                    stdout, stderr = b"", b""
+                    await proc.wait()
             finally:
                 # Always end the GPU session (even on cancellation), so the
                 # shared pmon stops once nothing is in flight.
@@ -341,10 +390,23 @@ async def run_invocation(
             memory_peak_bytes=memory_peak,
             cpu_load=metering.cpu_load(cpu_used, runtime_ms),
             gpu_load=gpu_load,
+            detail=f"timed out after {timeout_s:g}s and was killed" if timed_out else None,
         )
     finally:
         _leave_scope(scope)
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+TIMEOUT_KILL_GRACE_SECONDS = 10.0
+
+
+async def _stop_timed_out(proc: asyncio.subprocess.Process, communicate: asyncio.Task) -> None:
+    """SIGTERM the job's process group, then SIGKILL it if it outlives the grace."""
+    ProcessRegistry.terminate(proc)
+    await asyncio.wait({communicate}, timeout=TIMEOUT_KILL_GRACE_SECONDS)
+    if not communicate.done():
+        ProcessRegistry.terminate(proc, signal.SIGKILL)
+        await asyncio.wait({communicate}, timeout=TIMEOUT_KILL_GRACE_SECONDS)
 
 
 def _ensure_work_root() -> str:

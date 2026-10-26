@@ -143,7 +143,9 @@ class RegisterRequest(BaseModel):
     tags: list[str] = []
     schedule: str
     timezone: str = "UTC"
-    entrypoint: str
+    # Exactly one of the two (Story 7.3, AD-18); the manifest enforces it.
+    entrypoint: str | None = None
+    runner: dict[str, Any] | None = None
     noise: bool = False
 
     def to_manifest(self) -> CandybarManifest:
@@ -169,6 +171,9 @@ class UpdateRequest(BaseModel):
     schedule: str = Field(default=None)  # type: ignore[assignment]
     timezone: str = Field(default=None)  # type: ignore[assignment]
     entrypoint: str = Field(default=None)  # type: ignore[assignment]
+    # A runner object replaces the entrypoint and vice versa: whichever the
+    # patch names wins (Story 7.3).
+    runner: dict[str, Any] = Field(default=None)  # type: ignore[assignment]
     noise: bool = Field(default=None)  # type: ignore[assignment]
 
 
@@ -249,7 +254,11 @@ def entrypoint_problem(entrypoint: str) -> JSONResponse | None:
 
 
 def candybar_detail_json(row: Any) -> dict[str, Any]:
-    """The single-definition shape: definition plus registry counters (GET /candybars/{id})."""
+    """The single-definition shape: definition plus registry counters (GET /candybars/{id}).
+
+    Contract-verbatim: the executor-facing `entrypoint`/`runner` are not in it
+    (read them from `GET /candybars/{id}/runner`, Story 7.3).
+    """
     return {
         **candybar_row_json(row),
         "totalInvoked": row.total_invoked,
@@ -265,7 +274,10 @@ def definition_of(row: Any) -> dict[str, Any]:
         "tags": list(row.tags),
         "schedule": row.schedule,
         "timezone": row.timezone,
-        "entrypoint": row.entrypoint,
+        # A runner row's entrypoint column is only a label: the definition is
+        # the runner. At most one of the two is ever set.
+        "entrypoint": None if row.runner is not None else row.entrypoint,
+        "runner": row.runner,
         "noise": row.noise,
     }
 
@@ -350,9 +362,13 @@ def create_app(
             # pydantic wraps the field validators; keep the message readable.
             return problem(422, "Invalid candybar definition", str(exc)[:500])
 
-        invalid_entrypoint = entrypoint_problem(manifest.entrypoint)
-        if invalid_entrypoint is not None:
-            return invalid_entrypoint
+        # A runner names argv/workdir/unit on the HOST the executor runs on,
+        # which this (containerized) process cannot see: only the exec default
+        # is checked against this filesystem.
+        if manifest.entrypoint is not None:
+            invalid_entrypoint = entrypoint_problem(manifest.entrypoint)
+            if invalid_entrypoint is not None:
+                return invalid_entrypoint
 
         try:
             async with session_factory() as session:
@@ -408,6 +424,27 @@ def create_app(
             return problem(404, "Candybar not found", f"no candybar registered with id {candybar_id}")
         return JSONResponse(content=body)
 
+    @app.get("/candybars/{candybar_id}/runner")
+    async def runner_of(candybar_id: UUID) -> JSONResponse:
+        """How the executor starts this candybar (Story 7.3, AD-18): outside the contract.
+
+        `{runner}` is the stored runner object, or null with `{entrypoint}` set
+        for the bare-executable default. Exactly one of the two is non-null.
+        """
+        async with session_factory() as session:
+            row = await get_candybar(session, candybar_id)
+            body = (
+                {
+                    "runner": row.runner,
+                    "entrypoint": None if row.runner is not None else row.entrypoint,
+                }
+                if row is not None
+                else None
+            )
+        if body is None:
+            return problem(404, "Candybar not found", f"no candybar registered with id {candybar_id}")
+        return JSONResponse(content=body)
+
     @app.patch("/candybars/{candybar_id}")
     async def update(candybar_id: UUID, body: UpdateRequest) -> JSONResponse:
         """Change a definition: lock, diff, publish `updated` (changes only), write."""
@@ -423,8 +460,13 @@ def create_app(
                         404, "Candybar not found", f"no candybar registered with id {candybar_id}"
                     )
                 current = definition_of(row)
+                base = dict(current)
+                if patch.get("runner") is not None and "entrypoint" not in patch:
+                    base["entrypoint"] = None  # the runner replaces the entrypoint
+                if patch.get("entrypoint") is not None and "runner" not in patch:
+                    base["runner"] = None  # the entrypoint replaces the runner
                 try:
-                    merged = CandybarManifest.model_validate({**current, **patch})
+                    merged = CandybarManifest.model_validate({**base, **patch})
                 except ValueError as exc:
                     return problem(422, "Invalid candybar definition", str(exc)[:500])
                 wanted = merged.model_dump()
@@ -432,8 +474,10 @@ def create_app(
                 if not changes:
                     # Nothing differs from the stored row: no fact, no write.
                     return JSONResponse(content=candybar_detail_json(row))
+                if "entrypoint" in changes and current["runner"] is not None:
+                    changes["runner"] = None  # the fact reports the implicit switch too
 
-                if "entrypoint" in changes:
+                if "entrypoint" in changes and merged.entrypoint is not None:
                     invalid_entrypoint = entrypoint_problem(merged.entrypoint)
                     if invalid_entrypoint is not None:
                         return invalid_entrypoint

@@ -1,0 +1,31 @@
+# Keeps migrated systemd units loaded after they finish (AD-18, Story 7.3).
+#
+# A SUCCESSFUL oneshot is garbage-collected by systemd the moment it stops, and
+# its MemoryPeak / CPUUsageNSec / InvocationID go with it (a failed unit stays).
+# The executor's systemd runner reads those after `systemctl --user start
+# --wait` returns, so every candybar-started unit must still be loaded then.
+# systemd keeps a unit loaded while a unit that stays active references it:
+# the runner lists each unit it starts as `After=` in the generated drop-in
+#   ~/.config/systemd/user/candybar-unit-holder.service.d/60-held-units.conf
+# `After=` adds the reference and no behaviour (this unit is already up, so
+# nothing is ever started or stopped by it).
+#
+# Do not edit the drop-in by hand: the runner maintains it. Linked (not
+# copied) into ~/.config/systemd/user by deploy/host/install.sh.
+
+[Unit]
+Description=Candybar unit holder (keeps started units loaded for accounting, AD-18)
+Documentation=file://%h/code/33GOD/candybar/deploy/README.md
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/sleep infinity
+Restart=always
+RestartSec=3
+# Zero CPU, ~1 MB: it only has to exist.
+MemoryAccounting=no
+CPUAccounting=no
+
+[Install]
+WantedBy=default.target

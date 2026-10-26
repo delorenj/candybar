@@ -9,10 +9,12 @@ from __future__ import annotations
 import re
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import croniter
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from ..runners import RunnerError, canonical_runner, runner_label
 from ..text import has_unsafe_text
 from ..timezones import DEFAULT_TIMEZONE, TimezoneError, resolve_timezone
 
@@ -41,16 +43,28 @@ class CandybarManifest(BaseModel):
     schedule: str
     # IANA zone the cron is read in as local wall time (AD-16); UTC by default.
     timezone: str = DEFAULT_TIMEZONE
-    entrypoint: str
+    # Exactly one of `entrypoint` (the bare-executable exec default) and
+    # `runner` (Story 7.3, AD-18: `{kind: exec|systemd, ...}`) defines how the
+    # executor starts the job. `runner` is held in its canonical stored form.
+    entrypoint: str | None = None
+    runner: dict[str, Any] | None = None
     noise: bool = False
+
+    @model_validator(mode="after")
+    def _entrypoint_xor_runner(self) -> CandybarManifest:
+        if (self.entrypoint is None) == (self.runner is None):
+            raise ValueError("define exactly one of `entrypoint` and `runner`")
+        return self
 
     @model_validator(mode="after")
     def _text_is_storable(self) -> CandybarManifest:
         # Postgres text rejects NUL and UTF-8 cannot encode a lone surrogate:
         # refuse here (422) instead of a 500 out of the insert or the event.
-        for field in ("description", "schedule", "timezone", "entrypoint"):
+        for field in ("description", "schedule", "timezone"):
             if has_unsafe_text(getattr(self, field)):
                 raise ValueError(f"{field} must not contain NUL or lone surrogate characters")
+        if self.entrypoint is not None and has_unsafe_text(self.entrypoint):
+            raise ValueError("entrypoint must not contain NUL or lone surrogate characters")
         if any(has_unsafe_text(tag) for tag in self.tags):
             raise ValueError("tags must not contain NUL or lone surrogate characters")
         return self
@@ -85,10 +99,27 @@ class CandybarManifest(BaseModel):
 
     @field_validator("entrypoint")
     @classmethod
-    def _entrypoint_non_empty(cls, value: str) -> str:
-        if not value.strip():
+    def _entrypoint_non_empty(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
             raise ValueError("entrypoint must not be empty")
         return value
+
+    @field_validator("runner", mode="before")
+    @classmethod
+    def _runner_is_valid(cls, value: object) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        try:
+            return canonical_runner(value)
+        except RunnerError as exc:
+            raise ValueError(f"invalid runner: {exc}") from exc
+
+    @property
+    def entrypoint_label(self) -> str:
+        """What the NOT NULL `entrypoint` column holds: the path, or the runner's label."""
+        if self.entrypoint is not None:
+            return self.entrypoint
+        return runner_label(self.runner or {})
 
     @field_validator("schedule")
     @classmethod
@@ -131,6 +162,10 @@ def load_manifest(path: str | Path) -> CandybarManifest:
         manifest = CandybarManifest.model_validate(table)
     except ValueError as exc:
         raise ManifestError(f"{manifest_path}: {exc}") from exc
+    if manifest.entrypoint is None:
+        # A runner definition names no file: argv, workdir and unit live on the
+        # host the executor runs on, which is not necessarily this process's.
+        return manifest
     entrypoint = Path(manifest.entrypoint)
     if not entrypoint.is_absolute():
         entrypoint = (manifest_path.parent / entrypoint).resolve()

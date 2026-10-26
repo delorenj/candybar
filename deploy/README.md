@@ -52,7 +52,9 @@ WorkQueue stream is unchanged, and there is no host/container routing field.
 | `host/candybar-executor.service` | the unit (linked into `~/.config/systemd/user`, so this file stays the source of truth) |
 | `host/run-executor.sh` | `ExecStart`: resolves the delegated cgroup, then execs the executor from `.venv` |
 | `host/executor.env.template` | `DATABASE_URL` as an `op://` reference |
-| `host/install.sh` | renders `~/.config/candybar/executor.env` (mode 600), links + enables the unit, (re)starts it |
+| `host/candybar-unit-holder.service` | keeps started systemd units loaded so their accounting survives (Story 7.3, below) |
+| `host/candybar-smoke.service` | a no-side-effect oneshot the `deploy-smoke-systemd` canary starts (Story 7.3) |
+| `host/install.sh` | renders `~/.config/candybar/executor.env` (mode 600), links + enables the units, (re)starts the executor |
 
 - **Metrics:** the executor serves its own `/metrics` + `/healthz` on `:8701`
   (`CANDYBAR_EXECUTOR_METRICS_HOST|PORT`; an empty port disables it). The
@@ -69,6 +71,24 @@ WorkQueue stream is unchanged, and there is no host/container routing field.
   (python + `candybar_sdk`) and the mise shims (node, ...). Secrets reach jobs
   from the user manager's environment or `op` inside the job, never the repo.
 
+### Runner kinds on the host (Story 7.3, AD-18)
+
+The executor starts a candybar as an `exec` argv or a `systemd` unit (README,
+"Runner kinds"). The systemd runner depends on two things this directory ships:
+
+- `candybar-unit-holder.service`, enabled and running. systemd 257 collects a
+  successful oneshot the moment it stops, accounting included; the runner
+  maintains `~/.config/systemd/user/candybar-unit-holder.service.d/60-held-units.conf`
+  (one `After=<unit>` per candybar-started unit) so each stays loaded long enough
+  to read `MemoryPeak` and `CPUUsageNSec`. It never needs a restart.
+- the per-unit drop-in `<unit>.d/50-candybar.conf`, written by the runner on the
+  first start of a unit (one `daemon-reload`, which does not touch running units).
+
+Neither is something to edit by hand; the runner restores both if they drift.
+Retiring a migrated unit's timer leaves its drop-in and holder line in place
+(harmless). The canaries `deploy-smoke-exec` and `deploy-smoke-systemd` are the
+live proof of both kinds after a redeploy (`candybar run <id>`; no side effects).
+
 ### Deploying (a pair)
 
 Any change that touches the daemon redeploys both halves, container first, so
@@ -80,8 +100,9 @@ docker compose -f deploy/compose.yml up -d --build                   # control p
 systemctl --user restart candybar-executor                           # executor, same git SHA
 ```
 
-The first time on a host, `deploy/host/install.sh` does the unit install and
-the restart. Then prove it: `curl -s https://candybar.delo.sh/healthz`, and
+The first time on a host, `deploy/host/install.sh` does the unit installs and
+the restart. A change to the registry (a new migration, such as 0006's `runner`
+column) is why the order is container first. Then prove it: `curl -s https://candybar.delo.sh/healthz`, and
 the next minute tick must show a `deploy-smoke` invocation
 (`journalctl --user -u candybar-executor` or
 `GET /candybars/<id>/invocations`).

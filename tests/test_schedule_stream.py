@@ -89,6 +89,7 @@ class Def:
     description: str = ""
     tags: list[str] = field(default_factory=list)
     timezone: str = "UTC"
+    runner: dict | None = None
 
 
 @dataclass
