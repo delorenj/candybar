@@ -339,7 +339,8 @@ def test_cli_daemon_rejects_unknown_role_exit_2() -> None:
 def test_cli_daemon_help_exit_0() -> None:
     result = CliRunner().invoke(app, ["daemon", "--help"])
     assert result.exit_code == 0
-    assert "--roles" in result.output
+    # Rich forces color under GITHUB_ACTIONS and splits "--roles" with ANSI codes.
+    assert "--roles" in re.sub(r"\x1b\[[0-9;]*m", "", result.output)
 
 
 def test_cli_daemon_happy_path_runs_and_exits_clean(monkeypatch: pytest.MonkeyPatch) -> None:
