@@ -2,7 +2,7 @@
 title: 'Story 1.7: Basic Prometheus metrics and /metrics endpoint'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-review'
+status: 'done'
 baseline_commit: '99d03defd6c32182959cf69c134399b4515f6107'
 route: 'dispatch'
 review_loop_iteration: 0
