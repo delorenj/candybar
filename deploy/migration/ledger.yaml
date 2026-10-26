@@ -1562,13 +1562,13 @@ jobs:
   - systemctl --user disable --now zellij-ark.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/zellij-ark.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17941-ac64-7f65-bd20-f20d8d84e0bf
   cutover_at: '2026-10-26T17:34:37.621030Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 0093d4a5-bb45-576b-9134-ef9717c245f6
+    result: success
+    at: '2026-10-26T17:36:00.704265Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:23:13.992832Z'
@@ -1591,6 +1591,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17941-ac64-7f65-bd20-f20d8d84e0bf enabled; first fire 2026-10-26T17:36:00Z
+  - at: '2026-10-26T17:38:04.819661Z'
+    action: verify
+    outcome: ok
+    detail: invocation 0093d4a5-bb45-576b-9134-ef9717c245f6 (scheduled) success exit=0 runtime=643ms memory=13639680B cpu=0.8645
 - id: systemd:gnome-shell-restart.timer
   wave: '7.7'
   candybar:
@@ -1669,13 +1673,13 @@ jobs:
   - systemctl --user disable --now srvls-metrics.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/srvls-metrics.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17941-6b32-7ab3-b126-f61d74d9593d
   cutover_at: '2026-10-26T17:28:13.328263Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: df5c10a9-181d-5a36-9cce-e2a9a345721e
+    result: success
+    at: '2026-10-26T17:30:01.888085Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:23:14.070856Z'
@@ -1686,6 +1690,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17941-6b32-7ab3-b126-f61d74d9593d enabled; first fire 2026-10-26T17:30:00Z
+  - at: '2026-10-26T17:38:21.285062Z'
+    action: verify
+    outcome: ok
+    detail: invocation df5c10a9-181d-5a36-9cce-e2a9a345721e (scheduled) success exit=0 runtime=1697ms memory=28966912B cpu=0.2163
 - id: systemd:srvls-snapshot
   wave: '7.7'
   candybar:
@@ -2016,9 +2024,9 @@ jobs:
   - systemctl --user disable --now restic-vault.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/restic-vault.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17948-1e34-7611-a5c9-19ac51c114fb
+  cutover_at: '2026-10-26T17:35:32.418730Z'
   verification:
     invocation_id: null
     result: null
@@ -2033,6 +2041,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:35:32.418730Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17948-1e34-7611-a5c9-19ac51c114fb enabled; first fire 2026-10-27T08:30:00Z
 - id: systemd:backup-drill.timer
   wave: '7.9'
   candybar:
@@ -2064,9 +2076,9 @@ jobs:
   - systemctl --user disable --now backup-drill.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/backup-drill.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17948-223b-7507-9eb4-2664bf0e787c
+  cutover_at: '2026-10-26T17:35:33.452250Z'
   verification:
     invocation_id: null
     result: null
@@ -2081,6 +2093,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:35:33.452250Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17948-223b-7507-9eb4-2664bf0e787c enabled; first fire 2026-11-01T14:00:00Z
 - id: systemd:restic-dbdumps
   wave: '7.9'
   candybar:
@@ -2113,9 +2129,9 @@ jobs:
   - systemctl --user disable --now restic-dbdumps.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/restic-dbdumps.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794a-a292-774f-81ee-b7e62183fecd
+  cutover_at: '2026-10-26T17:38:17.380153Z'
   verification:
     invocation_id: null
     result: null
@@ -2130,6 +2146,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:38:17.380153Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794a-a292-774f-81ee-b7e62183fecd enabled; first fire 2026-10-27T13:15:00Z
 - id: systemd:milkshake-ledger-backup.timer
   wave: '7.9'
   candybar:
@@ -2162,9 +2182,9 @@ jobs:
   - systemctl --user disable --now milkshake-ledger-backup.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/milkshake-ledger-backup.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794a-a6ad-77ae-9993-72cdf80a0f62
+  cutover_at: '2026-10-26T17:38:18.438810Z'
   verification:
     invocation_id: null
     result: null
@@ -2179,6 +2199,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:38:18.438810Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794a-a6ad-77ae-9993-72cdf80a0f62 enabled; first fire 2026-10-27T06:30:00Z
 - id: systemd:ifvault-nightly.timer
   wave: '7.9'
   candybar:
@@ -2212,9 +2236,9 @@ jobs:
   - systemctl --user disable --now ifvault-nightly.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/ifvault-nightly.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794a-aaf6-7d74-9978-64c569f0cff2
+  cutover_at: '2026-10-26T17:38:19.561984Z'
   verification:
     invocation_id: null
     result: null
@@ -2229,6 +2253,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:38:19.561984Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794a-aaf6-7d74-9978-64c569f0cff2 enabled; first fire 2026-10-27T05:40:00Z
 - id: systemd:delodocs-inbox-cleanup.timer
   wave: '7.9'
   candybar:
@@ -2510,9 +2538,9 @@ jobs:
   - systemctl --user disable --now hermes-single-install-guard.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/hermes-single-install-guard.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794a-6458-74f6-8a3a-9520331b09a9
+  cutover_at: '2026-10-26T17:38:01.457890Z'
   verification:
     invocation_id: null
     result: null
@@ -2523,6 +2551,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:38:01.457890Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794a-6458-74f6-8a3a-9520331b09a9 enabled; first fire 2026-10-26T17:45:00Z
 - id: systemd:skillex-hermes-resync
   wave: '7.8'
   candybar:
@@ -2603,9 +2635,9 @@ jobs:
   - systemctl --user disable --now naipkins-registry-snapshot.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/naipkins/systemd/user/naipkins-registry-snapshot.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17947-e1db-7c60-b307-8d663fca0ed3
+  cutover_at: '2026-10-26T17:35:16.957420Z'
   verification:
     invocation_id: null
     result: null
@@ -2616,6 +2648,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:35:16.957420Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17947-e1db-7c60-b307-8d663fca0ed3 enabled; first fire 2026-10-26T17:40:00Z
 - id: systemd:delonet-n8n-workflows-sync.timer
   wave: '7.8'
   candybar:
@@ -2649,9 +2685,9 @@ jobs:
   - systemctl --user disable --now delonet-n8n-workflows-sync.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/delonet-n8n-workflows/systemd/delonet-n8n-workflows-sync.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17948-25e8-7bd3-934b-24a81c94ba43
+  cutover_at: '2026-10-26T17:35:34.397979Z'
   verification:
     invocation_id: null
     result: null
@@ -2662,3 +2698,218 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:35:34.397979Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17948-25e8-7bd3-934b-24a81c94ba43 enabled; first fire 2026-10-26T17:45:00Z
+- id: hermes:33god-pm:8da3f24263f9
+  wave: '7.15'
+  candybar:
+    name: dev-journal-nightly
+    description: 'Nightly Dev Journal for yesterday (America/New_York): reportctl run+verify, then distribute to the vault, S3 and Slack (was hermes 33god-pm:8da3f24263f9)'
+    tags:
+    - migrated
+    - dev-journal
+    - wave-7-15
+    schedule: 0 6 * * *
+    timezone: America/New_York
+    runner:
+      kind: exec
+      argv:
+      - /home/delorenj/code/infra/scripts/dev-journal-hermes-nightly.sh
+      env: {}
+      timeout_s: 3600
+  native:
+    kind: hermes
+    schedule: 0 6 * * * (hermes cron expr, profile tz America/New_York)
+    jitter_s: 0
+    profile: 33god-pm
+    job_id: 8da3f24263f9
+    jobs_file: /home/delorenj/code/33GOD/agents/hermes/pm/runtime/cron/jobs.json
+  deviations:
+  - Hermes no-agent wrapper ~/.hermes/profiles/33god-pm/scripts/dev-journal-nightly.sh retired; candybar execs the tracked infra script directly (the wrapper only exec'd it)
+  - 'deliver=local dropped: output lands in the candybar invocation record instead of cron/output/'
+  - the old ticker fired ~19s late; candybar fires on the minute
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: scripts/dev-journal-hermes-nightly.sh
+    commit: 4cd59522819cbd97b3dbfbde244f790b6ad46905
+  disable:
+  - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 8da3f24263f9 --scheduler external'
+  - '"$HOME/.local/bin/hermes" -p 33god-pm cron pause 8da3f24263f9'
+  rollback:
+  - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 8da3f24263f9 --scheduler internal'
+  - '"$HOME/.local/bin/hermes" -p 33god-pm cron resume 8da3f24263f9'
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: systemd:dev-journal-ensure-nightly.timer
+  wave: '7.15'
+  candybar:
+    name: dev-journal-ensure-nightly
+    description: Recover a missed nightly Dev Journal at 06:15 Eastern (was dev-journal-ensure-nightly.timer)
+    tags:
+    - migrated
+    - dev-journal
+    - wave-7-15
+    schedule: 15 6 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: dev-journal-ensure-nightly.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 06:15:00 America/New_York; Persistent=true
+    jitter_s: 0
+    unit: dev-journal-ensure-nightly.timer
+  deviations:
+  - Persistent=true maps to candybar misfire coalesce-to-latest (AD-6/AD-20)
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/dev-journal-ensure-nightly.timer
+    commit: 4cd59522819cbd97b3dbfbde244f790b6ad46905
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: systemd:dev-journal-reconcile.timer
+  wave: '7.15'
+  candybar:
+    name: dev-journal-reconcile
+    description: Hourly replay of unacknowledged Dev Journal completion events from the durable outbox to Bloodbank (was dev-journal-reconcile.timer)
+    tags:
+    - migrated
+    - dev-journal
+    - wave-7-15
+    schedule: 0 * * * *
+    timezone: America/New_York
+    noise: true
+    runner:
+      kind: systemd
+      unit: dev-journal-reconcile.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=hourly; Persistent=true
+    jitter_s: 0
+    unit: dev-journal-reconcile.timer
+  deviations:
+  - Persistent=true maps to candybar misfire coalesce-to-latest (AD-6/AD-20)
+  - 'pre-existing failure kept: exits 3 (EXIT_UNMET) on invalid legacy dates since 2026-09-24'
+  native_failing: true
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/dev-journal-reconcile.timer
+    commit: 4cd59522819cbd97b3dbfbde244f790b6ad46905
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: systemd:sync-daily-reports-to-s3
+  wave: '7.15'
+  candybar:
+    name: sync-daily-reports-to-s3
+    description: Mirror the DeLoDocs Daily Reports folder to s3.delo.sh (delo/daily-reports) every morning (was sync-daily-reports-to-s3.timer)
+    tags:
+    - migrated
+    - dev-journal
+    - wave-7-15
+    schedule: 30 6 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: sync-daily-reports-to-s3.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 06:30:00 America/New_York; Persistent=true
+    jitter_s: 0
+    unit: sync-daily-reports-to-s3.timer
+  deviations:
+  - Persistent=true maps to candybar misfire coalesce-to-latest (AD-6/AD-20)
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/sync-daily-reports-to-s3.timer
+    commit: 4cd59522819cbd97b3dbfbde244f790b6ad46905
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: hermes:33god-pm:9b5dadbd1e4d
+  wave: '7.15'
+  candybar:
+    name: jev-rollup-cadence
+    description: 'Jev-Clairic roll-up sidecar: tick bloodbank turn events into the inbox every 10 min, roll into the vault at minutes 0-9, compose DAY.md at 06:0x local (was hermes 33god-pm:9b5dadbd1e4d)'
+    tags:
+    - migrated
+    - jev-clairic
+    - wave-7-15
+    schedule: '*/10 * * * *'
+    timezone: America/New_York
+    noise: true
+    runner:
+      on_failure:
+      - /bin/sh
+      - -c
+      - '"$HOME/.local/bin/hermes" send --to telegram:7564050286 --subject "[candybar] jev-rollup-cadence failed" -- "$CANDYBAR_FAILURE_MESSAGE" || true'
+      kind: exec
+      argv:
+      - /home/delorenj/.agents/tools/jev-clairic/hermes/jev-rollup-cadence.sh
+      env:
+        TZ: America/New_York
+      timeout_s: 300
+  native:
+    kind: hermes
+    schedule: '*/10 * * * * (hermes cron expr, profile tz America/New_York)'
+    jitter_s: 0
+    profile: 33god-pm
+    job_id: 9b5dadbd1e4d
+    jobs_file: /home/delorenj/code/33GOD/agents/hermes/pm/runtime/cron/jobs.json
+  deviations:
+  - Hermes no-agent profile scripts/ copy retired; candybar execs the versioned source ~/.agents/tools/jev-clairic/hermes/jev-rollup-cadence.sh (identical today; install.sh keeps them in sync)
+  - failure_deliver=telegram reproduced by the runner on_failure hook (hermes send -> telegram:7564050286)
+  - 'deliver=local dropped: output lands in the candybar invocation record'
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/agents
+    path: tools/jev-clairic/hermes/cron-jobs.json
+    commit: 584098d9ec560584b10252ce4b326cd47f5b0378
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
