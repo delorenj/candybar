@@ -213,3 +213,32 @@ def test_list_bad_limit_is_422(rig: Any, limit: str) -> None:
 def test_list_accepts_the_max_limit(rig: Any) -> None:
     assert rig.client().get(f"/candybars/{CANDYBAR}/invocations?limit=500").status_code == 200
     assert rig.list_calls == [(CANDYBAR, 500)]
+
+
+def test_timestamps_are_serialized_in_utc_whatever_the_db_session_zone() -> None:
+    """The live Postgres session zone is America/New_York: timestamptz values
+    come back at -04:00/-05:00 and must still be emitted as UTC (AD-13)."""
+    from datetime import timezone
+
+    eastern = timezone(timedelta(hours=-4))
+    row = make_invocation(
+        started_at=datetime(2026, 10, 26, 2, 58, 32, tzinfo=eastern),
+        finished_at=datetime(2026, 10, 26, 2, 58, 33, tzinfo=eastern),
+    )
+    body = invocation_row_json(row)
+    assert body["startedAt"] == "2026-10-26T06:58:32+00:00"
+    assert body["finishedAt"] == "2026-10-26T06:58:33+00:00"
+    assert invocation_row_json(make_invocation(finished_at=None))["finishedAt"] is None
+
+
+def test_candybar_rows_are_serialized_in_utc_too() -> None:
+    from datetime import timezone
+
+    from candybar.api.app import candybar_row_json
+
+    row = SimpleNamespace(
+        id=CANDYBAR, name="x", description="", tags=[], schedule="* * * * *",
+        entrypoint="/bin/true", noise=False,
+        created_at=datetime(2026, 10, 26, 2, 0, tzinfo=timezone(timedelta(hours=-4))),
+    )
+    assert candybar_row_json(row)["createdAt"] == "2026-10-26T06:00:00+00:00"

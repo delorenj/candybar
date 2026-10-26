@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -90,6 +91,12 @@ def problem(status: int, title: str, detail: str) -> JSONResponse:
     )
 
 
+def utc_iso(value: datetime | None) -> str | None:
+    """ISO 8601 in UTC (AD-13). timestamptz comes back in the DB session's
+    zone (the live server's is America/New_York), so convert explicitly."""
+    return value.astimezone(UTC).isoformat() if value is not None else None
+
+
 def candybar_row_json(row: Any) -> dict[str, Any]:
     """The holocene-view-contract row shape (+ entrypoint), camelCase dates."""
     return {
@@ -100,7 +107,7 @@ def candybar_row_json(row: Any) -> dict[str, Any]:
         "schedule": row.schedule,
         "entrypoint": row.entrypoint,
         "noise": row.noise,
-        "createdAt": row.created_at.isoformat(),
+        "createdAt": utc_iso(row.created_at),
     }
 
 
@@ -122,8 +129,8 @@ def invocation_row_json(row: Any) -> dict[str, Any]:
         "gpuLoad": row.gpu_load or 0.0,
         "tokenSpend": row.token_spend or 0,
         "costUsd": float(row.cost_usd) if row.cost_usd is not None else None,
-        "startedAt": row.started_at.isoformat(),
-        "finishedAt": row.finished_at.isoformat() if row.finished_at is not None else None,
+        "startedAt": utc_iso(row.started_at),
+        "finishedAt": utc_iso(row.finished_at),
     }
 
 
