@@ -132,3 +132,42 @@ histogram_quantile(0.95, sum by (candybar_id, le) (rate(candybar_invocation_runt
 
 These queries are unit-tested by promtool in CI
 (`deploy/prometheus/candybar-queries.test.yml`).
+
+## Deploy (AD-15)
+
+One container composes all roles behind Traefik at
+`https://candybar.delo.sh`, scraped by the homelab Prometheus, backed by the
+host Postgres (`candybar` database) and Bloodbank NATS — zero new
+infrastructure.
+
+```bash
+# 1. Resolve secrets (DATABASE_URL) from 1Password into the gitignored .env
+~/docker/stacks/_lib/op-inject.sh deploy/.env.template deploy/.env
+
+# 2. Build + run
+docker compose -f deploy/compose.yml up -d --build
+
+# 3. Smoke
+curl -s https://candybar.delo.sh/healthz          # {"status":"ok"}
+curl -s https://candybar.delo.sh/metrics | head   # Prometheus series
+```
+
+- The entrypoint applies `alembic upgrade head` before exec'ing the daemon
+  (the daemon is the registry's sole writer, so boot-time migration cannot
+  race).
+- Registered entrypoints execute **inside** the container; put job scripts in
+  `~/candybar/jobs` (bind-mounted at the same absolute path in the container,
+  override with `CANDYBAR_JOBS_DIR`) and register them by that path.
+- cgroup scoping is disabled in the container (`CANDYBAR_CGROUP_ROOT=""`) —
+  the container itself is the isolation boundary.
+- `docker stop` completes in ~1s when idle: both pull-consumer roles
+  unsubscribe before draining. Restart/rejoin duplicates nothing —
+  idempotency keys plus durable consumers make redelivery a republish from
+  the registry row, never a re-execution.
+- Secrets are `op://DeLoSecrets/...` references in `deploy/.env.template`;
+  rotation = vault edit + re-inject + `up -d`. `scripts/check-deploy-hygiene.sh`
+  (CI + `pytest`) fails any LAN IP or plaintext-secret shape on a deploy
+  surface.
+- DNS needs nothing: `candybar.delo.sh` is single-level, covered by the
+  wildcard CNAME through the Cloudflare tunnel.
+

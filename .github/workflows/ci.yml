@@ -64,6 +64,19 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      # Story 1.9: AD-15 grep gate — no LAN IPs or plaintext-secret shapes on
+      # deploy surfaces, enforced on every push.
+      - name: Deploy hygiene gate (no LAN IPs / plaintext secrets)
+        run: bash scripts/check-deploy-hygiene.sh
+
+      # Story 1.9: the deployment envelope must build on every push. The
+      # image entrypoint migrates the registry first, so the CLI smoke
+      # bypasses it with --entrypoint (no database in this job).
+      - name: Docker image build
+        run: |
+          docker build -t candybar:ci .
+          docker run --rm --entrypoint /app/.venv/bin/candybar candybar:ci --help >/dev/null
+
       - name: Unit tests
         run: uv run pytest -q
 
@@ -107,9 +120,10 @@ jobs:
       # Executor end-to-end (story 1.6): real command off JetStream, real
       # script spawn, real registry rows + counters; story 1.8 adds the manual
       # invoke through the real API onto the same path. Needs both services,
-      # which are both up by this point in the job.
-      - name: "Integration tests (executor + manual invoke: live NATS + Postgres)"
-        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py tests/test_manual_invoke_integration.py -q
+      # which are both up by this point in the job. Story 1.9 adds the
+      # fast-stop proof (roles stop inside docker's 10s SIGTERM grace).
+      - name: "Integration tests (executor + manual invoke + fast stop: live NATS + Postgres)"
+        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py tests/test_manual_invoke_integration.py tests/test_fast_stop_integration.py -q
         env:
           NATS_URL: nats://127.0.0.1:4222
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test

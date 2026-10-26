@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.op
+!**/.env.template
 /.agents/local.json
 /.agents/skills
 

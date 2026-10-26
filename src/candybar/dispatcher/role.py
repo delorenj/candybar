@@ -25,6 +25,7 @@ async def run_dispatcher(stop: asyncio.Event) -> None:
     if nc is None:
         return
     engine = create_registry_engine()
+    sub = None
     try:
         js = nc.jetstream()
         config = ConsumerConfig(
@@ -55,5 +56,9 @@ async def run_dispatcher(stop: asyncio.Event) -> None:
         raise
     finally:
         await engine.dispose()
+        # Unsubscribe the pull consumer before draining, same fast-stop
+        # contract as the executor role (docker stop grace is 10s).
+        if sub is not None:
+            await sub.unsubscribe()
         await nc.drain()
         log.info("dispatcher role drained")

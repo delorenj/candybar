@@ -103,6 +103,13 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="candybar", docs_url=None, redoc_url=None, openapi_url=None)
 
+    @app.get("/healthz")
+    async def healthz() -> dict[str, str]:
+        # Liveness for the docker healthcheck / Traefik. Deliberately does
+        # not touch the DB or bus: a dependency blip must not restart-loop
+        # the whole role composition.
+        return {"status": "ok"}
+
     @app.get("/metrics")
     async def metrics(request: Request) -> Response:
         # Prometheus asks for application/openmetrics-text when it can store

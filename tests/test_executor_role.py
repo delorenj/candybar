@@ -34,6 +34,7 @@ def _fake_infra(captured: dict[str, Any], stop: asyncio.Event) -> None:
 
         async def drain(self) -> None:
             captured["drained"] = True
+            captured.setdefault("shutdown_order", []).append("drain")
 
     class FakeJS:
         async def pull_subscribe(self, subject: str, **kwargs: Any) -> Any:
@@ -50,6 +51,9 @@ def _fake_infra(captured: dict[str, Any], stop: asyncio.Event) -> None:
                 return [object()]
             stop.set()
             return []
+
+        async def unsubscribe(self) -> None:
+            captured.setdefault("shutdown_order", []).append("unsubscribe")
 
     async def connect(url: str, **kwargs: Any) -> Any:
         captured["connect_url"] = url
@@ -101,6 +105,10 @@ def test_role_wires_workqueue_durable_and_store(monkeypatch: Any) -> None:
     assert callable(captured["executor_kwargs"]["by_key"])
     assert callable(captured["executor_kwargs"]["record"])
     assert captured["disposed"] and captured["drained"]
+    # Fast-stop contract (Story 1.9): detach the durable pull consumer before
+    # draining, or nats-py waits the full ~30s drain timeout and docker
+    # stop's 10s grace SIGKILLs us mid-drain.
+    assert captured["shutdown_order"] == ["unsubscribe", "drain"]
 
 
 def test_stop_terminates_inflight_children(monkeypatch: Any) -> None:

@@ -37,6 +37,7 @@ def test_role_wires_durable_inventory_and_sink(monkeypatch: Any):
 
         async def drain(self):
             captured["drained"] = True
+            captured.setdefault("shutdown_order", []).append("drain")
 
     class FakeJS:
         async def pull_subscribe(self, subject: str, **kwargs: Any):
@@ -48,6 +49,9 @@ def test_role_wires_durable_inventory_and_sink(monkeypatch: Any):
         async def fetch(self, *_args: Any, **_kwargs: Any):
             stop.set()
             return [object()]
+
+        async def unsubscribe(self):
+            captured.setdefault("shutdown_order", []).append("unsubscribe")
 
     async def connect(url: str, **kwargs: Any):
         captured["connect_url"] = url
@@ -83,3 +87,6 @@ def test_role_wires_durable_inventory_and_sink(monkeypatch: Any):
     assert captured["config"].ack_wait == 120
     assert "message" in captured
     assert captured["disposed"] and captured["drained"]
+    # Fast-stop contract (Story 1.9): unsubscribe before drain so an idle
+    # stop completes well inside docker's 10s default grace.
+    assert captured["shutdown_order"] == ["unsubscribe", "drain"]

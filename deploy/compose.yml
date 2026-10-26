@@ -1,0 +1,88 @@
+# Candybar deployment envelope (AD-15, Story 1.9).
+#
+# ONE container composing all daemon roles (heartbeat + dispatcher + executor
+# + api), fronted by Traefik at https://candybar.delo.sh, scraped by the
+# existing Prometheus on the `proxy` network, talking to the existing
+# Bloodbank NATS (`nats:4222` on `bloodbank-network`) and the existing host
+# Postgres (`host.docker.internal:5432`, `candybar` database). Zero new
+# infrastructure.
+#
+# Secrets: DATABASE_URL is materialized into deploy/.env (gitignored, mode
+# 600) from deploy/.env.template by the stack op-inject helper:
+#   ~/docker/stacks/_lib/op-inject.sh deploy/.env.template deploy/.env
+# or from the repo root:  (cd deploy && ~/docker/stacks/_lib/op-inject.sh)
+# Rotation = 1Password edit + re-inject + `docker compose up -d`.
+#
+# Bring-up:
+#   docker compose -f deploy/compose.yml build
+#   docker compose -f deploy/compose.yml up -d
+#
+# DNS: candybar.delo.sh is single-level, covered by the wildcard CNAME — no
+# Cloudflare step needed.
+
+name: candybar
+
+networks:
+  # Traefik + Prometheus reach the api role here.
+  proxy:
+    external: true
+  # Carries the `nats` DNS alias (bloodbank-nats) — the same network
+  # candystore's daprd uses to reach the bus.
+  bloodbank-network:
+    external: true
+
+services:
+  candybar:
+    build:
+      context: ..
+    image: candybar:local
+    container_name: candybar
+    env_file:
+      # Resolved op:// references live here (never committed).
+      - .env
+    environment:
+      NATS_URL: "nats://nats:4222"
+      CANDYBAR_API_HOST: "0.0.0.0"
+      CANDYBAR_API_PORT: "8700"
+      # Docker is the process isolation; the container cannot write the
+      # host cgroupfs, and scoping adds nothing inside a cgroup of its own.
+      CANDYBAR_CGROUP_ROOT: ""
+    extra_hosts:
+      # Registry: host system Postgres (the `candybar` database).
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Registered entrypoints run INSIDE this container (executor-owns-
+      # execution, AD-7). The jobs dir is bind-mounted at the same absolute
+      # path on both sides so a path registered through the API resolves
+      # identically in the container.
+      - "${CANDYBAR_JOBS_DIR:-/home/delorenj/candybar/jobs}:${CANDYBAR_JOBS_DIR:-/home/delorenj/candybar/jobs}"
+    ports:
+      # Local CLI access without the Traefik round-trip; remote access goes
+      # through candybar.delo.sh (edge-only auth posture per the spine).
+      - "127.0.0.1:8700:8700"
+    networks:
+      - proxy
+      - bloodbank-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.candybar.entrypoints=websecure"
+      - "traefik.http.routers.candybar.rule=Host(`candybar.delo.sh`)"
+      - "traefik.http.routers.candybar.tls=true"
+      - "traefik.http.routers.candybar.tls.certresolver=letsencrypt"
+      - "traefik.http.services.candybar.loadbalancer.server.port=8700"
+      - "traefik.docker.network=proxy"
+    healthcheck:
+      # python:slim ships neither wget nor curl.
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8700/healthz', timeout=3)\"",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    # The roles unsubscribe their pull consumers before draining, so stop
+    # completes in well under the default 10s grace when idle; in-flight
+    # children are SIGTERMed and recorded `failed` first (Story 1.6 path).
+    restart: unless-stopped

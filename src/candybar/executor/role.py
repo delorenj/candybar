@@ -46,6 +46,7 @@ async def run_executor(stop: asyncio.Event) -> None:
     engine = create_registry_engine()
     tasks: set[asyncio.Task[None]] = set()
     registry = ProcessRegistry()
+    sub = None
     try:
         js = nc.jetstream()
         config = ConsumerConfig(
@@ -105,5 +106,10 @@ async def run_executor(stop: asyncio.Event) -> None:
             # Children exit on SIGTERM; tasks then record failed + ack/term.
             await asyncio.gather(*tasks, return_exceptions=True)
         await engine.dispose()
+        # Detach the durable pull consumer BEFORE draining: nats-py otherwise
+        # waits the full drain timeout (~30s) for the pull subscription, and
+        # `docker stop`'s 10s default grace would SIGKILL us mid-drain.
+        if sub is not None:
+            await sub.unsubscribe()
         await nc.drain()
         log.info("executor role drained")
