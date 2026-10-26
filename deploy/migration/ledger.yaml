@@ -2919,9 +2919,9 @@ jobs:
   - systemctl --user disable --now sync-daily-reports-to-s3.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/sync-daily-reports-to-s3.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794f-f807-772c-acd5-d61a583eba21
+  cutover_at: '2026-10-26T17:44:06.997409Z'
   verification:
     invocation_id: null
     result: null
@@ -2932,6 +2932,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:44:06.997409Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794f-f807-772c-acd5-d61a583eba21 enabled; first fire 2026-10-27T10:30:00Z
 - id: hermes:33god-pm:9b5dadbd1e4d
   wave: '7.15'
   candybar:
