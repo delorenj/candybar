@@ -246,8 +246,11 @@ def build_candybar_skipped(
     reason: str,
     correlationid: UUID | None = None,
     causationid: UUID | None = None,
+    event_id: UUID | None = None,
 ) -> CandybarSkippedEvent:
-    eid = uuid4()
+    """Build the suppressed-fire fact. A deterministic `event_id` (e.g. the
+    dispatcher's misfire coalescing) makes republication broker-dedupable."""
+    eid = event_id or uuid4()
     return CandybarSkippedEvent(
         id=eid,
         subject=voc.subject_for(voc.TYPE_CANDYBAR_SKIPPED, "event"),

@@ -15,13 +15,14 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from .ids import uuid7
 from .manifest import CandybarManifest
-from .models import Candybar, Invocation
+from .models import Candybar, DispatchCursor, Invocation
 
 DATABASE_URL_ENV = "DATABASE_URL"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://localhost:5432/candybar"
@@ -83,12 +84,55 @@ class ScheduleEntry:
     id: UUID
     name: str
     schedule: str
+    # Fires before registration are never "missed" (Story 2.2). None = unknown:
+    # no floor beyond the dispatcher cursor.
+    created_at: datetime | None = None
 
 
 async def list_schedules(session: AsyncSession) -> list[ScheduleEntry]:
     """Read the current registry inventory without exposing ORM to dispatchers."""
-    result = await session.execute(select(Candybar.id, Candybar.name, Candybar.schedule))
-    return [ScheduleEntry(id=id, name=name, schedule=schedule) for id, name, schedule in result]
+    result = await session.execute(
+        select(Candybar.id, Candybar.name, Candybar.schedule, Candybar.created_at)
+    )
+    return [
+        ScheduleEntry(id=id, name=name, schedule=schedule, created_at=created_at)
+        for id, name, schedule, created_at in result
+    ]
+
+
+def _require_tick_minute(minute: datetime) -> None:
+    if minute.tzinfo is None or minute.utcoffset() is None or minute.utcoffset().total_seconds():
+        raise ValueError("cursor minute must be timezone-aware UTC")
+    if minute.second or minute.microsecond:
+        raise ValueError("cursor minute must be on a minute boundary")
+
+
+async def get_dispatch_cursor(session: AsyncSession, name: str) -> datetime | None:
+    """The newest tick minute the named tick consumer fully dispatched, or None."""
+    result = await session.execute(
+        select(DispatchCursor.tick_minute).where(DispatchCursor.name == name)
+    )
+    minute = result.scalar_one_or_none()
+    return minute.astimezone(UTC) if minute is not None else None
+
+
+async def advance_dispatch_cursor(session: AsyncSession, name: str, minute: datetime) -> None:
+    """Move the named cursor forward to `minute`; never backwards (Story 2.2).
+
+    One atomic upsert with GREATEST: a redelivered or replayed older tick, or
+    a second dispatcher racing on an older minute, can never rewind it.
+    """
+    _require_tick_minute(minute)
+    now = datetime.now(UTC)
+    stmt = pg_insert(DispatchCursor).values(name=name, tick_minute=minute, updated_at=now)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[DispatchCursor.name],
+        set_={
+            "tick_minute": func.greatest(DispatchCursor.tick_minute, stmt.excluded.tick_minute),
+            "updated_at": now,
+        },
+    )
+    await session.execute(stmt)
 
 
 async def insert_candybar(

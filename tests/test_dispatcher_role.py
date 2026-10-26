@@ -66,9 +66,10 @@ def test_role_wires_durable_inventory_and_sink(monkeypatch: Any):
             captured["published"] = event
 
     class FakeDispatcher:
-        def __init__(self, schedules: Any, publish: Any):
+        def __init__(self, schedules: Any, publish: Any, cursor: Any = None):
             captured["schedules"] = schedules
             captured["publish"] = publish
+            captured["cursor"] = cursor
 
         async def handle_message(self, msg: Any):
             captured["message"] = msg
@@ -86,6 +87,9 @@ def test_role_wires_durable_inventory_and_sink(monkeypatch: Any):
     assert captured["config"].filter_subject == role.TICK_FILTER
     assert captured["config"].ack_wait == 120
     assert "message" in captured
+    # Story 2.2: the misfire cursor is the registry row of THE tick durable.
+    assert isinstance(captured["cursor"], role.RegistryTickCursor)
+    assert captured["cursor"].name == role.DURABLE
     assert captured["disposed"] and captured["drained"]
     # Fast-stop contract (Story 1.9): unsubscribe before drain so an idle
     # stop completes well inside docker's 10s default grace.

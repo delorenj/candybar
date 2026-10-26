@@ -86,5 +86,22 @@ class Skip(Base):
     __table_args__ = (Index("skips_candybar", "candybar_id"),)
 
 
+class DispatchCursor(Base):
+    """The dispatcher's durable last-seen tick (Story 2.2, AD-6).
+
+    One row per tick consumer, keyed by its durable name. `tick_minute` is the
+    newest UTC tick minute fully dispatched; it only ever moves forward. A
+    consumed tick more than one minute past it marks the gap whose missed
+    fires are coalesced. Dispatcher state, not schedule-override state: the
+    `skips` table stays operator overrides (2.3/2.4).
+    """
+
+    __tablename__ = "dispatch_cursor"
+
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    tick_minute: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 # Names the sole-writer guard and migration agree on.
-TABLES = ("candybars", "invocations", "skips")
+TABLES = ("candybars", "invocations", "skips", "dispatch_cursor")

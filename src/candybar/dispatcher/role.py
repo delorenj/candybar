@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
+from typing import Any
 
 from nats.errors import (
     BadSubscriptionError,
@@ -15,7 +17,13 @@ from nats.js.api import AckPolicy, ConsumerConfig, DeliverPolicy
 from nats.js.errors import NotFoundError
 
 from ..bus import NatsEventSink, connect_nats, nats_url
-from ..registry.store import create_registry_engine, list_schedules, session_scope
+from ..registry.store import (
+    advance_dispatch_cursor,
+    create_registry_engine,
+    get_dispatch_cursor,
+    list_schedules,
+    session_scope,
+)
 from .worker import Dispatcher
 
 log = logging.getLogger(__name__)
@@ -25,6 +33,27 @@ DURABLE = "candybar-dispatcher-ticks"
 # Crash horizon for an unacked tick: a dispatcher that dies mid-tick has its
 # tick redelivered (to the same durable) after this many seconds.
 ACK_WAIT_SECONDS = 120
+
+
+class RegistryTickCursor:
+    """The dispatcher's last-seen tick, durable in the registry (Story 2.2).
+
+    Keyed by the durable consumer name: the cursor belongs to the one tick
+    consumer that evaluates schedules (AD-5). Each call is its own short
+    transaction; nothing is cached in dispatcher memory.
+    """
+
+    def __init__(self, engine: Any, name: str = DURABLE) -> None:
+        self._engine = engine
+        self.name = name
+
+    async def load(self) -> datetime | None:
+        async with session_scope(self._engine) as session:
+            return await get_dispatch_cursor(session, self.name)
+
+    async def advance(self, minute: datetime) -> None:
+        async with session_scope(self._engine) as session:
+            await advance_dispatch_cursor(session, self.name, minute)
 
 
 async def run_dispatcher(stop: asyncio.Event) -> None:
@@ -51,7 +80,7 @@ async def run_dispatcher(stop: asyncio.Event) -> None:
             async with session_scope(engine) as session:
                 return await list_schedules(session)
 
-        dispatcher = Dispatcher(schedules, sink.publish)
+        dispatcher = Dispatcher(schedules, sink.publish, cursor=RegistryTickCursor(engine, DURABLE))
         while not stop.is_set():
             try:
                 messages = await sub.fetch(1, timeout=1)
