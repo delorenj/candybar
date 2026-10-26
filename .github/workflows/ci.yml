@@ -82,6 +82,8 @@ jobs:
         run: |
           docker build -t candybar:ci .
           docker run --rm --entrypoint /app/.venv/bin/candybar candybar:ci --help >/dev/null
+          # Story 4.1: SDK-authored python jobs import candybar_sdk from the image venv.
+          docker run --rm --entrypoint python candybar:ci -c "import candybar_sdk"
 
       - name: Unit tests
         run: uv run pytest -q
@@ -128,8 +130,9 @@ jobs:
       # invoke through the real API onto the same path. Needs both services,
       # which are both up by this point in the job. Story 1.9 adds the
       # fast-stop proof (roles stop inside docker's 10s SIGTERM grace).
-      - name: "Integration tests (executor + manual invoke + fast stop: live NATS + Postgres)"
-        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py tests/test_manual_invoke_integration.py tests/test_fast_stop_integration.py -q
+      # Story 4.1 adds the python-SDK example firing off a scheduled tick.
+      - name: "Integration tests (executor + manual invoke + fast stop + python SDK: live NATS + Postgres)"
+        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py tests/test_manual_invoke_integration.py tests/test_fast_stop_integration.py tests/test_sdk_python_integration.py -q
         env:
           NATS_URL: nats://127.0.0.1:4222
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test

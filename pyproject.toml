@@ -29,7 +29,11 @@ dev = [
     "pytest>=8.3",
     "ruff>=0.8",
     "httpx2>=2.16",  # FastAPI TestClient transport; never a runtime dep (spine pins stay exact)
+    "candybar-sdk",  # story 4.1: the python SDK, editable from sdks/python (tests + example)
 ]
+
+[tool.uv.sources]
+candybar-sdk = { path = "sdks/python", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/candybar"]

@@ -19,6 +19,11 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-editable --no-install-project
 COPY src/ ./src/
 RUN uv sync --frozen --no-dev --no-editable
+# Story 4.1: candybar-sdk (zero deps, stdlib only) goes into the same venv,
+# whose bin/ leads PATH — so a job's `#!/usr/bin/env python3` can
+# `import candybar_sdk`. The daemon itself never imports it.
+COPY sdks/python/ ./sdks/python/
+RUN uv pip install --python /app/.venv/bin/python --no-deps --no-cache ./sdks/python
 
 FROM python:3.13-slim
 

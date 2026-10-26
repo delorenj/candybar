@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "candybar-sdk"
+version = "0.1.0"
+description = "Author Candybar cron jobs in Python: the AD-8 process protocol (CANDYBAR_* env in, result JSON out)"
+readme = "README.md"
+requires-python = ">=3.13"
+# Zero runtime dependencies by design: the SDK is a process-protocol harness
+# and must never pull in a bus client (AD-8 — SDKs never open NATS).
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/candybar_sdk"]

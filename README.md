@@ -14,7 +14,7 @@ and the daemon its only writer.
 
 ```text
 src/candybar/        # the one deployable (roles: heartbeat, dispatcher, executor, api, cli, events, registry)
-sdks/python/         # candybar-sdk (pip)     — Story 4.1
+sdks/python/         # candybar-sdk (pip)     — Story 4.1 (done)
 sdks/node/           # candybar-sdk (npm)     — Story 4.2
 sdks/rust/           # candybar-sdk (crate)   — Story 4.3
 deploy/              # container + Traefik labels, alembic env — Story 1.9
@@ -88,6 +88,17 @@ facts all carry `trigger=manual`, and the child sees `CANDYBAR_TRIGGER=manual`
 returns once the command is accepted, not when the job finishes. Unknown id → 404,
 malformed id → 422, bus down → 503: each prints the problem+json body and
 exits 1. Needs the `api` and `executor` roles running.
+
+## Write a candybar in Python (SDK)
+
+`sdks/python` is the pip package `candybar-sdk` (import `candybar_sdk`, zero
+dependencies, no NATS). Decorate a function with `@candybar`, call
+`main.run()`, report usage with `ctx.add_tokens(...)`, and register the file
+with a normal `candybar.toml`; the SDK writes the AD-8 result file, and an
+unhandled exception becomes `{status: "fail"}` with its message. The image
+ships the SDK, so jobs under the jobs mount can import it. See
+[`sdks/python/README.md`](sdks/python/README.md) and the
+[`hello` example](sdks/python/examples/hello) (`candybar register sdks/python/examples/hello`).
 
 ## Run the daemon
 

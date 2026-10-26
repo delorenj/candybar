@@ -66,6 +66,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "candybar-sdk" },
     { name = "httpx2" },
     { name = "pytest" },
     { name = "ruff" },
@@ -87,10 +88,16 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "candybar-sdk", editable = "sdks/python" },
     { name = "httpx2", specifier = ">=2.16" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.8" },
 ]
+
+[[package]]
+name = "candybar-sdk"
+version = "0.1.0"
+source = { editable = "sdks/python" }
 
 [[package]]
 name = "click"

@@ -1,0 +1,7 @@
+# Registers the python-SDK example. `candybar register sdks/python/examples/hello`
+[candybar]
+name = "python-sdk-hello"
+description = "candybar-sdk (python) example: reports token spend through the AD-8 result file"
+tags = ["example", "sdk", "python"]
+schedule = "*/5 * * * *"
+entrypoint = "hello.py"

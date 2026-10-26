@@ -6,7 +6,11 @@
 _bmad
 _bmad-output
 tests
-sdks
+# Only the python SDK ships in the image (story 4.1): SDK-authored python
+# candybars under the jobs mount import it. Its examples/docs stay out.
+sdks/*
+!sdks/python
+sdks/python/examples
 schemas
 *.md
 !README.md
