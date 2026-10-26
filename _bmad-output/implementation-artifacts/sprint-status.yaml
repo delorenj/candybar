@@ -85,7 +85,7 @@ development_status:
   7-4-hermes-runner: review
   7-5-migration-ledger-rollback-and-the-migrate-cli: review
   7-6-off-candybar-self-watchdog: review
-  7-7-wave-1-infra-housekeeping: in-progress
+  7-7-wave-1-infra-housekeeping: review
   7-8-wave-2-33god-platform-sweeps: in-progress
   7-9-wave-3-backups-and-vault: review
   7-10-wave-4-hindsight-pipeline: in-progress
