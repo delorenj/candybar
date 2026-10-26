@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-25-2026 21:37
-last_updated: 10-26-2026 06:30
+last_updated: 10-26-2026 14:05
 project: candybar
 project_key: NOKEY
 tracking_system: file-system
@@ -60,19 +60,19 @@ development_status:
   3-3-token-spend-counter-and-full-exemplar-coverage: done
   epic-3-retrospective: optional
 
-  epic-4: in-progress
-  4-1-python-sdk-sdks-python: review
-  4-2-node-sdk-sdks-node: review
-  4-3-rust-sdk-sdks-rust: review
+  epic-4: done
+  4-1-python-sdk-sdks-python: done
+  4-2-node-sdk-sdks-node: done
+  4-3-rust-sdk-sdks-rust: done
   epic-4-retrospective: optional
 
-  epic-5: in-progress
-  5-1-definitions-api-completion: review
-  5-2-schedule-window-endpoint-with-exact-skip-aware-fire-times: review
-  5-3-next-fire-poll-fallback: review
-  5-4-live-updates-over-sse: review
-  5-5-noise-collection-endpoints: review
-  5-6-skip-operations-api: review
+  epic-5: done
+  5-1-definitions-api-completion: done
+  5-2-schedule-window-endpoint-with-exact-skip-aware-fire-times: done
+  5-3-next-fire-poll-fallback: done
+  5-4-live-updates-over-sse: done
+  5-5-noise-collection-endpoints: done
+  5-6-skip-operations-api: done
   epic-5-retrospective: optional
 
   epic-6: backlog
