@@ -31,4 +31,19 @@ uv run ruff check .   # lint
 uv run candybar --help
 ```
 
-CI runs ruff + pytest on GitHub-hosted runners on every push to `main`.
+CI runs ruff + pytest on GitHub-hosted runners on every push to `main`,
+plus the heartbeat JetStream integration tests against a pinned nats-server.
+
+## Run the daemon
+
+```bash
+export NATS_URL=nats://localhost:4222   # dev default; the deploy wires the real value
+uv run candybar daemon                  # all implemented roles
+uv run candybar daemon --roles heartbeat
+```
+
+The heartbeat role publishes one `bloodbank.cron.tick.fired` fact per UTC
+minute boundary (`tick_id = tick:<unix_epoch_minute>`, JetStream `Nats-Msg-Id`
+= event id for dedupe). It is the only component allowed to own a clock (AD-1).
+Live-bus tests: `CANDYBAR_TEST_NATS=1 uv run pytest tests/test_heartbeat_integration.py`
+(add `CANDYBAR_TICK_E2E=1` for the literal 5-minute subscriber window).

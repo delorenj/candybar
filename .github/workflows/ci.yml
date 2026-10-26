@@ -37,8 +37,33 @@ jobs:
       - name: Console script smoke (installed entry point)
         run: uv run candybar --help
 
+      - name: Daemon subcommand smoke
+        run: |
+          uv run candybar daemon --help
+          if uv run candybar daemon --roles bogus; then
+            echo "expected --roles bogus to fail" >&2
+            exit 1
+          fi
+
       - name: Lint
         run: uv run ruff check .
 
       - name: Unit tests
         run: uv run pytest -q
+
+      # JetStream integration tests (story 1.3): run a pinned nats-server
+      # matching the live bloodbank-nats version, with JetStream enabled.
+      - name: Install NATS server
+        run: |
+          curl -sSfL https://github.com/nats-io/nats-server/releases/download/v2.10.29/nats-server-v2.10.29-linux-amd64.tar.gz | tar xz
+          sudo install -m 0755 nats-server-v2.10.29-linux-amd64/nats-server /usr/local/bin/nats-server
+
+      - name: Start NATS with JetStream
+        run: |
+          nats-server -js --port 4222 &
+          timeout 15 bash -c 'until (echo > /dev/tcp/127.0.0.1/4222) 2>/dev/null; do sleep 0.5; done'
+
+      - name: Integration tests (live NATS)
+        run: CANDYBAR_TEST_NATS=1 uv run pytest tests/test_heartbeat_integration.py -q
+        env:
+          NATS_URL: nats://127.0.0.1:4222
