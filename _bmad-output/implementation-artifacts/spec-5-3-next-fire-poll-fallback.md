@@ -1,0 +1,89 @@
+---
+title: 'Story 5.3: Next-fire poll fallback'
+type: 'feature'
+created: '2026-10-26'
+status: 'in-progress'
+baseline_commit: 'd974adb1d6f3ff5f7ae5efcd252985fc6fa8d5d3'
+route: 'dispatch'
+review_loop_iteration: 0
+context:
+  - '{project-root}/_bmad-output/implementation-artifacts/epic-5-context.md'
+  - '{project-root}/_bmad-output/specs/spec-cron-framework/holocene-view-contract.md'
+---
+
+<frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
+
+## Intent
+
+**Problem:** When the SSE stream (5.4) is unavailable, the Holocene view needs a cheap poll for the single current next-to-fire row. Today the only way to find it is `GET /schedule` over a window, which walks every fire in that window.
+
+**Approach:** Add `GET /schedule/next`, which returns the one `current` row in the `/schedule` row shape. It is computed from the definitions and the future skips: one upcoming-fire lookup per candybar with the dispatcher's own `next_fire` helper, and no window walk. "Current" gets one definition in `api/schedule.py`, which `/schedule` also uses, so the two endpoints cannot disagree.
+
+## Boundaries & Constraints
+
+**Always:**
+- `cut` and `current` mean exactly what they mean in 5.2. The row is the earliest non-skipped fire at or after `cut` across all candybars, at or after each candybar's registration minute, with ties broken by name. It is `{candybarId, name, schedule, fireTime, state:"current", skipped:false, noise}`, with no `lastResult` key. It is identical to the `current` row `/schedule` returns for any window that contains that fire.
+- Bounded read: one definitions query plus one skips query, limited to skips at or after `cut` (occurrence `fire_time >= cut`, day `day >= cut.date()`). There is no invocations or results query and no window walk. Per candybar, the lookup costs O(1 + occurrence skips + skipped days it passes): a rest-of-day skip jumps to the next UTC midnight instead of stepping through that day's fires.
+- Stated latency budget: with 200 registered candybars (mixed schedules, including minutely ones with today day-skipped and one that never fires), the median of 5 requests completes in under 50 ms on the in-memory rig and in under 100 ms on real Postgres.
+- 404 problem+json when no candybar has an upcoming fire (empty registry, or every schedule never fires again). 500 problem+json when the database is down. The CPU work runs off the event loop.
+- DB access goes only through `registry/store.py`.
+
+**Never:**
+- No migration, no new event type, no write path, no query parameters, no cache, and no change to dispatch decisions.
+- No SSE (5.4), noise (5.5) or skip (5.6) endpoints.
+
+## I/O & Edge-Case Matrix
+
+| Scenario | Input / State | Expected Output / Behavior | Error Handling |
+|----------|--------------|---------------------------|----------------|
+| Next fire | `*/5` A, `*/15` B, now 10:12:30 | A@10:15 (name tie-break over B@10:15), `state:"current"` | n/a |
+| Skipped next | occurrence skip A@10:15 | B@10:15 | n/a |
+| Day skipped | minutely A with today day-skipped, hourly B | B's next fire; A only if its next-day 00:00 comes first | n/a |
+| Boundary | now exactly 10:15:00 | the 10:15 fire is past; next is ≥ 10:16 | n/a |
+| Late registration | minutely A with `created_at` 10:20:10 while the clock reads 10:12 (skew), no other candybar | A@10:21 | n/a |
+| Never fires | only `0 0 30 2 *` | — | 404 problem+json |
+| Empty registry | none | — | 404 problem+json |
+| DB down | list fails | — | 500 problem+json |
+
+**Decisions (unattended run; spine and contract silent):** 404 rather than 204 or a null body: every non-200 answer in this API is problem+json, and "no current row" is the absence of the resource. The budget is set at about 5× the locally measured cost (about 45 µs per candybar), so slow CI runners pass; the deterministic croniter-step count is the real boundedness proof. `/schedule` takes its `current` row from the same global-next helper. That change fixes 5.2's rejected review finding #7: the walk over skipped earlier fires is replaced by the day-jumping lookup.
+
+</frozen-after-approval>
+
+## Code Map
+
+- `src/candybar/dispatcher/schedule.py`: `next_fire(schedule, at, skips)` has no production callers yet; only `tests/test_skips.py:150-185` pins it. Add the rest-of-day jump: when `fire.date() in skips.rest_of_day`, re-seed croniter at the next UTC midnight minus one minute. Do not change `fires_between`, `previous_fire` or `matches_tick`, because the dispatcher uses them.
+- `src/candybar/registry/store.py:281` `list_skips(session, start, end)`: make `end` optional (`None` = open-ended). Keep the order and validation. The dispatcher and `/schedule` callers stay unchanged.
+- `src/candybar/api/schedule.py`: add `next_fire_of(candybar, cut, skips)` (floor = `ceil(created_at)`; `OverflowError` → None), `global_next(candybars, now, skips) -> (fire, candybar) | None` (min by `(fire, name)`), and `next_row(...) -> ScheduleRow | None`. `window_rows` replaces its `earlier`/`current` scan with `global_next`. Reuse `ScheduleRow.to_json`, `first_tick_after`, `_registered_floor`, `NO_SKIPS`. No DB imports.
+- `src/candybar/api/app.py`: add `GET /schedule/next` next to `/schedule` (line ~456), in the same pattern: `clock()`, a single session for `list_candybars` and `list_skips(session, cut)`, `group_skips`, `asyncio.to_thread(next_row, ...)`, `problem`. Update the module docstring.
+- `tests/test_api_schedule.py`: `Rig`, `skips_in`, `at`, `z`, `DAY`, `brief` (importable). Its `rig` fixture's fake `list_skips` needs `end` to be optional. All 33 tests must still pass unchanged.
+- `tests/contract_shapes.py`: `assert_schedule_row`.
+- `tests/test_schedule_window_integration.py` and `tests/test_registry_integration.py`: the `migrated_db` and NullPool TestClient live pattern. CI live-Postgres step: `.github/workflows/ci.yml:199`.
+
+## Tasks & Acceptance
+
+**Execution:**
+- [ ] `src/candybar/dispatcher/schedule.py`: the day-jump in `next_fire` (bounded lookup).
+- [ ] `src/candybar/registry/store.py`: open-ended `list_skips` (the future-skips read).
+- [ ] `src/candybar/api/schedule.py`: `next_fire_of`, `global_next`, `next_row`; `window_rows` uses `global_next` (one definition of current).
+- [ ] `src/candybar/api/app.py`: the `GET /schedule/next` route and docstring.
+- [ ] `tests/test_api_schedule_next.py`: one test per matrix row and the contract shape on every row. Also: an equivalence test over randomized registries and skips (`next_row` equals the `current` row of `window_rows` over `[cut, cut+31d)`, and equals the brute-force minimum over `fires_between`); a croniter-step count proving the bounded work; the latency-budget test; the read-shape test (one skips read from `cut`, open-ended; no results read; `window_rows` and `fires_between` never called).
+- [ ] `tests/test_skips.py`: pins the `next_fire` day-jump (consecutive skipped days; occurrence plus day skips on one date).
+- [ ] `tests/test_schedule_next_integration.py` and `.github/workflows/ci.yml`: live Postgres, with real candybars and both skip kinds. Exactly 2 SQL statements, neither touching `invocations`; the row equals `/schedule`'s current row; the live latency budget.
+- [ ] `README.md`: a `/schedule/next` subsection.
+
+**Acceptance Criteria:**
+- Given the schedule window machinery, when `GET /schedule/next` is called, then it returns the single current row in the `/schedule` row shape (checked against the contract parse), and that row equals the `current` row of `/schedule` for a window containing it.
+- Given 200 candybars, including day-skipped minutely ones, when it is polled, then it answers with 2 bounded queries and no window walk, under the stated budget.
+
+## Implementation Notes
+
+## Spec Change Log
+
+## Review Triage Log
+
+## Verification
+
+**Commands:**
+- `uv run pytest -q`: expected all pass.
+- `uv run ruff check src tests`: expected clean.
+- `CANDYBAR_TEST_PG=1 DATABASE_URL=<throwaway pg> uv run pytest tests/test_schedule_next_integration.py tests/test_schedule_window_integration.py tests/test_registry_integration.py -q`: expected all pass (throwaway postgres:17-alpine only).
