@@ -2,7 +2,7 @@
 title: 'Story 7.8: Wave 2 — 33GOD platform sweeps'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'in-review'
 route: 'dispatch'
 review_loop_iteration: 0
 baseline_commit: '8576544'
@@ -81,7 +81,7 @@ context:
 - The ledger plan (commit `6a011dc`) was authored against a stale shared checkout during concurrent wave commits; it dropped 23 other-wave records on origin. Another agent restored the union in `1365145`. My seven entries, their full source-of-truth commits, and all other waves' records are intact. Future wave writes must merge by inventory id, not replace the whole shared ledger from a stale tree.
 - All seven cutovers used `candybar migrate cutover` with `--wait` as needed. Each registered disabled, retired its native timer, then enabled the candybar. The `.service` units stayed and the executor installed its own `50-candybar.conf` drop-in. `skillex-hermes-resync.path` remains active/enabled.
 - Every job received one `candybar run` manual invocation; six succeeded and skillex failed with exit 1 exactly as it did natively. Holocene's first manual invocation was coalesced with a scheduled fire, so a second manual invocation was sent and succeeded.
-- First scheduled fires verified in the ledger: bloodbank-agent-hooks-health `b43cf1ab-fdff-5161-8a87-dd702d9dbd6e`, holocene-pad-roster `2dbcf9e2-159a-5743-99cb-93c2c1a92f3c`, naipkins-registry-snapshot `1146c109-c204-5495-b7e1-6fadc1599412`, hermes-single-install-guard `6dfcb340-9451-528c-9e20-5b4b693bd9f8`, delonet-n8n-workflows-sync `8db145e7-efca-5ff9-8eb4-f1b7d4d8d734`. Skillex's first scheduled fire is 17:52Z; candystore's is 18:05Z. Both are pending first-fire proof at 17:45Z.
+- First scheduled fires verified in the ledger: bloodbank-agent-hooks-health `b43cf1ab-fdff-5161-8a87-dd702d9dbd6e`, holocene-pad-roster `2dbcf9e2-159a-5743-99cb-93c2c1a92f3c`, naipkins-registry-snapshot `1146c109-c204-5495-b7e1-6fadc1599412`, hermes-single-install-guard `6dfcb340-9451-528c-9e20-5b4b693bd9f8`, delonet-n8n-workflows-sync `8db145e7-efca-5ff9-8eb4-f1b7d4d8d734`, skillex-hermes-resync `a51b1b36-a331-5ac7-bdc4-08a83fa6e10a` (fail exit 1, result parity with native). Candystore's first scheduled fire is 18:05Z; pending at 17:54Z.
 - Seven manifests committed at `deploy/migration/manifests/<name>/candybar.toml` (commit `811f768`), validated by `load_manifest`. No daemon code was changed and no container redeploy was made.
 - Verification: `/healthz` 200; executor active; seven candybars enabled and seven timers retired (`migrate status --wave 7.8 --probe`). Live first-fire rows carry nonzero memory metering. `skillex-hermes-resync.path` still active. No job was rolled back.
 
