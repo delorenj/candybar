@@ -69,7 +69,7 @@ context:
 - [x] `src/candybar/events/{envelope,vocabulary,builders,parse}.py` + `__init__.py` -- typed builders/parsers -- daemon half of the AC.
 - [x] `schemas/cron/*.json` (8 drafts) -- spine Structural Seed's draft location -- drafts mirror the canonical set.
 - [x] `tests/test_events.py` -- round-trip, subject/kind consistency, tense guard, idempotency-key shapes, truncation -- codifies every I/O matrix row.
-- [ ] Commit + push candybar main; commit + push bloodbank main (`git pull --rebase` first; stage only owned files).
+- [x] Commit + push candybar main; commit + push bloodbank main (`git pull --rebase` first; stage only owned files).
 
 **Acceptance Criteria:**
 - Given the locked naming contract, when the story is complete, then `src/candybar/events/` builds and parses envelopes for exactly the 8 locked types with all contract-required envelope fields, proven by `uv run pytest -q`.
