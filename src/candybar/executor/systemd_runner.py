@@ -36,8 +36,10 @@ error record.
 
 Overlap: a unit that is already starting or running is refused, never joined
 (`systemctl start --wait` on a running unit would wait for, and meter, someone
-else's run). The AD-20 `skipped(reason=overlap)` record is a later story; until
-then the refusal is a recorded failure.
+else's run). Story 7.11 (AD-20) makes the worker probe `unit_busy` BEFORE
+anything is published or claimed and record `skipped(reason=overlap)`; the
+refusal here stays as the backstop for the check-then-start race and still
+records `failed` — loud and rare beats silent.
 """
 
 from __future__ import annotations
@@ -195,6 +197,24 @@ async def show(host: SystemdHost, unit: str, props: list[str]) -> dict[str, str]
         if sep:
             parsed[key] = value
     return parsed
+
+
+async def unit_busy(host: SystemdHost, unit: str) -> bool | None:
+    """The AD-20 overlap probe: True while the unit is starting or running.
+
+    Covers runs this executor did not start (a hand `systemctl start`, or a
+    run still going from before an executor restart — the in-process live set
+    forgets those). None when the user manager cannot be asked, so the caller
+    naks for redelivery instead of skipping (or running) on a guess. A unit
+    that is not loaded is NOT busy: the runner's own failure path reports
+    that, loudly.
+    """
+    props = await show(host, unit, ["LoadState", "ActiveState"])
+    if not props:
+        return None
+    if props.get("LoadState") != "loaded":
+        return False
+    return props.get("ActiveState") in BUSY_STATES
 
 
 def _atomic_write(path: Path, text: str, mode: int = 0o644) -> bool:

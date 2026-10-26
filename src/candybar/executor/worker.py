@@ -20,6 +20,22 @@ down and the commands queued) is not run: it is recorded as a
 `bloodbank.cron.candybar.skipped` fact with `reason=disabled` and acked, so
 a rolled-back job cannot fire on both schedulers. Manual runs still run.
 
+A scheduled or misfire command for a candybar that has since been DISABLED
+(Story 7.5, AD-21: a migration rollback, perhaps while this executor was
+down and the commands queued) is not run: it is recorded as a
+`bloodbank.cron.candybar.skipped` fact with `reason=disabled` and acked, so
+a rolled-back job cannot fire on both schedulers. Manual runs still run.
+
+Overlap and executor backlog (Story 7.11, AD-20): an invoke for a candybar
+with a LIVE invocation (in-process for any runner, plus a unit-state probe
+for `systemd` runners, so a hand-started or pre-restart run counts) is
+recorded `skipped` with `reason=overlap` and acked — never joined, never a
+second instance. A `scheduled` command whose fire is more than
+BACKLOG_MAX_AGE old runs only when it is the latest non-skipped fire at
+`now` (then with `trigger=misfire`); an older one is recorded `skipped`
+with `reason=executor_backlog_coalesced` and acked, so a burst of commands
+queued while the executor was down runs exactly once.
+
 Terminal/invoked event ids are UUIDv5 of `<phase>:<invocation_id>`, so
 JetStream `Nats-Msg-Id` dedupe makes every republication safe. Every
 child-supplied string is scrubbed of NUL and lone surrogates before it is
@@ -32,11 +48,12 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, tzinfo
 from uuid import UUID, uuid5
 
 from pydantic import ValidationError
 
+from ..dispatcher.schedule import SkipSet, ceil_minute, previous_fire
 from ..events import (
     STDERR_TAIL_MAX,
     build_candybar_completed,
@@ -55,6 +72,7 @@ from ..events.envelope import (
 from ..registry.models import Invocation
 from ..registry.store import InvocationClaim, TerminalInvocation
 from ..text import scrub_optional, scrub_text
+from ..timezones import TimezoneError, resolve_timezone
 from .metrics import EXECUTOR_METRICS, ExecutorMetrics
 from .runner import ProcessRegistry, RunOutcome
 from .targets import run_on_failure, run_target
@@ -72,6 +90,13 @@ ABANDON_RETRY_MAX_DELIVERIES = 3
 # The `skipped` reason for a queued scheduled/misfire command whose candybar
 # was disabled before it ran (Story 7.5).
 SKIP_DISABLED = "disabled"
+# The `skipped` reasons of Story 7.11 (AD-20): an invoke for a candybar with
+# a live invocation, and a stale scheduled command a newer fire supersedes.
+SKIP_OVERLAP = "overlap"
+SKIP_BACKLOG = "executor_backlog_coalesced"
+# A scheduled command this much older than now is backlog (AD-20: "more than
+# 2 minutes"): it runs only as the latest non-skipped fire, else it is skipped.
+BACKLOG_MAX_AGE = timedelta(minutes=2)
 ABANDONED_MESSAGE = (
     "abandoned: the executor lost this run before recording its result "
     "(killed, OOM, or a failed terminal write); not re-executed"
@@ -80,6 +105,16 @@ ABANDONED_MESSAGE = (
 
 def lifecycle_event_id(phase: str, invocation_id: UUID) -> UUID:
     return uuid5(EXEC_NAMESPACE, f"{phase}:{invocation_id}")
+
+
+def _tick_fire(tick_id: str | None) -> datetime | None:
+    """The UTC fire minute a `tick:<epoch_minute>` id names (None when unparseable)."""
+    if tick_id is None or not tick_id.startswith("tick:"):
+        return None
+    try:
+        return datetime.fromtimestamp(int(tick_id[5:]) * 60, UTC)
+    except ValueError:
+        return None
 
 
 @dataclass(frozen=True)
@@ -208,6 +243,9 @@ class Executor:
         retry_abandoned: Callable[[UUID], Awaitable[bool]] | None = None,
         on_failure: Callable[..., Awaitable[None]] = run_on_failure,
         enabled: Callable[[UUID], Awaitable[bool | None]] | None = None,
+        unit_busy: Callable[[str], Awaitable[bool | None]] | None = None,
+        fire_context: Callable[[UUID], Awaitable[tuple[str, str] | None]] | None = None,
+        skip_set: Callable[[UUID, tzinfo, datetime, datetime], Awaitable[SkipSet]] | None = None,
     ) -> None:
         """`entrypoint` resolves what to run: the bare entrypoint path (a `str`,
         the exec default) or the stored runner dict (Story 7.3), None when the
@@ -216,9 +254,16 @@ class Executor:
         `retry_abandoned` says whether a candybar opted into re-running a lost
         run. `on_failure` fires a runner's hook after a recorded failure.
         `enabled` reads a candybar's flag (Story 7.5); without it nothing is
-        skipped as disabled."""
+        skipped as disabled. `unit_busy` is the AD-20 systemd overlap probe
+        (True while the unit runs, None when unknownable — the command naks).
+        `fire_context` and `skip_set` feed the AD-20 backlog check (schedule +
+        timezone, and the candybar's SkipSet over a window); without them a
+        stale scheduled command runs as-is (pre-7.11 behaviour)."""
         self._on_failure = on_failure
         self._enabled = enabled
+        self._unit_busy = unit_busy
+        self._fire_context = fire_context
+        self._skip_set = skip_set
         self._claim = claim
         self._retry_abandoned = retry_abandoned
         self._by_key = by_key
@@ -229,6 +274,10 @@ class Executor:
         self.registry = registry or ProcessRegistry()
         self.metrics = metrics if metrics is not None else EXECUTOR_METRICS
         self._inflight: set[str] = set()
+        # Candybar ids with a live run in THIS process (AD-20 overlap): the
+        # check-then-add in `_execute` is await-free, so one event-loop pass
+        # can never admit two runs of one candybar.
+        self._live: set[UUID] = set()
 
     def _observe(self, rec: TerminalInvocation) -> None:
         """Metrics never fail an invocation: log and carry on."""
@@ -362,7 +411,75 @@ class Executor:
                 await msg.nak(delay=1)  # type: ignore[attr-defined]
                 return
             if enabled is False:
-                await self._skip_disabled(envelope, key, msg)
+                await self._skip(envelope, key, msg, SKIP_DISABLED)
+                return
+
+        # AD-20 overlap: at most one live run per candybar. The check-then-add
+        # is await-free, so two concurrent deliveries of one candybar cannot
+        # both pass. The slot covers everything below and is always released.
+        candybar_id = envelope.data.candybar_id
+        if candybar_id in self._live:
+            await self._skip(envelope, key, msg, SKIP_OVERLAP)
+            return
+        self._live.add(candybar_id)
+        try:
+            await self._execute_live(
+                envelope, key, msg, entrypoint=entrypoint, invocation_id=invocation_id, claimed=claimed
+            )
+        finally:
+            self._live.discard(candybar_id)
+
+    async def _execute_live(
+        self,
+        envelope: CandybarInvokeCommand,
+        key: str,
+        msg: object,
+        *,
+        entrypoint: str | dict,
+        invocation_id: UUID,
+        claimed: bool,
+    ) -> None:
+        """The rest of `_execute`, holding the candybar's AD-20 overlap slot."""
+        # A systemd unit may be busy with a run this process did not start (a
+        # hand `systemctl start`, or a run still going from before an executor
+        # restart — the in-process slot forgets those). Probe before anything
+        # is published or claimed; an unanswerable probe naks, never guesses.
+        if (
+            isinstance(entrypoint, dict)
+            and entrypoint.get("kind") == "systemd"
+            and self._unit_busy is not None
+        ):
+            try:
+                busy = await self._unit_busy(str(entrypoint.get("unit")))
+            except Exception:
+                log.exception("overlap probe crashed for %s; requesting redelivery", key)
+                await msg.nak(delay=1)  # type: ignore[attr-defined]
+                return
+            if busy is None:
+                log.warning("overlap probe of %s could not reach systemd; requesting redelivery", key)
+                await msg.nak(delay=1)  # type: ignore[attr-defined]
+                return
+            if busy:
+                await self._skip(envelope, key, msg, SKIP_OVERLAP)
+                return
+
+        # AD-20 executor backlog: a scheduled command whose fire is over
+        # BACKLOG_MAX_AGE old runs only as the latest non-skipped fire (then
+        # as a misfire); anything older is skipped, never burst-replayed.
+        trigger = envelope.data.trigger
+        if trigger == "scheduled":
+            try:
+                decision = await self._backlog_decision(envelope)
+            except Exception:
+                # A failed read must not skip (wrongly) nor run (stale): retry.
+                log.exception("backlog check failed for %s; requesting redelivery", key)
+                await msg.nak(delay=1)  # type: ignore[attr-defined]
+                return
+            if decision == "misfire":
+                log.info("%s survived backlog coalescing; running %s as misfire", envelope.data.name, key)
+                trigger = "misfire"
+            elif decision is not None:
+                await self._skip(envelope, key, msg, decision)
                 return
 
         if self.registry.stopping:
@@ -380,7 +497,7 @@ class Executor:
                     candybar_id=envelope.data.candybar_id,
                     name=envelope.data.name,
                     invocation_id=invocation_id,
-                    trigger=envelope.data.trigger,
+                    trigger=trigger,
                     tick_id=envelope.data.tick_id,
                     correlationid=envelope.correlationid,
                     causationid=envelope.command_id,
@@ -400,7 +517,7 @@ class Executor:
                     InvocationClaim(
                         invocation_id=invocation_id,
                         candybar_id=envelope.data.candybar_id,
-                        trigger=envelope.data.trigger,
+                        trigger=trigger,
                         tick_id=envelope.data.tick_id,
                         idempotency_key=key,
                         started_at=datetime.now(UTC),
@@ -422,7 +539,7 @@ class Executor:
                 **target,
                 invocation_id=invocation_id,
                 candybar_id=envelope.data.candybar_id,
-                trigger=envelope.data.trigger,
+                trigger=trigger,
                 tick_id=envelope.data.tick_id,
                 registry=self.registry,
                 on_wait=msg.in_progress,  # type: ignore[attr-defined]
@@ -437,7 +554,7 @@ class Executor:
         rec = TerminalInvocation(
             invocation_id=invocation_id,
             candybar_id=envelope.data.candybar_id,
-            trigger=envelope.data.trigger,
+            trigger=trigger,
             tick_id=envelope.data.tick_id,
             idempotency_key=key,
             result="success" if resolved.success else "fail",
@@ -570,30 +687,79 @@ class Executor:
         await msg.ack()  # type: ignore[attr-defined]
         log.info("redelivered %s already recorded as %s; no second execution", row.idempotency_key, row.result)
 
-    async def _skip_disabled(self, cmd: CandybarInvokeCommand, key: str, msg: object) -> None:
-        """A queued scheduled/misfire command of a disabled candybar: record `skipped`, ack.
+    async def _backlog_decision(self, envelope: CandybarInvokeCommand) -> str | None:
+        """AD-20 backlog ruling for a `scheduled` command.
+
+        None: run as-is (fresh fire, or the check is unwired/unparseable).
+        "misfire": the command is stale but IS the latest non-skipped fire —
+        run it with `trigger=misfire`. Any other string: a `skipped` reason —
+        SKIP_BACKLOG when a later non-skipped fire exists at `now`, or the
+        operator-skip kind when the command's own fire was skipped after
+        dispatch. Read failures raise; the caller naks (a wrong skip loses a
+        fire, a wrong run double-fires — retry beats both).
+
+        `previous_fire` walks straight back from `now`, so this is O(stored
+        skips), not O(minutes of backlog): no burst of stale commands makes
+        the check itself expensive.
+        """
+        if self._fire_context is None or self._skip_set is None:
+            return None
+        fire = _tick_fire(envelope.data.tick_id)
+        if fire is None:
+            return None
+        now = datetime.now(UTC)
+        if now - fire <= BACKLOG_MAX_AGE:
+            return None
+        context = await self._fire_context(envelope.data.candybar_id)
+        if context is None:
+            # Deleted between dispatch and now: the unknown-candybar path in
+            # `_execute` already reported it; nothing sane to coalesce toward.
+            return None
+        schedule, tz_name = context
+        try:
+            tz = resolve_timezone(tz_name)
+        except TimezoneError:
+            # A stored zone that stops resolving reads as UTC everywhere else
+            # (Story 7.1); the backlog check follows suit rather than wedging.
+            log.warning(
+                "candybar %s timezone %r unresolvable; backlog check reads it as UTC",
+                envelope.data.candybar_id,
+                tz_name,
+            )
+            tz = UTC
+        bound = ceil_minute(now)
+        skips = await self._skip_set(envelope.data.candybar_id, tz, fire, bound)
+        latest = previous_fire(schedule, bound, tz=tz, skips=skips)
+        if latest == fire:
+            return "misfire"
+        if latest is not None and latest > fire:
+            return SKIP_BACKLOG
+        return skips.reason_for(fire) or SKIP_BACKLOG
+
+    async def _skip(self, cmd: CandybarInvokeCommand, key: str, msg: object, reason: str) -> None:
+        """Record a fire the executor suppressed as a `skipped` fact, and ack.
 
         Fact only, like the dispatcher's skips: nothing ran, so no invocation
-        row. The id is deterministic per (candybar, tick), so a redelivery
+        row. The id is deterministic per (reason, key), so a redelivery
         republishes the same broker-dedupable fact.
         """
         event = build_candybar_skipped(
             candybar_id=cmd.data.candybar_id,
             name=cmd.data.name,
             tick_id=cmd.data.tick_id,
-            reason=SKIP_DISABLED,
+            reason=reason,
             correlationid=cmd.correlationid,
             causationid=cmd.command_id,
-            event_id=uuid5(EXEC_NAMESPACE, f"skipped:{SKIP_DISABLED}:{key}"),
+            event_id=uuid5(EXEC_NAMESPACE, f"skipped:{reason}:{key}"),
         )
         try:
             await self._publish(event)
         except Exception:
-            log.exception("failed to publish skipped (disabled) for %s; requesting redelivery", key)
+            log.exception("failed to publish skipped (%s) for %s; requesting redelivery", reason, key)
             await msg.nak(delay=1)  # type: ignore[attr-defined]
             return
         await msg.ack()  # type: ignore[attr-defined]
-        log.info("%s is disabled; %s skipped, not run", cmd.data.name, key)
+        log.info("%s skipped (%s), not run: %s", cmd.data.name, reason, key)
 
     async def _fail_unknown_candybar(self, cmd: CandybarInvokeCommand, msg: object) -> None:
         """No registry row: record impossible (FK), emit the failure fact, term."""

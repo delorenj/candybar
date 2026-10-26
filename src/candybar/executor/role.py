@@ -21,6 +21,7 @@ from nats.js.api import AckPolicy, ConsumerConfig, DeliverPolicy
 from nats.js.errors import NotFoundError
 
 from ..bus import NatsEventSink, connect_nats, nats_url
+from ..dispatcher.schedule import SkipSet, group_skips, widen_skip_window
 from ..registry.models import Invocation
 from ..registry.schema_guard import SchemaGate, guard_enabled, own_head
 from ..registry.store import (
@@ -31,8 +32,10 @@ from ..registry.store import (
     candybar_tags,
     claim_invocation,
     create_registry_engine,
+    get_fire_context,
     get_run_target,
     invocation_by_key,
+    list_skips,
     record_terminal_invocation,
     session_scope,
 )
@@ -40,6 +43,8 @@ from .gpu import GPU_SAMPLER
 from .metrics_server import start_metrics_server
 from .runner import ProcessRegistry
 from .schema_guard import sleep_or_stop
+from .systemd_runner import SystemdHost
+from .systemd_runner import unit_busy as systemd_unit_busy
 from .worker import RETRY_ON_ABANDON_TAG, Executor
 
 log = logging.getLogger(__name__)
@@ -124,6 +129,26 @@ async def _run_executor(stop: asyncio.Event) -> None:
                 tags = await candybar_tags(session, candybar_id)
             return tags is not None and RETRY_ON_ABANDON_TAG in tags
 
+        async def fire_context(candybar_id) -> tuple[str, str] | None:
+            """AD-20 backlog check: the candybar's (schedule, timezone)."""
+            async with session_scope(engine) as session:
+                return await get_fire_context(session, candybar_id)
+
+        async def skip_set(candybar_id, tz, start, end) -> SkipSet:
+            """AD-20 backlog check: the candybar's operator skips over a window.
+
+            The read is widened a day each way (a rest-of-day row's date is
+            candybar-local, AD-16); the SkipSet decides precisely.
+            """
+            async with session_scope(engine) as session:
+                rows = await list_skips(session, *widen_skip_window(start, end))
+            mine = [row for row in rows if row.candybar_id == candybar_id]
+            return group_skips(mine, zones={candybar_id: tz}).get(candybar_id, SkipSet(tz=tz))
+
+        async def unit_busy(unit: str) -> bool | None:
+            """AD-20 overlap probe for systemd runners (None: cannot tell)."""
+            return await systemd_unit_busy(SystemdHost.from_env(), unit)
+
         executor = Executor(
             by_key=by_key,
             entrypoint=entrypoint,
@@ -133,6 +158,9 @@ async def _run_executor(stop: asyncio.Event) -> None:
             claim=claim,
             retry_abandoned=retry_abandoned,
             enabled=enabled,
+            unit_busy=unit_busy,
+            fire_context=fire_context,
+            skip_set=skip_set,
         )
         while not stop.is_set():
             if gate is not None and not await gate.open():

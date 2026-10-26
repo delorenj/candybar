@@ -363,6 +363,33 @@ def test_an_already_running_unit_is_refused_not_joined(stub: Stub, state: str) -
     assert stub.calls("start") == []  # joining would meter someone else's run
 
 
+# ---------------------------------------------------------------------------
+# Story 7.11 (AD-20): unit_busy, the worker's pre-start overlap probe
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("state", ["active", "activating", "reloading", "deactivating"])
+def test_unit_busy_is_true_while_the_unit_is_starting_or_running(stub: Stub, state: str) -> None:
+    stub.set(show=[{"LoadState": "loaded", "ActiveState": state}])
+    assert go(sr.unit_busy(stub.host, UNIT)) is True
+
+
+def test_unit_busy_is_false_for_an_idle_unit(stub: Stub) -> None:
+    stub.set(show=[{"LoadState": "loaded", "ActiveState": "inactive"}])
+    assert go(sr.unit_busy(stub.host, UNIT)) is False
+
+
+def test_unit_busy_is_false_for_a_unit_that_is_not_loaded(stub: Stub) -> None:
+    # Not busy: the runner's own failure path reports a missing unit, loudly.
+    stub.set(show=[{"LoadState": "not-found", "ActiveState": "inactive"}])
+    assert go(sr.unit_busy(stub.host, UNIT)) is False
+
+
+def test_unit_busy_is_none_when_the_user_manager_cannot_be_asked(stub: Stub) -> None:
+    stub.set(show=[None])  # the stub's show exits nonzero
+    assert go(sr.unit_busy(stub.host, UNIT)) is None
+
+
 def test_a_result_file_the_unit_wrote_is_honoured(stub: Stub) -> None:
     result = stub.host.result_file(IDS["invocation_id"])
     stub.set(start_sleep=0)

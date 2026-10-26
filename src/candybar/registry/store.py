@@ -503,6 +503,20 @@ async def get_run_target(session: AsyncSession, candybar_id: UUID) -> str | dict
     return dict(runner) if runner is not None else entrypoint
 
 
+async def get_fire_context(session: AsyncSession, candybar_id: UUID) -> tuple[str, str] | None:
+    """The (schedule, timezone) of a candybar, for the executor's AD-20 backlog check.
+
+    None when the candybar is unknown (deleted between dispatch and execution).
+    """
+    result = await session.execute(
+        select(Candybar.schedule, Candybar.timezone).where(Candybar.id == candybar_id)
+    )
+    row = result.first()
+    if row is None:
+        return None
+    return row.schedule, row.timezone
+
+
 async def invocation_by_key(session: AsyncSession, idempotency_key: str) -> Invocation | None:
     """The recorded invocation for an idempotency key (the executor's dedupe read)."""
     result = await session.execute(

@@ -1,0 +1,120 @@
+---
+title: 'Story 7.11: Wave 5 — product pollers (telnyx-s3-intake, gruvato-acoustid-check, mobile-deploy-hub-catchup, mobile-deploy-hub-macwatch)'
+type: 'feature'
+created: '2026-10-26'
+status: 'in-progress'
+route: 'dispatch'
+review_loop_iteration: 0
+context: []
+---
+
+<frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
+
+## Intent
+
+**Problem:** Four product pollers (HeyMa telnyx-s3-intake every minute, gruvato-acoustid-check every 3h, mobile-deploy-hub catchup + macwatch every 2 min) still run on systemd user timers, and the AD-20 overlap-skip they depend on (deferred from 7.3, owed before any overlap-capable job migrates) is not implemented — today an overlapping systemd start is recorded `failed`.
+
+**Approach:** First land AD-20 in the executor (overlap `skipped` + executor-backlog coalescing) with tests and a redeploy. Then migrate each of the four jobs through the AD-21 ledger (`candybar migrate plan/cutover/verify`): systemd-runner candybars with the inventory's cron + America/New_York, the `.service` units untouched (OnFailure alerting preserved), timers disabled, and each owning repo's source of truth (HeyMa README install step, gruvato unit-header install comment, mobile-deploy-hub `tools/catchup/units/install.sh`) changed and pushed so a re-install cannot resurrect a timer.
+
+## Boundaries & Constraints
+
+**Always:**
+- Cutover order per AD-21: register `enabled:false` → retire native scheduler → enable; ledger committed before and after each state change; `source_of_truth.commit` recorded before cutover.
+- Wall-clock semantics: cron strings from `cron-inventory.md` verbatim, timezone `America/New_York`; jitter (`RandomizedDelaySec`) dropped and recorded as a deviation.
+- Units with `OnFailure=` (telnyx, gruvato) get NO `on_failure` hook on the runner (AD-18 forbids the duplicate; cutover refuses it).
+- External-side-effect jobs (both mobile-deploy-hub jobs) are never `candybar run` to test: they verify by first scheduled fire.
+- Internal jobs (telnyx, gruvato) get one manual `candybar run` after cutover, which must succeed (gruvato: succeed-or-exit-2-parity if its quota alert is open natively).
+- Rollback on any failure: `candybar migrate rollback <id>` immediately; report in rolledBack.
+- After the daemon code change, redeploy the container AND restart `candybar-executor` per deploy/README.md (pair deploy, AD-17); confirm `/healthz` 200 and a `deploy-smoke` fire.
+
+**Never:**
+- Never leave both schedulers live for a job, and never neither.
+- Never edit the four `.service` units' directives (Environment, KillMode, TimeoutStartSec, Slice/Nice, OnFailure stay).
+- Never register the candybar-watchdog or any liveness guard as a candybar; no liveness-guard migration in this wave.
+- Never restart hermes-gateway (no hermes jobs in this wave).
+- No schema/event-vocabulary changes: `skipped.data.reason` is a free string (`overlap`, `executor_backlog_coalesced` need no schema rev).
+- No manual runs of the external-side-effect jobs; no per-wave wrapper scripts.
+
+## I/O & Edge-Case Matrix
+
+| Scenario | Input / State | Expected Output / Behavior | Error Handling |
+|----------|--------------|---------------------------|----------------|
+| exec overlap | invoke arrives while same candybar's exec child runs in-process | `skipped` fact `reason=overlap`, command acked, no second child | publish failure → nak(delay=1) |
+| systemd overlap (executor-started) | invoke arrives while the executor's own start of the unit is still running | in-process live set catches it: `skipped(overlap)`, acked | as above |
+| systemd overlap (external/manual start) | unit `activating`/`active` from a hand start or a pre-restart run | pre-start probe catches it: `skipped(overlap)`, acked | probe raises (user manager down) → nak(delay=1), never a spurious fail |
+| overlap race residual | unit goes busy between probe and `start --wait` | runner's existing refusal stands, recorded `failed` (loud, rare) | unchanged |
+| manual run during live run | `trigger=manual` while live | same overlap skip (AD-20 has no manual exemption) | as above |
+| backlog, one stale command | scheduled command >2 min old, a later non-skipped fire exists ≤ now | `skipped(executor_backlog_coalesced)`, acked | schedule/tz/skip read failure → nak(delay=1) (retry beats wrong skip) |
+| backlog survivor | stale scheduled command, no later non-skipped fire ≤ now | runs with `trigger=misfire` (invoked event, claim row, AD-8 env all say misfire) | N/A |
+| backlog all-skipped tail | later fires exist but every one is operator-skipped | the command runs (it is the latest non-skipped) | N/A |
+| backlog, own fire skipped post-dispatch | the command's fire got an operator skip after its command was published | `skipped` with the operator-skip kind, acked | N/A |
+| fresh command | fire ≤2 min old | runs normally, no skip reads | N/A |
+| cutover guard | cutover within min(2 min, period/4) of a native/candybar fire, jitter pending, or native run active | `migrate cutover` refuses; `--wait` polls until clear | exit 1/3 per CLI contract |
+
+</frozen-after-approval>
+
+## Code Map
+
+- `src/candybar/executor/worker.py` -- `_execute` gains two pre-`invoked` checks after the `enabled` check: backlog coalescing (trigger `scheduled` only, fire from `tick_id`, >120 s old) then overlap. `_skip_disabled` generalizes to a `_skip(reason)` helper (fact-only, deterministic `uuid5(EXEC_NAMESPACE, f"skipped:{reason}:{key}")`, ack; nak on publish failure). The run itself is wrapped so the candybar id enters/leaves an in-process live set.
+- `src/candybar/executor/runner.py` -- `ProcessRegistry` gains `live_candybars: set[UUID]` (add before spawn path starts, discard in `finally` around `_run`). Covers exec/hermes/executor-started systemd runs.
+- `src/candybar/executor/systemd_runner.py` -- expose `async def unit_busy(host, unit) -> bool | None` (LoadState/ActiveState probe; None when systemd is unreachable so the worker naks instead of skipping on a guess). The existing in-runner BUSY_STATES refusal stays as the race backstop.
+- `src/candybar/executor/role.py` -- wire the new ports: `unit_busy` (SystemdHost.from_env), `fire_context` (schedule+timezone), `fire_skipped` (occurrence + widened rest-of-day skip reads via store.py ids).
+- `src/candybar/registry/store.py` -- add `get_fire_context(session, candybar_id) -> tuple[str, str] | None` (schedule, timezone) and `fire_is_skipped(session, candybar_id, fire_utc, tz)` built from `occurrence_skip_id` / `rest_of_day_skip_id` / `skip_stored` (AD-10: SQL stays in registry/).
+- `src/candybar/dispatcher/firetimes.py` -- reuse `fire_times()` for the backlog walk (never re-implement cron math).
+- `tests/test_executor.py` (+ live-PG/NATS integration peers) -- new tests per I/O matrix row; each must fail without its change.
+- `deploy/migration/ledger.yaml` -- four new entries (ids verbatim from cron-inventory.md), driven by `uv run candybar migrate plan <id> --write` then cutover/verify.
+- Owning repos: `~/HeyMa/components/telnyx-s3-intake/README.md` (install step drops `enable --now` of the timer, notes candybar + rollback), `~/code/gruvato/deploy/gruvato-acoustid-check.service` header comment (same), `~/code/mobile-deploy-hub/tools/catchup/units/install.sh` (Linux branch stops `enable --now`-ing both timers; still copies all four unit files so rollback-by-path works; comment points at the ledger).
+- Reuse, do not modify: the four `.service` units; `deploy/host/*`; the dispatcher's skip paths; `build_candybar_skipped`.
+
+## Tasks & Acceptance
+
+**Execution:**
+- [ ] AD-20 daemon change (files per Code Map) + tests; full suite green; redeploy container + restart `candybar-executor`; `/healthz` 200 and a post-deploy `deploy-smoke` fire
+- [ ] Foundation live check recorded: executor active, systemd canary's latest invocation success, tz field on `/candybars`
+- [ ] HeyMa source-of-truth change committed+pushed; ledger entry `systemd:telnyx-s3-intake` (cron `* * * * *`, tz America/New_York, runner `{kind: systemd, unit: telnyx-s3-intake.service}`, jitter 5 s deviation); cutover via CLI
+- [ ] Forced-long-run overlap proof on telnyx: hand-start `telnyx-s3-intake.service` across a minute boundary; the candybar fire is recorded `skipped(overlap)` (executor journal + skipped fact), no concurrent units
+- [ ] One manual `candybar run` of telnyx succeeds; `migrate verify` passes on its next scheduled fire
+- [ ] gruvato source-of-truth change committed+pushed; ledger entry `systemd:gruvato-acoustid-check.timer` (cron `7 */3 * * *`, jitter 120 s deviation); cutover; one manual run succeeds (or exit-2 parity if the quota alert is open — check native state first); verify on first scheduled fire
+- [ ] mobile-deploy-hub `install.sh` change committed+pushed; ledger entries for `systemd:mobile-deploy-hub-catchup.timer` (`*/2 * * * *`) and `systemd:mobile-deploy-hub-macwatch.timer` (`1-59/2 * * * *`); cutovers; NO manual runs — pendingFirstFire, verify on first scheduled fires
+- [ ] `sprint-status.yaml` 7-11 → review; `deferred-work.md` AD-20 entry marked resolved; commit+push candybar
+
+**Acceptance Criteria:**
+- Given the four timers enabled, when the wave lands, then each job has a ledger entry (`verified` for internal jobs after first scheduled fire; `cutover` + pendingFirstFire for the external two), its timer is disabled and out of `timers.target.wants`, its `.service` is byte-identical to before, and `candybar migrate status --probe` shows no native scheduler active
+- Given telnyx's unit is hand-started across a minute boundary, when the candybar fire arrives, then it is recorded `skipped` with `reason=overlap` and exactly one instance of the unit ran (AD-20)
+- Given the executor was down past a fire, when it returns with queued commands, then only the latest non-skipped fire runs (trigger `misfire`); the rest are recorded `skipped(executor_backlog_coalesced)` — proven by a live pause/resume drill on the executor with a test candybar or by integration test
+- Given gruvato's unit keeps `OnFailure=gruvato-acoustid-alert.service`, when a candybar-started run exits 2, then the alert unit fires (ntfy path intact) and the runner carries no `on_failure`
+- Given mobile-deploy-hub ships a new release (`tools/hosts.mjs` re-runs `install.sh`), when that happens after cutover, then the timers stay disabled (install.sh no longer enables them)
+- Given any job fails on candybar, when discovered, then `migrate rollback` restores the timer first and disables the candybar
+
+## Implementation Notes
+
+- Unattended workflow run (orchestrator-dispatched): the step-02 approval checkpoint and step-03/04 human halts are recorded as proceeded-through, matching the documented deviation of stories 7.1-7.6. Review layers will run inline (no subagent tool in this session).
+- Story owns the deferred AD-20 item (deferred-work.md, from 7.3): it names telnyx-s3-intake and mobile-deploy-hub-catchup — this wave's jobs — as the settle deadline.
+- AD-20 skips are fact-only (no invocations row), the same record path as 7.5's `reason=disabled` skip; the "+ registry row" wording in AD-20 refers to the dispatcher's skip-entry rows for operator skips. Skips are visible via the executor journal and the `bloodbank.cron.candybar.skipped` event.
+- Overlap applies to manual triggers too (AD-20 states the rule without exemption); a skipped manual run surfaces through the API/event instead of silently double-running.
+- Backlog threshold constant: 120 s (AD-20's "more than 2 minutes").
+- Design refinement during implementation (2026-10-26): the "backlog walk cap 1440" matrix row was replaced — `previous_fire()` walks straight back from `now`, so the check is O(stored skips), not O(backlog minutes), and needs no cap. The replacement row pins the case where the command's OWN fire was operator-skipped after dispatch (latest non-skipped fire is older than the command's fire): it is recorded `skipped` with the operator-skip kind, not `executor_backlog_coalesced`.
+
+## Spec Change Log
+
+## Review Triage Log
+
+## Design Notes
+
+Why the overlap probe lives in the worker, not only in the runner: the skip must be recorded BEFORE `invoked` is published and the claim row commits, or a skipped run would masquerade as a started invocation. The runner's own BUSY_STATES refusal stays as the backstop for the check-then-start race (a hand `systemctl start` landing between probe and start) and still records `failed` — loud and rare beats silent.
+
+Backlog coalescing needs no inter-command coordination: "a later non-skipped fire ≤ now exists" is a pure function of (fire, now, schedule, skips), so exactly one command in any queued burst survives regardless of processing order.
+
+## Verification
+
+**Commands:**
+- `uv run pytest -q` -- existing suite green plus the new AD-20 tests
+- `uv run ruff check .` -- clean
+- `curl -s https://candybar.delo.sh/healthz` -- 200 after redeploy
+- `uv run candybar migrate status --wave 7.11 --probe` -- four entries, native schedulers inactive
+- `uv run candybar migrate verify <id>` -- internal jobs reach `verified`; external jobs exit 3 until first scheduled fire
+- `systemctl --user list-timers --all | grep -E 'telnyx|acoustid|mobile-deploy'` -- timers inactive
+- `journalctl --user -u candybar-executor.service --since -10min | grep -i 'overlap\|coalesced'` -- the forced-long-run proof
+
+**Manual checks (if no CLI):**
+- `GET /candybars/{id}/invocations?limit=3` for each migrated job after its first scheduled fire: trigger `scheduled`, metered (memoryPeakBytes > 0 for systemd units)
