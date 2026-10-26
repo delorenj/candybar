@@ -62,14 +62,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/candybar/dispatcher/schedule.py`: the day-jump in `next_fire` (bounded lookup).
-- [ ] `src/candybar/registry/store.py`: open-ended `list_skips` (the future-skips read).
-- [ ] `src/candybar/api/schedule.py`: `next_fire_of`, `global_next`, `next_row`; `window_rows` uses `global_next` (one definition of current).
-- [ ] `src/candybar/api/app.py`: the `GET /schedule/next` route and docstring.
-- [ ] `tests/test_api_schedule_next.py`: one test per matrix row and the contract shape on every row. Also: an equivalence test over randomized registries and skips (`next_row` equals the `current` row of `window_rows` over `[cut, cut+31d)`, and equals the brute-force minimum over `fires_between`); a croniter-step count proving the bounded work; the latency-budget test; the read-shape test (one skips read from `cut`, open-ended; no results read; `window_rows` and `fires_between` never called).
-- [ ] `tests/test_skips.py`: pins the `next_fire` day-jump (consecutive skipped days; occurrence plus day skips on one date).
-- [ ] `tests/test_schedule_next_integration.py` and `.github/workflows/ci.yml`: live Postgres, with real candybars and both skip kinds. Exactly 2 SQL statements, neither touching `invocations`; the row equals `/schedule`'s current row; the live latency budget.
-- [ ] `README.md`: a `/schedule/next` subsection.
+- [x] `src/candybar/dispatcher/schedule.py`: the day-jump in `next_fire` (bounded lookup).
+- [x] `src/candybar/registry/store.py`: open-ended `list_skips` (the future-skips read).
+- [x] `src/candybar/api/schedule.py`: `next_fire_of`, `global_next`, `next_row`; `window_rows` uses `global_next` (one definition of current).
+- [x] `src/candybar/api/app.py`: the `GET /schedule/next` route and docstring.
+- [x] `tests/test_api_schedule_next.py`: one test per matrix row and the contract shape on every row. Also: an equivalence test over randomized registries and skips (`next_row` equals the `current` row of `window_rows` over `[cut, cut+31d)`, and equals the brute-force minimum over `fires_between`); a croniter-step count proving the bounded work; the latency-budget test; the read-shape test (one skips read from `cut`, open-ended; no results read; `window_rows` and `fires_between` never called).
+- [x] `tests/test_skips.py`: pins the `next_fire` day-jump (consecutive skipped days; occurrence plus day skips on one date).
+- [x] `tests/test_schedule_next_integration.py` and `.github/workflows/ci.yml`: live Postgres, with real candybars and both skip kinds. Exactly 2 SQL statements, neither touching `invocations`; the row equals `/schedule`'s current row; the live latency budget.
+- [x] `README.md`: a `/schedule/next` subsection.
 
 **Acceptance Criteria:**
 - Given the schedule window machinery, when `GET /schedule/next` is called, then it returns the single current row in the `/schedule` row shape (checked against the contract parse), and that row equals the `current` row of `/schedule` for a window containing it.
@@ -77,6 +77,30 @@ context:
 
 ## Implementation Notes
 
+- This ran under the workflow harness's no-questions directive. Checkpoint 1 was auto-approved ("Approve and continue"). The spec is about 1,120 words, over the 1,600-token target; it has one goal, so it was kept whole. This session has no subagent tool, so implementation and review ran inline, the same deviation recorded for 1.1 to 5.2.
+- g33 preflight passed. The ecosystem route came back as execution (Momo) and UI (Holocene); no board was written. No event types or schemas were added: the route only reads.
+- `epic-5-context.md` was valid, so it was loaded instead of the raw planning docs. Continuity came from the done 5.2 spec: `api/schedule.py`, the `Rig` test pattern, `contract_shapes.py` and the `migrated_db` live pattern.
+- What was built:
+  - `next_fire` gained the rest-of-day jump.
+  - `list_skips(session, start, end=None)` is now open-ended when `end` is omitted; the dispatcher and `/schedule` calls are unchanged.
+  - `api/schedule.py` gained `next_fire_of`, `global_next` and `next_row`. `window_rows` now takes `current` from `global_next`.
+  - `GET /schedule/next` route; a `contract_route_line` helper; README subsection; CI live-Postgres step.
+- Tests:
+  - `tests/test_api_schedule_next.py` has 15 tests: every matrix row with a `/schedule` current-row cross-check, read shape, croniter step count, latency budget, randomized equivalence and the default clock.
+  - `tests/test_skips.py` has 7 parametrized day-jump tests, each checked against stepping every fire.
+  - `tests/test_schedule_next_integration.py` is the live test.
+- The spec asked the randomized equivalence test for windows over `[cut, cut+31d)`. Over 31 days a minutely candybar is 44,640 rows, which is too slow for a unit test. It uses 6-hour windows instead, starting 2 hours before `cut`, 1 minute before, at `cut`, 30 minutes after and 3 hours after. These also cover the future-window case (no `current` row when an earlier fire comes first), and the brute-force check looks 400 days ahead.
+- Numbers I measured:
+  - The budget registry takes 12.6 ms median on the in-memory route, against the 50 ms budget.
+  - The live route takes 20 ms median against real Postgres, against the 100 ms budget, with a new NullPool connection per request.
+  - One `next_fire` lookup takes 25 to 50 µs; a schedule that never fires takes about 310 µs.
+- Mutation checks:
+  - Disabling the day-jump fails the step-count test (83,299 steps against the bound of 699) and the latency-budget test.
+- No earlier story broke:
+  - 624 unit tests pass and ruff is clean.
+  - On throwaway postgres:17-alpine, the live-Postgres suites (registry, both skip stores, window, next) gave 15 passed and 2 skipped; the 2 skips need the bus.
+  - On throwaway nats:2.10.29 with postgres:17-alpine, the bus suites (dispatcher, fault injection, misfire, both skip roles, manual invoke) passed 9 of 9. The refactored `list_skips` serves the dispatcher unchanged.
+  - The 33 tests of 5.2 pass unchanged on the refactored `window_rows`.
 ## Spec Change Log
 
 ## Review Triage Log

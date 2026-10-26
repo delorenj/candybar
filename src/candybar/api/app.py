@@ -28,6 +28,10 @@ Story 5.2 adds `GET /schedule?from=<ts>&to=<ts>`: the contract schedule rows
 for every fire in the half-open UTC window, computed by `api/schedule.py`
 with the dispatcher's croniter/skip helpers (AD-13) off the event loop, past
 rows resolved to their recorded invocation's result by idempotency key.
+Story 5.3 adds `GET /schedule/next`, the stream's poll fallback: the single
+`current` row (the same row `/schedule` marks current), read from the
+definitions and the future skips only, one `next_fire` per candybar; a 404
+when nothing will fire.
 All errors are RFC 7807 problem+json. Epic 5 adds the rest of the CAP-8 read surface.
 """
 
@@ -78,6 +82,8 @@ from .schedule import (
     WindowCandybar,
     WindowError,
     attach_results,
+    first_tick_after,
+    next_row,
     past_keys,
     skip_read_start,
     window_bounds,
@@ -480,5 +486,23 @@ def create_app(
             async with session_factory() as session:
                 rows = attach_results(rows, await fire_results(session, keys))
         return JSONResponse(content=[row.to_json() for row in rows])
+
+    @app.get("/schedule/next")
+    async def schedule_next() -> JSONResponse:
+        """The single `current` row (the poll fallback for the stream), or a 404.
+
+        Bounded: one definitions read plus the skips at or after `cut` (never
+        history, never invocations), then one `next_fire` lookup per candybar.
+        """
+        instant = clock()
+        async with session_factory() as session:
+            candybars = [WindowCandybar.of(row) for row in await list_candybars(session)]
+            skips = group_skips(await list_skips(session, first_tick_after(instant)))
+        row = await asyncio.to_thread(next_row, candybars, now=instant, skips=skips)
+        if row is None:
+            return problem(
+                404, "No upcoming fire", "no registered candybar has an upcoming fire"
+            )
+        return JSONResponse(content=row.to_json())
 
     return app

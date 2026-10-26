@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
 from uuid import UUID
 
@@ -162,6 +162,11 @@ def next_fire(schedule: str, at: datetime, *, skips: SkipSet = NO_SKIPS) -> date
     The read API's upcoming-fire computation (AD-13): the same croniter
     evaluation the dispatcher matches ticks with, honoring skips. None when
     the schedule never fires again.
+
+    Bounded (Story 5.3): a fire on a rest-of-day date jumps straight to the
+    next UTC midnight, since that whole date is covered, so a skipped day
+    costs one croniter step rather than one per fire (1,440 for a minutely
+    schedule). Occurrence skips are stepped past one by one.
     """
     _require_utc_minute(at, "from minute")
     _require_five_fields(schedule)
@@ -171,5 +176,10 @@ def next_fire(schedule: str, at: datetime, *, skips: SkipSet = NO_SKIPS) -> date
             fire = it.get_next(datetime).astimezone(UTC)
         except CroniterBadDateError:
             return None
+        if fire.date() in skips.rest_of_day:
+            # get_next is strict: seed one minute before midnight to include it.
+            midnight = datetime.combine(fire.date() + timedelta(days=1), time(0), tzinfo=UTC)
+            it = croniter(schedule, midnight - ONE_MINUTE)
+            continue
         if not skips.covers(fire):
             return fire

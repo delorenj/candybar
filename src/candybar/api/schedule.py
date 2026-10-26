@@ -1,11 +1,13 @@
-"""Schedule window rows for the CAP-8 read API (Story 5.2; AD-11, AD-13).
+"""Schedule rows for the CAP-8 read API (Stories 5.2, 5.3; AD-11, AD-13).
 
 `GET /schedule?from=<ts>&to=<ts>` answers holocene-view-contract.md's row
 `{candybarId, name, schedule, fireTime, state, lastResult?, skipped, noise}`
 for every fire of every registered candybar in the half-open UTC window
-`from <= fireTime < to`. This module is the pure computation, without a DB or
-a clock: the route reads the registry and the wall clock and passes them in,
-and 5.3 (next row) and 5.4 (stream payloads) reuse the same rows.
+`from <= fireTime < to`. `GET /schedule/next` (5.3) answers the one `current`
+row alone, with one `next_fire` lookup per candybar and no window walk. This
+module is the pure computation, without a DB or a clock: the routes read the
+registry and the wall clock and pass them in, and 5.4 (stream payloads)
+reuses the same rows.
 
 Fire times come from the dispatcher's own helpers (`dispatcher/schedule.py`):
 the same croniter UTC evaluation, and the same `SkipSet` deciding which fires
@@ -14,10 +16,11 @@ publishes a `skipped` fact instead of a command for that tick.
 
 States, relative to `cut` = the first tick minute strictly after `now`:
 fires before `cut` have fired (or are firing) and are `past`. The single
-`current` row is the global next-to-fire, the earliest non-skipped fire at or
-after `cut` over all candybars (ties in row order). It is in a window only
-when that fire is, so a past window, or a future window with an earlier
-fire before it, has no `current` row. Everything else is `upcoming`.
+`current` row is the global next-to-fire (`global_next`, shared by both
+routes), the earliest non-skipped fire at or after `cut` over all candybars
+(ties in row order). It is in a window only when that fire is, so a past
+window, or a future window with an earlier fire before it, has no `current`
+row. Everything else is `upcoming`.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from ..dispatcher.schedule import (
     SkipSet,
     ceil_minute,
     fires_between,
+    next_fire,
 )
 from ..events.vocabulary import scheduled_idempotency_key, tick_id_for_minute
 
@@ -155,13 +159,69 @@ def _registered_floor(candybar: WindowCandybar) -> datetime:
     return ceil_minute(candybar.created_at)
 
 
-def _fires_in(
-    candybar: WindowCandybar, start: datetime, end: datetime, *, skips: SkipSet = NO_SKIPS
-) -> Iterable[datetime]:
+def _fires_in(candybar: WindowCandybar, start: datetime, end: datetime) -> Iterable[datetime]:
     lo = max(start, _registered_floor(candybar))
     if lo >= end:
         return ()
-    return fires_between(candybar.schedule, lo, end, skips=skips)
+    return fires_between(candybar.schedule, lo, end)
+
+
+def next_fire_of(
+    candybar: WindowCandybar, cut: datetime, skips: SkipSet = NO_SKIPS
+) -> datetime | None:
+    """A candybar's first non-skipped fire at or after `cut` (and its registration).
+
+    One croniter lookup (`next_fire`), never a window walk: O(1 + occurrence
+    skips + skipped days passed). None when the schedule never fires again.
+    """
+    try:
+        return next_fire(candybar.schedule, max(cut, _registered_floor(candybar)), skips=skips)
+    except OverflowError:  # no fire before year 9999
+        return None
+
+
+def global_next(
+    candybars: Iterable[WindowCandybar], *, now: datetime, skips: Mapping[UUID, SkipSet]
+) -> tuple[datetime, WindowCandybar] | None:
+    """The global next-to-fire `(fire, candybar)`: THE definition of `current`.
+
+    The earliest non-skipped fire at or after `cut` over all candybars, ties
+    broken by name (unique), the row order. `skips` must cover every fire it
+    may pass: `[cut, ∞)` for `/schedule/next`. A read that stops at a window's
+    end is also exact for that window, because a fire computed past `end` is
+    not one of its rows either way.
+    """
+    cut = first_tick_after(now)
+    best: tuple[datetime, WindowCandybar] | None = None
+    for candybar in candybars:
+        fire = next_fire_of(candybar, cut, skips.get(candybar.id, NO_SKIPS))
+        if fire is not None and (best is None or (fire, candybar.name) < (best[0], best[1].name)):
+            best = (fire, candybar)
+    return best
+
+
+def next_row(
+    candybars: Iterable[WindowCandybar], *, now: datetime, skips: Mapping[UUID, SkipSet]
+) -> ScheduleRow | None:
+    """`GET /schedule/next` (Story 5.3): the single `current` row, or None.
+
+    The same row `window_rows` marks `current` in any window containing it.
+    A non-skipped fire at or after `cut` has not run, so it has no
+    `last_result` and is never `skipped`.
+    """
+    found = global_next(candybars, now=now, skips=skips)
+    if found is None:
+        return None
+    fire, candybar = found
+    return ScheduleRow(
+        candybar_id=candybar.id,
+        name=candybar.name,
+        schedule=candybar.schedule,
+        noise=candybar.noise,
+        fire_time=fire,
+        state=STATE_CURRENT,
+        covered=False,
+    )
 
 
 def window_rows(
@@ -190,27 +250,16 @@ def window_rows(
                     raise WindowError(f"the window has more than {limit} fires; narrow it")
         # Names are unique, so (fire time, name) is a total order.
         found.sort(key=lambda item: (item[0], item[1].name))
-
-        # The global next fire precedes a window that starts after `cut` when
-        # any candybar has a non-skipped fire in [cut, start).
-        earlier = start > cut and any(
-            next(iter(_fires_in(c, cut, start, skips=skips.get(c.id, NO_SKIPS))), None)
-            is not None
-            for c in candybars
-        )
+        # `current` is the global next fire (shared with /schedule/next): a
+        # window that starts after an earlier non-skipped fire has none.
+        nxt = global_next(candybars, now=now, skips=skips)
     except OverflowError as exc:  # croniter walking past year 9999
         raise WindowError("the window is out of range") from exc
-
-    current = None
-    if not earlier:
-        current = next(
-            (i for i, (fire, _, covered) in enumerate(found) if fire >= cut and not covered),
-            None,
-        )
+    current = (nxt[0], nxt[1].id) if nxt is not None else None
 
     rows: list[ScheduleRow] = []
-    for i, (fire, candybar, covered) in enumerate(found):
-        if i == current:
+    for fire, candybar, covered in found:
+        if (fire, candybar.id) == current:
             state = STATE_CURRENT
         elif fire < cut:
             state = STATE_PAST

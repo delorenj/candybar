@@ -278,34 +278,31 @@ async def add_rest_of_day_skip(
     return _skip_entry(row), created
 
 
-async def list_skips(session: AsyncSession, start: datetime, end: datetime) -> list[SkipEntry]:
+async def list_skips(
+    session: AsyncSession, start: datetime, end: datetime | None = None
+) -> list[SkipEntry]:
     """Operator skips relevant to the UTC window `start <= t < end`.
 
     Occurrence rows with `start <= fire_time < end` (Story 2.3) plus
     rest-of-day rows whose date intersects the window (Story 2.4): fires in
     the window have dates in `[start.date(), (end - 1m).date()]`, and a day
-    row matters iff its `day` is in that range. Ordered by fire_time, then
-    day, then candybar id; day rows (NULL fire_time) sort last, oldest date
-    first — every key can tie, so the triple keeps the order deterministic.
+    row matters iff its `day` is in that range. `end=None` is open-ended
+    (Story 5.3's next-fire read): every skip at or after `start`, so the read
+    is bounded by the stored future skips, never by history. Ordered by
+    fire_time, then day, then candybar id; day rows (NULL fire_time) sort
+    last, oldest date first — every key can tie, so the triple keeps the
+    order deterministic.
     """
     _require_tick_minute(start, "window start")
-    _require_tick_minute(end, "window end")
+    occurrence = [Skip.kind == SKIP_OCCURRENCE, Skip.fire_time >= start]
+    day = [Skip.kind == SKIP_REST_OF_DAY, Skip.day >= start.date()]
+    if end is not None:
+        _require_tick_minute(end, "window end")
+        occurrence.append(Skip.fire_time < end)
+        day.append(Skip.day <= (end - timedelta(minutes=1)).date())
     result = await session.scalars(
         select(Skip)
-        .where(
-            or_(
-                and_(
-                    Skip.kind == SKIP_OCCURRENCE,
-                    Skip.fire_time >= start,
-                    Skip.fire_time < end,
-                ),
-                and_(
-                    Skip.kind == SKIP_REST_OF_DAY,
-                    Skip.day >= start.date(),
-                    Skip.day <= (end - timedelta(minutes=1)).date(),
-                ),
-            )
-        )
+        .where(or_(and_(*occurrence), and_(*day)))
         .order_by(Skip.fire_time, Skip.day, Skip.candybar_id)
     )
     return [_skip_entry(row) for row in result]

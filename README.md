@@ -121,6 +121,22 @@ You get a 422 problem when `from`/`to` is missing or has no offset, when
 `to <= from`, when the window is longer than 31 days, or when it holds more than
 20,000 fires.
 
+### Next fire (poll fallback, Story 5.3)
+
+```bash
+curl https://candybar.delo.sh/schedule/next
+# {candybarId, name, schedule, fireTime, state: "current", skipped: false, noise}
+```
+
+This returns the single `current` row, the same row `/schedule` marks current
+in any window that contains it. Poll it when the stream is unavailable. It is
+cheap: it reads the definitions and the skips stored at or after the next
+tick, never the history, and does one `next_fire` lookup per candybar. A
+skipped day costs one step, not one per fire. Budget: under 50 ms (in-memory)
+and under 100 ms (real Postgres) for 200 candybars. The measured times are
+about 13 ms and 20 ms. You get a 404 problem when nothing will fire: the
+registry is empty, or no schedule fires again.
+
 ## Run a candybar now
 
 ```bash

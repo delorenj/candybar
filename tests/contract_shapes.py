@@ -141,3 +141,12 @@ def assert_schedule_row(body: dict[str, Any]) -> None:
     assert not missing and not extra, f"row keys differ from the contract: {missing=} {extra=}"
     for key in keys:
         assert SCHEDULE_FIELD_CHECKS[key](body[key]), f"{key}={body[key]!r} violates the contract"
+
+
+NEXT_ROUTE = "GET /schedule/next"
+
+
+def contract_route_line(route: str) -> str:
+    """The contract bullet that defines `route` (Story 5.3: `/schedule/next`)."""
+    text = CONTRACT.read_text(encoding="utf-8")
+    return next(ln for ln in text.splitlines() if ln.lstrip("- ").startswith(f"`{route}` →"))

@@ -185,6 +185,32 @@ def test_skipping_the_only_remaining_fire_reads_as_never_again():
     assert next_fire(yearly, at(10, 0), skips=skips) == datetime(2028, 1, 1, tzinfo=UTC)
 
 
+@pytest.mark.parametrize(
+    "schedule",
+    ["* * * * *", EVERY5, "0 9 * * 1-5", "45 11 26 * 6", "0 0 * * *", "59 23 * * *", "0 0 30 2 *"],
+)
+def test_next_fire_day_jump_equals_stepping_every_fire(schedule):
+    # Story 5.3: a rest-of-day date jumps to the next UTC midnight instead of
+    # stepping its fires. The answer must be the first uncovered fire, exactly.
+    skip_sets = [
+        SkipSet(rest_of_day=frozenset({date(2026, 10, 26), date(2026, 10, 27)})),  # consecutive
+        SkipSet(  # both kinds on one date, plus the first fire after the skipped day
+            occurrences=frozenset({at(10, 15), at(0, 0, 27), at(9, 0, 27)}),
+            rest_of_day=frozenset({date(2026, 10, 26)}),
+        ),
+        SkipSet(rest_of_day=frozenset({date(2026, 10, 31)})),  # a Saturday: no weekday fire
+        SkipSet(rest_of_day=frozenset({date(2026, 10, 30), date(2026, 11, 2)})),  # Fri + Mon
+    ]
+    for skips in skip_sets:
+        for start in (at(0, 0), at(10, 13), at(23, 59), at(0, 0, 27), at(23, 59, 30)):
+            stepped = next(
+                (f for f in fires_between(schedule, start, start + timedelta(days=60))
+                 if not skips.covers(f)),
+                None,
+            )
+            assert next_fire(schedule, start, skips=skips) == stepped, (skips, start)
+
+
 def test_group_skips_folds_rows_per_candybar_and_ignores_unknown_kinds():
     a, b = uuid4(), uuid4()
     rows = [
