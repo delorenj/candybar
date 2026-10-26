@@ -82,7 +82,7 @@ development_status:
   7-1-per-candybar-iana-timezone: review
   7-2-host-executor: review
   7-3-runner-kinds-exec-and-systemd: review
-  7-4-hermes-runner: backlog
+  7-4-hermes-runner: review
   7-5-migration-ledger-rollback-and-the-migrate-cli: backlog
   7-6-off-candybar-self-watchdog: backlog
   7-7-wave-1-infra-housekeeping: backlog

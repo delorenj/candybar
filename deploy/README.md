@@ -89,6 +89,15 @@ Retiring a migrated unit's timer leaves its drop-in and holder line in place
 (harmless). The canaries `deploy-smoke-exec` and `deploy-smoke-systemd` are the
 live proof of both kinds after a redeploy (`candybar run <id>`; no side effects; manifests in `deploy/smoke/`, registered with `candybar register`).
 
+### The hermes runner on the host (Story 7.4, AD-19)
+
+The `hermes` runner shells out to `hermes -p <profile> cron run <job_id> --wait`,
+found as `hermes` on the executor unit's `PATH` (`~/.local/bin/hermes`) or as
+`CANDYBAR_HERMES`. Nothing else is installed for it. The Hermes job must be
+pinned `scheduler: external`, and that pin only takes effect in the gateway after
+the batched `hermes-gateway-restart` of wave 7.17, so no Hermes job is cut over
+before then. `deploy/smoke/hermes/` is the live canary (README there).
+
 ### Deploying (a pair)
 
 Any change that touches the daemon redeploys both halves, container first, so

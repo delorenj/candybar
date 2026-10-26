@@ -1,0 +1,15 @@
+# Canary for the hermes runner (Story 7.4): triggers the no-agent Hermes job
+# `candybar-hermes-canary` (see README.md here) and waits for its attempt.
+# No side effects, no tokens.
+[candybar]
+name = "deploy-smoke-hermes"
+description = "Hermes-runner canary: hermes cron run --wait against a no-agent external job"
+tags = ["canary", "runner-hermes"]
+schedule = "*/15 * * * *"
+noise = true
+
+[candybar.runner]
+kind = "hermes"
+profile = "default"
+job_id = "e5b801fca664"
+timeout_s = 120
