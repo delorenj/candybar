@@ -15,7 +15,18 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid5
 
-from sqlalchemy import ARRAY, Text, and_, any_, bindparam, func, or_, select, update
+from sqlalchemy import (
+    ARRAY,
+    Text,
+    Uuid,
+    and_,
+    any_,
+    bindparam,
+    func,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
@@ -359,6 +370,29 @@ async def lock_candybar(session: AsyncSession, candybar_id: UUID) -> Candybar | 
     never reports a stale before-image.
     """
     return await session.get(Candybar, candybar_id, with_for_update=True, populate_existing=True)
+
+
+async def lock_noise_batch(session: AsyncSession, ids: Collection[UUID]) -> list[Candybar]:
+    """Lock every row a noise-collection replace can change, FOR UPDATE, ordered by id.
+
+    Story 5.5's `PUT /noise/batch` sets `noise` to exactly `id in ids`, so
+    the rows it can change are the given ids plus the rows that are noise
+    now. One statement locks them in id order, so two batches never
+    deadlock; a single-row locker (PATCH, the noise routes, the executor's
+    counter bump) holds one row and cannot close a cycle. A row outside the
+    set that turns noise meanwhile is a later call in a valid serial order.
+    Given ids that are not registered are simply absent from the result:
+    the caller's unknown-id check. The ids travel as ONE uuid[] parameter.
+    """
+    wanted = bindparam("noise_ids", list(ids), type_=ARRAY(Uuid()))
+    result = await session.scalars(
+        select(Candybar)
+        .where(or_(Candybar.noise.is_(True), Candybar.id == any_(wanted)))
+        .order_by(Candybar.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return list(result.all())
 
 
 # Definition fields a caller may change (Story 5.1); ids, timestamps and

@@ -35,6 +35,12 @@ when nothing will fire.
 Story 5.4 adds `GET /schedule/stream` (AD-11): the SSE channel of live
 updates, served from the api role's `ScheduleStream` hub (`api/stream.py`),
 optionally scoped to a `from`/`to` window and resumable with `Last-Event-ID`.
+Story 5.5 adds the noise collection: `PUT`/`DELETE /candybars/{id}/noise`
+add or remove one candybar, and `PUT /noise/batch` `{ids}` replaces the whole
+collection atomically. Each changed candybar gets one `updated` fact
+(`changes: {noise}`) FIRST, then the rows commit in one transaction, as on
+PATCH. candybar stores only the explicit collection: there is no `<10m`
+auto-classification here (that is the view's).
 All errors are RFC 7807 problem+json. Epic 5 adds the rest of the CAP-8 read surface.
 """
 
@@ -76,6 +82,7 @@ from candybar.registry import (
     list_invocations,
     list_skips,
     lock_candybar,
+    lock_noise_batch,
     name_taken,
     update_candybar,
     uuid7,
@@ -141,6 +148,19 @@ class UpdateRequest(BaseModel):
     schedule: str = Field(default=None)  # type: ignore[assignment]
     entrypoint: str = Field(default=None)  # type: ignore[assignment]
     noise: bool = Field(default=None)  # type: ignore[assignment]
+
+
+# Upper bound on one `PUT /noise/batch` body. The batch carries the WHOLE
+# collection (replace semantics), so this caps the registry's noise set too.
+NOISE_BATCH_MAX = 10_000
+
+
+class NoiseBatchRequest(BaseModel):
+    """PUT /noise/batch body (contract: `{ ids: [] }`) — the complete noise collection."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[UUID] = Field(max_length=NOISE_BATCH_MAX)
 
 
 def problem(status: int, title: str, detail: str) -> JSONResponse:
@@ -374,6 +394,93 @@ def create_app(
             return problem(
                 409, "Candybar name already registered", f"name {patch.get('name')!r} is taken"
             )
+        return JSONResponse(content=result)
+
+    async def set_noise(candybar_id: UUID, noise: bool) -> JSONResponse:
+        """Put one candybar in (`noise=True`) or out of the noise collection (Story 5.5).
+
+        The PATCH flow for the one field: lock, compare, publish `updated`
+        with `changes: {noise}`, then write in the same transaction.
+        """
+        async with session_factory() as session:
+            row = await lock_candybar(session, candybar_id)
+            if row is None:
+                return problem(
+                    404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                )
+            if row.noise == noise:
+                # Already in (or out of) the collection: no fact, no write.
+                return JSONResponse(content=candybar_detail_json(row))
+            event = build_candybar_updated(
+                candybar_id=candybar_id, name=row.name, changes={"noise": noise}
+            )
+            try:
+                await sink.publish(event)
+            except BUS_ERRORS as exc:
+                log.error("failed to publish candybar.updated (noise) for %s: %s", candybar_id, exc)
+                return problem(
+                    503,
+                    "Event bus unavailable",
+                    "could not publish candybar.updated; the noise flag is unchanged",
+                )
+            row = await update_candybar(session, row, {"noise": noise})
+            result = candybar_detail_json(row)
+        return JSONResponse(content=result)
+
+    @app.put("/candybars/{candybar_id}/noise")
+    async def add_noise(candybar_id: UUID) -> JSONResponse:
+        """Add one candybar to the noise collection."""
+        return await set_noise(candybar_id, True)
+
+    @app.delete("/candybars/{candybar_id}/noise")
+    async def remove_noise(candybar_id: UUID) -> JSONResponse:
+        """Remove one candybar from the noise collection."""
+        return await set_noise(candybar_id, False)
+
+    @app.put("/noise/batch")
+    async def noise_batch(body: NoiseBatchRequest) -> JSONResponse:
+        """Replace the noise collection: afterwards exactly `ids` are noise. Atomic.
+
+        The rows that can change (the ids plus today's noise rows) are locked
+        in one ordered statement; any unknown id refuses the whole batch. Every
+        `updated` fact is published before any row is written, and the writes
+        commit as one transaction, so a failure anywhere changes no flag.
+        """
+        wanted = set(body.ids)
+        async with session_factory() as session:
+            rows = await lock_noise_batch(session, wanted)
+            unknown = wanted - {row.id for row in rows}
+            if unknown:
+                listed = ", ".join(sorted(str(candybar_id) for candybar_id in unknown))
+                return problem(
+                    422,
+                    "Unknown candybar ids",
+                    f"{len(unknown)} id(s) not registered; nothing changed: {listed}"[:500],
+                )
+            changed = [row for row in rows if row.noise != (row.id in wanted)]
+            for row in changed:
+                event = build_candybar_updated(
+                    candybar_id=row.id, name=row.name, changes={"noise": row.id in wanted}
+                )
+                try:
+                    await sink.publish(event)
+                except BUS_ERRORS as exc:
+                    log.error("failed to publish candybar.updated (noise batch) for %s: %s", row.id, exc)
+                    # Nothing is written yet. Facts already out for earlier
+                    # rows are superseded by the retry, which replace
+                    # semantics make converge.
+                    return problem(
+                        503,
+                        "Event bus unavailable",
+                        "the bus did not confirm every candybar.updated; no noise flag was "
+                        "changed, retry the batch",
+                    )
+            for row in changed:
+                await update_candybar(session, row, {"noise": row.id in wanted})
+            members = sorted(
+                (row for row in rows if row.id in wanted), key=lambda r: (r.created_at, r.id)
+            )
+            result = {"ids": [str(row.id) for row in members]}
         return JSONResponse(content=result)
 
     @app.post("/candybars/{candybar_id}/invoke", status_code=202)

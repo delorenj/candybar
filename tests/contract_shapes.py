@@ -170,3 +170,32 @@ def live_update_patch_clause() -> str:
     text = CONTRACT.read_text(encoding="utf-8")
     section = text.split("### Live updates", 1)[1].split("\n### ", 1)[0]
     return section.split(". Each event", 1)[1].split("\n", 1)[0].strip()
+
+
+# ---------------------------------------------------------------------------
+# Noise collection (Story 5.5): the write routes and the batch body, verbatim.
+
+WRITE_ROUTE_RE = re.compile(r"`(PUT|DELETE|POST|PATCH) (/[^`\s]+)`")
+
+
+def _noise_section() -> str:
+    text = CONTRACT.read_text(encoding="utf-8")
+    return text.split("### Noise collection", 1)[1].split("\n### ", 1)[0]
+
+
+def noise_routes() -> set[tuple[str, str]]:
+    """Every `METHOD /path` write route the contract's Noise collection section names."""
+    return {(method, path) for method, path in WRITE_ROUTE_RE.findall(_noise_section())}
+
+
+def noise_batch_fields() -> dict[str, str | None]:
+    """The batch body's fields as name -> kind ("list" for `[]`), from `with `{ ... }``."""
+    line = next(ln for ln in _noise_section().splitlines() if "/noise/batch" in ln)
+    inner = re.search(r"with `\{([^}]*)\}`", line)
+    assert inner, "no `{ ... }` body on the contract's /noise/batch line"
+    out: dict[str, str | None] = {}
+    for part in inner.group(1).split(","):
+        m = re.match(r"\s*([A-Za-z]+)\s*:\s*(\[\])?.*$", part)
+        assert m, f"unparseable batch body field {part!r}"
+        out[m.group(1)] = "list" if m.group(2) else None
+    return out
