@@ -262,6 +262,20 @@ def test_the_latest_non_skipped_fire_survives_and_runs_as_misfire() -> None:
     assert bus.events[0].data.trigger == "misfire"
 
 
+def test_a_previous_minute_command_does_not_steal_the_current_minutes_run() -> None:
+    # The live 17:37-17:41 outage drill reproduced this: an earlier-minute
+    # command arrived at 17:41:00 (only 60s old, below BACKLOG_MAX_AGE), ran,
+    # and overlap-skipped the actual 17:41 fire. The previous-minute command
+    # must be coalesced even when not yet 2 minutes old.
+    executor, store, bus, runs, _reads = backlog_ports()
+    fire = minute_floor(datetime.now(UTC)) - ONE_MINUTE
+    msg = FakeMsg(make_command(tick_id=tick_id_of(fire)).model_dump_json().encode())
+    run(executor.handle_message(msg))
+    assert runs == [] and store.records == []
+    [fact] = bus.events
+    assert fact.data.reason == SKIP_BACKLOG and msg.acked == 1
+
+
 def test_a_fresh_fire_runs_without_the_backlog_check() -> None:
     executor, store, _bus, runs, skip_reads = backlog_ports()
     fire = minute_floor(datetime.now(UTC))

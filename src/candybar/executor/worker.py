@@ -30,11 +30,13 @@ Overlap and executor backlog (Story 7.11, AD-20): an invoke for a candybar
 with a LIVE invocation (in-process for any runner, plus a unit-state probe
 for `systemd` runners, so a hand-started or pre-restart run counts) is
 recorded `skipped` with `reason=overlap` and acked — never joined, never a
-second instance. A `scheduled` command whose fire is more than
-BACKLOG_MAX_AGE old runs only when it is the latest non-skipped fire at
-`now` (then with `trigger=misfire`); an older one is recorded `skipped`
-with `reason=executor_backlog_coalesced` and acked, so a burst of commands
-queued while the executor was down runs exactly once.
+second instance. A `scheduled` command from an earlier minute runs only
+when it is the latest non-skipped fire at `now`; an older one is recorded
+`skipped(reason=executor_backlog_coalesced)` and acked. A survivor whose
+fire is more than BACKLOG_MAX_AGE old runs with `trigger=misfire` instead
+of `scheduled`. Thus a burst of commands queued while the executor was
+down runs exactly once, and a just-delayed previous-minute command cannot
+steal the overlap slot from the current minute's fire.
 
 Terminal/invoked event ids are UUIDv5 of `<phase>:<invocation_id>`, so
 JetStream `Nats-Msg-Id` dedupe makes every republication safe. Every
@@ -463,9 +465,12 @@ class Executor:
                 await self._skip(envelope, key, msg, SKIP_OVERLAP)
                 return
 
-        # AD-20 executor backlog: a scheduled command whose fire is over
-        # BACKLOG_MAX_AGE old runs only as the latest non-skipped fire (then
-        # as a misfire); anything older is skipped, never burst-replayed.
+        # AD-20 executor backlog: a scheduled command from an earlier minute
+        # runs only if it is the latest non-skipped fire. This check matters
+        # even before the 2m stale threshold: a just-delayed 17:40 command
+        # arriving at 17:41 must not run first and overlap-skip the 17:41 fire.
+        # A survivor older than 2m is relabeled `misfire`; a superseded one
+        # is skipped, never burst-replayed.
         trigger = envelope.data.trigger
         if trigger == "scheduled":
             try:
@@ -690,9 +695,10 @@ class Executor:
     async def _backlog_decision(self, envelope: CandybarInvokeCommand) -> str | None:
         """AD-20 backlog ruling for a `scheduled` command.
 
-        None: run as-is (fresh fire, or the check is unwired/unparseable).
-        "misfire": the command is stale but IS the latest non-skipped fire —
-        run it with `trigger=misfire`. Any other string: a `skipped` reason —
+        None: run as-is (current-minute fire, or the check is
+        unwired/unparseable); an earlier-minute survivor ≤2m old also keeps
+        its scheduled trigger. "misfire": an earlier-minute survivor >2m
+        old — run it with `trigger=misfire`. Any other string: a `skipped` reason —
         SKIP_BACKLOG when a later non-skipped fire exists at `now`, or the
         operator-skip kind when the command's own fire was skipped after
         dispatch. Read failures raise; the caller naks (a wrong skip loses a
@@ -708,7 +714,13 @@ class Executor:
         if fire is None:
             return None
         now = datetime.now(UTC)
-        if now - fire <= BACKLOG_MAX_AGE:
+        # A delayed command must not steal the overlap slot from the current
+        # minute's fire. The live drill found this exact case: the 17:40
+        # command was fetched at 17:41:00 (only 60s old, below the 2m stale
+        # threshold), ran first, and overlap-skipped the 17:41 fire. Check
+        # every command from an earlier minute for a later non-skipped fire;
+        # keep the 2m threshold only for relabeling a survivor `misfire`.
+        if fire >= now.replace(second=0, microsecond=0):
             return None
         context = await self._fire_context(envelope.data.candybar_id)
         if context is None:
@@ -731,7 +743,7 @@ class Executor:
         skips = await self._skip_set(envelope.data.candybar_id, tz, fire, bound)
         latest = previous_fire(schedule, bound, tz=tz, skips=skips)
         if latest == fire:
-            return "misfire"
+            return "misfire" if now - fire > BACKLOG_MAX_AGE else None
         if latest is not None and latest > fire:
             return SKIP_BACKLOG
         return skips.reason_for(fire) or SKIP_BACKLOG
