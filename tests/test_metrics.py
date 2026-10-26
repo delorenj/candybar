@@ -178,6 +178,17 @@ def test_default_instance_lives_on_the_process_registry() -> None:
     assert EXECUTOR_METRICS.registry is REGISTRY
 
 
+def test_executor_defaults_to_process_metrics() -> None:
+    """The executor role builds Executor without `metrics=`; it must record
+    into the instance the api role's /metrics serves."""
+    store, bus = FakeStore(), FakeBus()
+    executor = Executor(
+        by_key=store.by_key, entrypoint=store.get_entrypoint, record=store.record,
+        publish=bus.publish,
+    )
+    assert executor.metrics is EXECUTOR_METRICS
+
+
 # ---------------------------------------------------------------------------
 # Worker: recorded once per execution
 # ---------------------------------------------------------------------------

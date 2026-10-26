@@ -299,14 +299,15 @@ def test_concurrent_terminal_records_never_lose_counter_updates() -> None:
             async with session_scope(engine) as session:
                 await insert_candybar(session, manifest, candybar_id=cid)
 
-            async def one(i: int) -> None:
+            async def one(i: int, key: str | None = None) -> str:
                 now = datetime.now(UTC)
+                key = key or f"candybar:{cid}:manual:{uuid4()}"
                 rec = TerminalInvocation(
                     invocation_id=uuid4(),
                     candybar_id=cid,
                     trigger="manual",
                     tick_id=None,
-                    idempotency_key=f"candybar:{cid}:manual:{uuid4()}",
+                    idempotency_key=key,
                     result="success" if i % 3 else "fail",
                     exit_code=0 if i % 3 else 1,
                     runtime_ms=i,
@@ -319,12 +320,21 @@ def test_concurrent_terminal_records_never_lose_counter_updates() -> None:
                 )
                 async with session_scope(engine) as session:
                     await record_terminal_invocation(session, rec)
+                return key
 
-            await asyncio.gather(*(one(i) for i in range(12)))
+            keys = await asyncio.gather(*(one(i) for i in range(12)))
             async with session_scope(engine) as session:
                 candybar = await session.get(Candybar, cid)
                 assert candybar.total_invoked == 12
                 assert candybar.total_successful == 8  # i % 3 != 0 for 8 of 0..11
+
+            # A duplicate key raises and its counter bump rolls back with it
+            # (the increment now runs before the insert in one transaction).
+            with pytest.raises(DuplicateInvocationError):
+                await one(1, key=keys[0])
+            async with session_scope(engine) as session:
+                candybar = await session.get(Candybar, cid)
+                assert (candybar.total_invoked, candybar.total_successful) == (12, 8)
         finally:
             async with session_scope(engine) as session:
                 row = await session.get(Candybar, cid)

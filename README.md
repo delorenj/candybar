@@ -32,8 +32,9 @@ uv run candybar --help
 ```
 
 CI runs ruff + pytest on GitHub-hosted runners on every push to `main`,
-plus the heartbeat JetStream integration tests against a pinned nats-server
-and the registry integration tests against a pinned postgres:17-alpine.
+plus the heartbeat JetStream integration tests against a pinned nats-server,
+the registry integration tests against a pinned postgres:17-alpine, and the
+documented PromQL under promtool (pinned prom/prometheus:v3.5.0).
 
 ## Registry (Postgres, AD-10)
 

@@ -2,7 +2,7 @@
 title: 'Story 1.7: Basic Prometheus metrics and /metrics endpoint'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: '99d03defd6c32182959cf69c134399b4515f6107'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -56,12 +56,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/candybar/executor/metrics.py` + `__init__.py` -- recorder with fixed label set and exemplars.
-- [ ] `src/candybar/executor/worker.py` -- record once after commit; guarded.
-- [ ] `src/candybar/api/app.py` -- negotiated `/metrics`.
-- [ ] `src/candybar/daemon.py` -- executor-without-api warning.
-- [ ] `tests/test_metrics.py` -- full I/O matrix + cardinality guard + exposition tests.
-- [ ] `deploy/prometheus/candybar-queries.test.yml` + `ci.yml` + `README.md` -- PromQL proven by promtool.
+- [x] `src/candybar/executor/metrics.py` + `__init__.py` -- recorder with fixed label set and exemplars.
+- [x] `src/candybar/executor/worker.py` -- record once after commit; guarded.
+- [x] `src/candybar/api/app.py` -- negotiated `/metrics`.
+- [x] `src/candybar/daemon.py` -- executor-without-api warning.
+- [x] `tests/test_metrics.py` -- full I/O matrix + cardinality guard + exposition tests.
+- [x] `deploy/prometheus/candybar-queries.test.yml` + `ci.yml` + `README.md` -- PromQL proven by promtool.
 
 **Acceptance Criteria:**
 - Given the executor completing invocations, when Prometheus scrapes `/metrics`, then `candybar_invocation_runtime_milliseconds` (histogram) and `candybar_invocations_total` (counter) exist on series labeled `{candybar_id, result}` only.
@@ -80,6 +80,8 @@ sum by (candybar_id) (rate(candybar_invocations_total{result="fail"}[5m]))
   / sum by (candybar_id) (rate(candybar_invocations_total[5m]))
 ```
 
+Decisions where the spine is silent: `/metrics` lives on the api role, so an executor-only process logs a warning that its series are not exposed. Metrics are observed after the row commits and before the terminal publish, which keeps them consistent with the registry counters: a failed publish is retried from the row and never observed twice. Both result series start at zero.
+
 ## Verification
 
 **Commands:**
@@ -92,6 +94,38 @@ sum by (candybar_id) (rate(candybar_invocations_total{result="fail"}[5m]))
 
 ## Implementation Notes
 
+I implemented this inline because this session has no subagent-spawn tool (same as 1.1–1.6). Every matrix row has a passing test in `tests/test_metrics.py` (25 tests). The full unit suite passes (239), ruff is clean, promtool reports SUCCESS, and the live integration tests pass (11) on throwaway postgres:17-alpine and nats:2.10.29 containers. I never pointed the suite at the live database.
+
+Surprises and resolutions:
+
+- **A never-failed candybar returned no data for the failure-ratio query.** promtool caught it on the first run: no `result="fail"` series exists, so the division is empty. `ExecutorMetrics.observe` now creates both result series at zero the first time it sees a candybar. That costs two series per candybar, so the cardinality stays bounded. The ratio now reads 0, and the promtool fixture includes that zero series.
+- **Prior-story bug: the registry counters lost updates.** The live smoke ran 5 invocations of one candybar. All 5 rows were written, and `candybar_invocations_total` showed 5, but `total_invoked` was 3. `record_terminal_invocation` (Story 1.6) increments with an ORM read-modify-write (`+= 1`), and the parallel asyncio tasks overwrote each other under READ COMMITTED. The fix is an atomic `UPDATE … SET total = total + 1` in the same transaction, which also locks the candybar row until commit. I committed it separately as `7595742`. A new live regression test sends 12 concurrent records and checks that a duplicate key rolls back its increment. Without the fix the test fails with "assert 1 == 12". With the fix, a second smoke burst of 6 + 4 invocations gave counter deltas that match the metrics exactly.
+- **Exemplar retention is set by the protocol.** prometheus_client keeps only the most recent exemplar per counter or bucket between scrapes. Every observation still carries its `invocation_id`. Prometheus keeps one exemplar per scrape per series, and the full per-invocation record stays in `invocations` (AD-9).
+
+Live smoke on throwaway NATS + Postgres + prom/prometheus:v3.5.0 with `--enable-feature=exemplar-storage`:
+
+- I registered two candybars through `candybar register` and published 9 manual invoke commands.
+- The target was `up`. `sum by (candybar_id,result)` returned all four series, and the success candybar's fail series read 0.
+- The failure ratio was 1 for the failing candybar and 0 for the other. The p95 was 487.5 ms for the 300 ms job.
+- `query_exemplars` returned 3 distinct `invocation_id`s per series.
+
+I tore all of it down afterwards.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+I ran the review inline because no subagent-spawn tool was available (same deviation as 1.1–1.6). It applied the blind, edge-case (path tracing plus claims), and verification-gap checks to `/tmp/story-1-7-diff.txt` (41.8 kB). Finding floor N = min(floor(sqrt(41.8) + 1), 10) = 7.
+
+- `api/role.py` and `api/__init__.py` docstrings still said "POST /candybars only", so the role docs no longer matched the endpoint set. Verdict: low. Patched as a direct correction.
+- README's CI paragraph did not mention the new promtool step. Verdict: low. Patched as a direct correction.
+- Verification gap: `record_terminal_invocation` now runs the UPDATE before the INSERT, and no test checked that a duplicate-key failure rolls back the counter bump. Verdict: medium. Patched: the live race test now records a duplicate key, expects DuplicateInvocationError, and checks that the counters are unchanged at (12, 8).
+- Verification gap: no test checked that an `Executor` built without `metrics=` (as the executor role builds it) records into the instance that `/metrics` serves. Verdict: low. Patched with `test_executor_defaults_to_process_metrics`, a one-assertion test.
+- Histogram/counter exemplars keep only the last observation per bucket between scrapes, which could look like a breach of "each observation carries an exemplar". Verdict: false. Every `observe`/`inc` call passes an exemplar, and keeping only the latest is how OpenMetrics exemplars work. AD-9 puts the full per-invocation record in the `invocations` table.
+- Unknown-candybar failures and redeliveries produce no metric, so failures of an unregistered id are not counted. Verdict: false. The frozen matrix requires this: an unregistered id has no row and would add unbounded label values. The `failed` fact is still emitted.
+- `/metrics` encodes synchronously on the event loop. Verdict: low. Rejected because collection covers tens of series per candybar and takes microseconds, and the fix would add thread offload.
+- Live Prometheus has no `exemplar-storage` flag and no candybar scrape job. Verdict: medium. Deferred, because the frozen intent excludes deploy changes and this belongs to Story 1.9. Recorded in deferred-work.md.
+- On SIGTERM the executor role's `nc.drain()` waits out the 30s DrainTimeoutError. Verdict: medium. Deferred because it is pre-existing (1.6) and was found during the smoke. Recorded in deferred-work.md.
+- Found during implementation rather than review: the prior-story lost-update race in the registry counters. Verdict: high. Fixed in `7595742` with a regression test; see Implementation Notes.
+
+Zero bad_spec or intent_gap entries, so no loopback was needed.

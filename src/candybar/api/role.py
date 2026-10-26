@@ -1,7 +1,9 @@
 """Production wiring for the api role (AD-2, AD-11, AD-14).
 
-Story 1.4 serves `POST /candybars` only; Epic 5 extends the app with the
-CAP-8 read surface. The role connects to NATS (same retry posture as the
+Story 1.4 serves `POST /candybars`; Story 1.7 adds `GET /metrics` (the
+process-default Prometheus registry, so the executor's series recorded in
+this process are scrapeable here); Epic 5 extends the app with the CAP-8
+read surface. The role connects to NATS (same retry posture as the
 heartbeat), builds the registry engine from `DATABASE_URL`, and serves the
 FastAPI app under uvicorn until the shared stop event is set.
 """

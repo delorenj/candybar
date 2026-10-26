@@ -1,7 +1,7 @@
 """API role: FastAPI REST + SSE implementing the CAP-8 contract (AD-11).
 
 Story 1.4 lands the register endpoint (`POST /candybars`) and the daemon
-role wiring; Story 1.8 adds invoke; Epic 5 builds the full read surface
+role wiring; Story 1.7 adds `GET /metrics`; Story 1.8 adds invoke; Epic 5 builds the full read surface
 (definitions, schedule window, noise, skips, SSE).
 """
 
