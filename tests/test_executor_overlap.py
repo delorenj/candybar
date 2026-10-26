@@ -17,6 +17,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+import pytest
+
 from candybar.dispatcher.schedule import NO_SKIPS, SkipSet
 from candybar.events.envelope import CandybarSkippedEvent
 from candybar.executor.worker import (
@@ -374,6 +376,48 @@ def test_an_unresolvable_stored_zone_reads_as_utc() -> None:
     assert runs == []
     [fact] = bus.events
     assert fact.data.reason == SKIP_BACKLOG and msg.acked == 1
+
+
+@pytest.mark.parametrize(
+    ("schedule", "zone", "now_utc", "fire_utc", "expected"),
+    [
+        # Fall back: fixed-hour 01:40 fires only at the first occurrence. A
+        # 01:30 command from before the transition has a later 01:40 fire.
+        ("40 1 * * *", "America/New_York", "2026-11-01T06:05:00+00:00", "2026-11-01T05:30:00+00:00", SKIP_BACKLOG),
+        # Fall back: hourly 01:00 fires at BOTH folds. The fold=0 fire is
+        # coalesced when the fold=1 01:00 fire is already due.
+        ("0 * * * *", "America/New_York", "2026-11-01T06:01:00+00:00", "2026-11-01T05:00:00+00:00", SKIP_BACKLOG),
+        # Spring forward: fixed-hour 02:30 is shifted to the transition
+        # instant 03:00 local. A prior day's fire is superseded by it.
+        ("30 2 * * *", "America/New_York", "2027-03-14T07:01:00+00:00", "2027-03-13T07:30:00+00:00", SKIP_BACKLOG),
+    ],
+)
+def test_backlog_uses_shared_dst_fire_times(
+    monkeypatch: pytest.MonkeyPatch,
+    schedule: str,
+    zone: str,
+    now_utc: str,
+    fire_utc: str,
+    expected: str,
+) -> None:
+    from candybar.executor import worker as worker_module
+
+    now = datetime.fromisoformat(now_utc)
+    real_datetime = datetime
+
+    class FrozenDatetime(real_datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:
+            return now.astimezone(tz or UTC)
+
+    monkeypatch.setattr(worker_module, "datetime", FrozenDatetime)
+    executor, _store, bus, runs, _reads = backlog_ports(schedule_tz=(schedule, zone))
+    fire = datetime.fromisoformat(fire_utc)
+    msg = FakeMsg(make_command(tick_id=tick_id_of(fire)).model_dump_json().encode())
+    run(executor.handle_message(msg))
+    assert runs == []
+    [fact] = bus.events
+    assert fact.data.reason == expected and msg.acked == 1
 
 
 def test_without_backlog_ports_a_stale_command_runs_as_before() -> None:
