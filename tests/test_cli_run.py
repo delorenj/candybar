@@ -107,3 +107,57 @@ def test_run_quotes_the_id_segment() -> None:
 def test_run_requires_an_id() -> None:
     result = CliRunner().invoke(app, ["run"])
     assert result.exit_code == 2
+
+
+def test_run_against_the_real_app_contract(monkeypatch: Any) -> None:
+    """CLI ↔ API contract: the CLI's request hits the real route, and the keys
+    it prints are the ones the real 202/404 bodies carry (no hand-made fixtures)."""
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from urllib.parse import urlsplit
+    from uuid import UUID
+
+    from fastapi.testclient import TestClient
+
+    import candybar.api.app as app_module
+
+    known = UUID(CANDYBAR_ID)
+
+    async def fake_get_candybar(session: Any, candybar_id: UUID) -> Any:
+        return SimpleNamespace(id=known, name="nightly-report") if candybar_id == known else None
+
+    class Sink:
+        def __init__(self) -> None:
+            self.published: list[Any] = []
+
+        async def publish(self, event: Any) -> None:
+            self.published.append(event)
+
+    @asynccontextmanager
+    async def session_factory():  # type: ignore[no-untyped-def]
+        yield object()
+
+    monkeypatch.setattr(app_module, "get_candybar", fake_get_candybar)
+    sink = Sink()
+    client = TestClient(app_module.create_app(session_factory=session_factory, sink=sink))
+
+    def via_app(request: Any, timeout: float = 0) -> Any:
+        resp = client.request(request.get_method(), urlsplit(request.full_url).path)
+        if resp.status_code >= 400:
+            raise urllib.error.HTTPError(
+                request.full_url, resp.status_code, "x", hdrs=None, fp=io.BytesIO(resp.content)
+            )
+        return _FakeResponse(resp.json())
+
+    with patch("urllib.request.urlopen", side_effect=via_app):
+        ok = CliRunner().invoke(app, ["run", CANDYBAR_ID])
+        missing = CliRunner().invoke(app, ["run", "01900000-0000-7000-8000-00000000dead"])
+
+    assert ok.exit_code == 0, ok.output
+    assert len(sink.published) == 1
+    cmd = sink.published[0]
+    assert str(cmd.data.invocation_id) in ok.output
+    assert cmd.idempotency_key in ok.output
+    assert missing.exit_code == 1
+    assert json.loads(missing.output.strip())["title"] == "Candybar not found"
+    assert len(sink.published) == 1

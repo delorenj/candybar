@@ -202,8 +202,14 @@ def create_app(
         try:
             await sink.publish(command)
         except BUS_ERRORS as exc:
+            # A timed-out publish may still have been stored: say so rather
+            # than promise "nothing happened" (a blind retry is a 2nd run).
             log.error("failed to publish manual invoke for %s: %s", candybar_id, exc)
-            return problem(503, "Event bus unavailable", "could not publish the invoke command")
+            return problem(
+                503,
+                "Event bus unavailable",
+                "the bus did not confirm the invoke command; it may still run",
+            )
 
         log.info(
             "manual invoke of %s (%s) accepted: invocation %s",
