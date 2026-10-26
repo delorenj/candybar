@@ -964,7 +964,7 @@ jobs:
   source_of_truth:
     repo: delorenj/candybar
     path: deploy/migration/ledger.yaml
-    commit: SELF
+    commit: 216657b
   disable:
   - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler external'
   rollback:
@@ -1010,7 +1010,7 @@ jobs:
   source_of_truth:
     repo: delorenj/candybar
     path: deploy/migration/ledger.yaml
-    commit: SELF
+    commit: 216657b
   disable:
   - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler external'
   rollback:
@@ -1056,7 +1056,7 @@ jobs:
   source_of_truth:
     repo: delorenj/candybar
     path: deploy/migration/ledger.yaml
-    commit: SELF
+    commit: 216657b
   disable:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler external'
   rollback:
@@ -1102,7 +1102,7 @@ jobs:
   source_of_truth:
     repo: delorenj/candybar
     path: deploy/migration/ledger.yaml
-    commit: SELF
+    commit: 216657b
   disable:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler external'
   rollback:
