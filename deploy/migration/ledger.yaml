@@ -644,6 +644,7 @@ jobs:
     schedule: OnCalendar=*-*-* 03:00:00; Persistent=true; RandomizedDelaySec=120
     jitter_s: 120
     unit: tolt-items-daily.timer
+    unit_file: /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-items-daily.timer
   deviations:
   - RandomizedDelaySec=120 dropped (now fires exactly 03:00 local)
   - Persistent=true catch-up replaced by candybar misfire policy
@@ -653,8 +654,10 @@ jobs:
     repo: delorenj/tower-of-lost-things
     path: foundry/cron/tolt-items-daily.timer
     commit: 1576845debc6f6e03d17bfdcbe76b3a9327c2e47
-  disable: []
-  rollback: []
+  disable:
+  - systemctl --user disable --now tolt-items-daily.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-items-daily.timer
   status: planned
   candybar_id: null
   cutover_at: null
@@ -663,7 +666,11 @@ jobs:
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:17:43.160477Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
 - id: systemd:pr-crusher
   wave: '7.16'
   candybar:
@@ -683,6 +690,7 @@ jobs:
     schedule: OnCalendar=*-*-* 03:00:00; RandomizedDelaySec=15m; Persistent=true
     jitter_s: 900
     unit: pr-crusher.timer
+    unit_file: /home/delorenj/.config/systemd/user/pr-crusher.timer
   deviations:
   - RandomizedDelaySec=15m dropped (now fires exactly 03:00 local)
   - Persistent=true catch-up replaced by candybar misfire policy
@@ -692,8 +700,10 @@ jobs:
     repo: delorenj/pr-crusher
     path: scripts/install.sh
     commit: 8c64f90d688686d920889607009ee0eb18aceb81
-  disable: []
-  rollback: []
+  disable:
+  - systemctl --user disable --now pr-crusher.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/pr-crusher.timer
   status: planned
   candybar_id: null
   cutover_at: null
@@ -702,7 +712,11 @@ jobs:
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:17:52.266848Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
 - id: systemd:honda-hunt-daily-check.timer
   wave: '7.16'
   candybar:
@@ -722,6 +736,7 @@ jobs:
     schedule: OnCalendar=*-*-* 09:00:00 America/New_York; Persistent=true; AccuracySec=1min
     jitter_s: 0
     unit: honda-hunt-daily-check.timer
+    unit_file: /home/delorenj/.config/systemd/user/honda-hunt-daily-check.timer
   deviations:
   - AccuracySec=1min dropped
   - Persistent=true catch-up replaced by candybar misfire policy
@@ -730,8 +745,10 @@ jobs:
     repo: DeLoDocs vault (not git)
     path: Projects/project-fuckudeer/scripts/systemd/honda-hunt-daily-check.timer
     commit: nogit-sha256:dd4b6353c8147cc8e7a5e3cf00701d10eca22ec69f145dbe4abd9e2fca979716
-  disable: []
-  rollback: []
+  disable:
+  - systemctl --user disable --now honda-hunt-daily-check.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/honda-hunt-daily-check.timer
   status: planned
   candybar_id: null
   cutover_at: null
@@ -740,7 +757,11 @@ jobs:
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:17:52.685063Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
 - id: systemd:delodocs-wiki-self-tuning-weekly.timer
   wave: '7.16'
   candybar:
@@ -760,6 +781,7 @@ jobs:
     schedule: OnCalendar=Mon *-*-* 08:45:00
     jitter_s: 0
     unit: delodocs-wiki-self-tuning-weekly.timer
+    unit_file: /home/delorenj/.config/systemd/user/delodocs-wiki-self-tuning-weekly.timer
   deviations:
   - no jitter; Persistent absent natively
   native_failing: true
@@ -767,8 +789,10 @@ jobs:
     repo: DeLoDocs vault (not git)
     path: _vault/Workflows/systemd/delodocs-wiki-self-tuning-weekly.timer
     commit: nogit-sha256:99624124a86cbe7eff67ffa4ff0e8828e40e355c58ad787aebdc5310df22091e
-  disable: []
-  rollback: []
+  disable:
+  - systemctl --user disable --now delodocs-wiki-self-tuning-weekly.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/delodocs-wiki-self-tuning-weekly.timer
   status: planned
   candybar_id: null
   cutover_at: null
@@ -777,7 +801,11 @@ jobs:
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:17:53.068511Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
 - id: hermes:33god-pm:777c511a009c
   wave: '7.17'
   candybar:
@@ -808,8 +836,10 @@ jobs:
     repo: delorenj/agents
     path: tools/jev-clairic/hermes/cron-jobs.json
     commit: null
-  disable: []
-  rollback: []
+  disable:
+  - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler external'
+  rollback:
+  - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler internal'
   status: planned
   candybar_id: null
   cutover_at: null
@@ -818,7 +848,11 @@ jobs:
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:17:44.526572Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for hermes
 - id: hermes:33god-pm:f3db72089593
   wave: '7.17'
   candybar:
@@ -849,8 +883,10 @@ jobs:
     repo: delorenj/agents
     path: tools/jev-clairic/hermes/aperture-lane-monitor.sh
     commit: null
-  disable: []
-  rollback: []
+  disable:
+  - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler external'
+  rollback:
+  - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler internal'
   status: planned
   candybar_id: null
   cutover_at: null
@@ -859,7 +895,11 @@ jobs:
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:17:44.858083Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for hermes
 - id: hermes:delodocs-pm:fc39bd8b33c8
   wave: '7.17'
   candybar:
@@ -889,8 +929,10 @@ jobs:
     repo: unversioned
     path: /home/delorenj/code/DeLoDocs/agents/hermes/pm/runtime/cron/jobs.json (DeLoDocs vault is not git; live record pinned scheduler=external, diff recorded in history)
     commit: null
-  disable: []
-  rollback: []
+  disable:
+  - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler external'
+  rollback:
+  - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler internal'
   status: planned
   candybar_id: null
   cutover_at: null
@@ -899,7 +941,11 @@ jobs:
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:17:45.194172Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for hermes
 - id: hermes:dumply:8aecd027dbd0
   wave: '7.17'
   candybar:
@@ -929,8 +975,10 @@ jobs:
     repo: unversioned
     path: /home/delorenj/.hermes/profiles/dumply/cron/jobs.json (no git home; live record pinned scheduler=external, diff recorded in history)
     commit: null
-  disable: []
-  rollback: []
+  disable:
+  - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler external'
+  rollback:
+  - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler internal'
   status: planned
   candybar_id: null
   cutover_at: null
@@ -939,7 +987,11 @@ jobs:
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:17:45.561130Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for hermes
 - id: hermes:peter-griffin:b240575fae0c
   wave: '7.17'
   candybar:
@@ -969,8 +1021,10 @@ jobs:
     repo: unversioned
     path: /home/delorenj/.hermes/profiles/peter-griffin/cron/jobs.json (no git home; live record pinned scheduler=external, diff recorded in history)
     commit: null
-  disable: []
-  rollback: []
+  disable:
+  - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler external'
+  rollback:
+  - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler internal'
   status: planned
   candybar_id: null
   cutover_at: null
@@ -979,7 +1033,11 @@ jobs:
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:17:45.915968Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for hermes
 - id: hermes:peter-griffin:3684c5aa8eac
   wave: '7.17'
   candybar:
@@ -1009,8 +1067,10 @@ jobs:
     repo: unversioned
     path: /home/delorenj/.hermes/profiles/peter-griffin/cron/jobs.json (no git home; live record pinned scheduler=external, diff recorded in history)
     commit: null
-  disable: []
-  rollback: []
+  disable:
+  - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler external'
+  rollback:
+  - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler internal'
   status: planned
   candybar_id: null
   cutover_at: null
@@ -1019,4 +1079,8 @@ jobs:
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:17:46.286550Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for hermes
