@@ -2,7 +2,7 @@
 title: 'Story 1.8: Manual invoke via candybar run <id>'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'a68179c7d4ff3f8b174f8e741ee3c807798a5fbb'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -102,6 +102,15 @@ Zero bad_spec or intent_gap entries, so no loopback was needed. Zero deferred.
 ## Design Notes
 
 `event_id = command_id` mirrors the dispatcher, where both are the same uuid5, so `Nats-Msg-Id` dedupes a re-sent command. Response keys are camelCase, like `createdAt` in the register response (holocene view contract). The API checks the row exists before publishing, and the executor still handles a candybar deleted in between (`_fail_unknown_candybar`).
+
+Decisions where the spine is silent:
+- `202 Accepted` comes back once JetStream acks the publish. The CLI does not wait for the result (Epic 5's read surface).
+- Lookup is by registry UUID only, not by name.
+- A request mints a fresh command_id and invocation_id, so a retry is a new run. On an unconfirmed publish, the 503 says the command may still run.
+- Every HTTP error is problem+json, including routing 404s and 405s (which keep their `Allow` header).
+- The manual command keeps `actor.type=scheduler` (AD-3 fixes one actor for the domain).
+
+CI after this story: run 40272270059 on `128f7cc` is green. That includes the executor + manual-invoke integration step (3 passed), the first green CI since 1.5. Getting there also needed the 1.3 `daemon --help` test fix in `69644e5`: rich forces ANSI color under `GITHUB_ACTIONS`, and that split `--roles` in the output.
 
 ## Verification
 
