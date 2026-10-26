@@ -185,14 +185,18 @@ def test_dispatcher_role_never_creates_a_second_consumer(monkeypatch: Any):
 
 def test_no_other_module_subscribes_to_ticks():
     """Static guard (AD-5): across src/candybar, the only JetStream/NATS
-    subscriptions are the dispatcher's tick durable and the executor's invoke
-    durable — nothing else may tap raw ticks and evaluate schedules."""
+    subscriptions are the dispatcher's tick durable, the executor's invoke
+    durable and the api's live-stream feed (Story 5.4). Only the dispatcher's
+    durable evaluates schedules; the feed taps ticks as AD-5 allows any other
+    subscriber to: ephemeral and ordered (no durable to compete for ticks),
+    deduping on tick_id (tests/test_schedule_stream.py pins that)."""
     import ast
     from pathlib import Path
 
     src = Path(role.__file__).resolve().parent.parent
     subscribe_attrs = {"subscribe", "pull_subscribe", "pull_subscribe_bind", "add_consumer"}
     found: set[tuple[str, str]] = set()
+    calls: dict[tuple[str, str], ast.Call] = {}
     for path in sorted(src.rglob("*.py")):
         tree = ast.parse(path.read_text(), filename=str(path))
         for node in ast.walk(tree):
@@ -203,14 +207,21 @@ def test_no_other_module_subscribes_to_ticks():
             ):
                 first = node.args[0] if node.args else None
                 label = ast.unparse(first) if first is not None else "<none>"
-                found.add((path.relative_to(src).as_posix(), label))
-    # A new subscriber (e.g. an SSE feed of candybar facts) must be added here
-    # deliberately — and must never filter raw ticks (AD-5: only the
-    # dispatcher's durable evaluates schedules; others dedupe on tick_id).
+                site = (path.relative_to(src).as_posix(), label)
+                found.add(site)
+                calls[site] = node
+    # A new subscriber must be added here deliberately. Any one that taps raw
+    # ticks must be non-durable and dedupe on tick_id (AD-5).
     assert found == {
         ("dispatcher/role.py", "TICK_FILTER"),
         ("executor/role.py", "INVOKE_FILTER"),
+        ("api/role.py", "filter_subject"),
     }, f"unexpected NATS subscription sites: {sorted(found)}"
+    from candybar.api import role as api_role
     from candybar.executor import role as executor_role
 
     assert "tick" not in executor_role.INVOKE_FILTER
+    feed = {kw.arg: ast.unparse(kw.value) for kw in calls[("api/role.py", "filter_subject")].keywords}
+    assert feed["ordered_consumer"] == "True"
+    assert "durable" not in feed and "queue" not in feed
+    assert api_role.STREAM_FILTER == "bloodbank.evt.cron.>"

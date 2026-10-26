@@ -32,6 +32,9 @@ Story 5.3 adds `GET /schedule/next`, the stream's poll fallback: the single
 `current` row (the same row `/schedule` marks current), read from the
 definitions and the future skips only, one `next_fire` per candybar; a 404
 when nothing will fire.
+Story 5.4 adds `GET /schedule/stream` (AD-11): the SSE channel of live
+updates, served from the api role's `ScheduleStream` hub (`api/stream.py`),
+optionally scoped to a `from`/`to` window and resumable with `Last-Event-ID`.
 All errors are RFC 7807 problem+json. Epic 5 adds the rest of the CAP-8 read surface.
 """
 
@@ -49,7 +52,7 @@ from uuid import UUID, uuid4
 import nats.errors
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import REGISTRY, CollectorRegistry
 from prometheus_client.exposition import choose_encoder
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
@@ -89,6 +92,10 @@ from .schedule import (
     window_bounds,
     window_rows,
 )
+from .shapes import candybar_row_json, utc_iso
+from .stream import HEADERS as STREAM_HEADERS
+from .stream import MEDIA_TYPE as STREAM_MEDIA_TYPE
+from .stream import ScheduleStream
 
 log = logging.getLogger(__name__)
 
@@ -149,25 +156,6 @@ def problem(status: int, title: str, detail: str) -> JSONResponse:
     )
 
 
-def utc_iso(value: datetime | None) -> str | None:
-    """ISO 8601 in UTC (AD-13). timestamptz comes back in the DB session's
-    zone (the live server's is America/New_York), so convert explicitly."""
-    return value.astimezone(UTC).isoformat() if value is not None else None
-
-
-def candybar_row_json(row: Any) -> dict[str, Any]:
-    """The holocene-view-contract definition shape, exactly (GET /candybars items)."""
-    return {
-        "id": str(row.id),
-        "name": row.name,
-        "description": row.description,
-        "tags": list(row.tags),
-        "schedule": row.schedule,
-        "noise": row.noise,
-        "createdAt": utc_iso(row.created_at),
-    }
-
-
 def candybar_detail_json(row: Any) -> dict[str, Any]:
     """The single-definition shape: definition plus registry counters (GET /candybars/{id})."""
     return {
@@ -218,11 +206,16 @@ def create_app(
     sink: Any,
     metrics_registry: CollectorRegistry = REGISTRY,
     now: Callable[[], datetime] | None = None,
+    stream: ScheduleStream | None = None,
 ) -> FastAPI:
     # The wall clock decides which schedule rows are past/current (Story 5.2);
     # reading it is not owning a timer (AD-1). Injectable for tests.
     clock = now or (lambda: datetime.now(UTC))
+    # The live-update hub (Story 5.4). The api role passes the one it feeds
+    # from the bus; without one, the stream serves `ready` and nothing else.
+    live = stream or ScheduleStream(session_factory=session_factory, now=clock)
     app = FastAPI(title="candybar", docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.stream = live
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -504,5 +497,28 @@ def create_app(
                 404, "No upcoming fire", "no registered candybar has an upcoming fire"
             )
         return JSONResponse(content=row.to_json())
+
+    @app.get("/schedule/stream")
+    async def schedule_stream(
+        request: Request,
+        from_: Annotated[AwareDatetime | None, Query(alias="from")] = None,
+        to: Annotated[AwareDatetime | None, Query()] = None,
+    ) -> Response:
+        """SSE live updates (AD-11): row-shaped patches, resumable by `Last-Event-ID`.
+
+        With a `from`/`to` window (validated as on `/schedule`), row events
+        outside it are not dispatched and `definition.changed` carries the
+        candybar's rows in it.
+        """
+        window = None
+        if (from_ is None) != (to is None):
+            return problem(422, "Invalid schedule window", "give both from and to, or neither")
+        if from_ is not None and to is not None:
+            try:
+                window = window_bounds(from_, to)
+            except WindowError as exc:
+                return problem(422, "Invalid schedule window", str(exc))
+        frames = live.frames(last_event_id=request.headers.get("last-event-id"), window=window)
+        return StreamingResponse(frames, media_type=STREAM_MEDIA_TYPE, headers=STREAM_HEADERS)
 
     return app

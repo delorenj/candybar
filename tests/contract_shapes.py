@@ -150,3 +150,23 @@ def contract_route_line(route: str) -> str:
     """The contract bullet that defines `route` (Story 5.3: `/schedule/next`)."""
     text = CONTRACT.read_text(encoding="utf-8")
     return next(ln for ln in text.splitlines() if ln.lstrip("- ").startswith(f"`{route}` →"))
+
+
+# ---------------------------------------------------------------------------
+# Live updates (Story 5.4): the contract's list of stream triggers, verbatim.
+
+
+def live_update_triggers() -> list[str]:
+    """The phrases after "emitting an event whenever:" on the Live updates bullet."""
+    text = CONTRACT.read_text(encoding="utf-8")
+    section = text.split("### Live updates", 1)[1].split("\n### ", 1)[0]
+    line = next(ln for ln in section.splitlines() if "emitting an event whenever:" in ln)
+    listed = line.split("whenever:", 1)[1].split(". Each event", 1)[0]
+    return [part.strip() for part in re.split(r",\s*(?:or\s+)?", listed) if part.strip()]
+
+
+def live_update_patch_clause() -> str:
+    """The contract's payload rule for every stream event."""
+    text = CONTRACT.read_text(encoding="utf-8")
+    section = text.split("### Live updates", 1)[1].split("\n### ", 1)[0]
+    return section.split(". Each event", 1)[1].split("\n", 1)[0].strip()

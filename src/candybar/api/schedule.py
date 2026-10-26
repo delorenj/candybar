@@ -37,6 +37,7 @@ from ..dispatcher.schedule import (
     SkipSet,
     ceil_minute,
     fires_between,
+    matches_tick,
     next_fire,
 )
 from ..events.vocabulary import scheduled_idempotency_key, tick_id_for_minute
@@ -159,6 +160,68 @@ def _registered_floor(candybar: WindowCandybar) -> datetime:
     return ceil_minute(candybar.created_at)
 
 
+# The global current row's identity: (fire time, candybar id), or None.
+CurrentKey = tuple[datetime, UUID] | None
+
+
+def row_state(fire: datetime, candybar_id: UUID, *, cut: datetime, current: CurrentKey) -> str:
+    """THE state rule, shared by /schedule and the stream (Story 5.4).
+
+    A fire before `cut` has fired: `past`. The global next-to-fire is
+    `current`. Everything else is `upcoming`. `global_next` never returns a
+    fire before `cut`, so checking past first only matters when the caller's
+    `current` is stale. The stream keeps the current row from its last tick,
+    so a row whose fire has since passed reads `past`, as a refetch would.
+    """
+    if fire < cut:
+        return STATE_PAST
+    if current is not None and (fire, candybar_id) == current:
+        return STATE_CURRENT
+    return STATE_UPCOMING
+
+
+def current_key(found: tuple[datetime, WindowCandybar] | None) -> CurrentKey:
+    """The identity of `global_next`'s answer, for `row_state`."""
+    return (found[0], found[1].id) if found is not None else None
+
+
+def tick_minute(tick_id: str) -> datetime:
+    """The UTC minute a `tick:<epoch_minute>` names: a fire's time (AD-4)."""
+    return datetime.fromtimestamp(int(tick_id.removeprefix("tick:")) * 60, UTC)
+
+
+def is_fire_of(candybar: WindowCandybar, fire: datetime) -> bool:
+    """Whether `fire` is one of the candybar's `/schedule` rows.
+
+    A row is a fire of the CURRENT definition at or after registration. A run
+    dispatched under an older schedule has no row in a refetch, so the
+    stream does not invent one either.
+    """
+    return fire >= _registered_floor(candybar) and matches_tick(candybar.schedule, fire)
+
+
+def schedule_row(
+    candybar: WindowCandybar,
+    fire: datetime,
+    *,
+    cut: datetime,
+    current: CurrentKey,
+    covered: bool,
+    last_result: str | None = None,
+) -> ScheduleRow:
+    """One contract row for `fire`, its state decided by `row_state`."""
+    return ScheduleRow(
+        candybar_id=candybar.id,
+        name=candybar.name,
+        schedule=candybar.schedule,
+        noise=candybar.noise,
+        fire_time=fire,
+        state=row_state(fire, candybar.id, cut=cut, current=current),
+        covered=covered,
+        last_result=last_result,
+    )
+
+
 def _fires_in(candybar: WindowCandybar, start: datetime, end: datetime) -> Iterable[datetime]:
     lo = max(start, _registered_floor(candybar))
     if lo >= end:
@@ -255,27 +318,40 @@ def window_rows(
         nxt = global_next(candybars, now=now, skips=skips)
     except OverflowError as exc:  # croniter walking past year 9999
         raise WindowError("the window is out of range") from exc
-    current = (nxt[0], nxt[1].id) if nxt is not None else None
+    current = current_key(nxt)
+    return [
+        schedule_row(candybar, fire, cut=cut, current=current, covered=covered)
+        for fire, candybar, covered in found
+    ]
 
+
+def candybar_rows(
+    candybar: WindowCandybar,
+    start: datetime,
+    end: datetime,
+    *,
+    now: datetime,
+    skips: SkipSet,
+    current: CurrentKey,
+    limit: int = MAX_ROWS,
+) -> list[ScheduleRow]:
+    """One candybar's rows in `[start, end)`, with the global `current` given.
+
+    The stream's `definition.changed` rows (Story 5.4): exactly the rows of
+    this candybar in `window_rows` over the same window, when `current` is
+    `global_next`'s answer over all candybars. `skips` must cover `[start, end)`.
+    """
+    cut = first_tick_after(now)
     rows: list[ScheduleRow] = []
-    for fire, candybar, covered in found:
-        if (fire, candybar.id) == current:
-            state = STATE_CURRENT
-        elif fire < cut:
-            state = STATE_PAST
-        else:
-            state = STATE_UPCOMING
-        rows.append(
-            ScheduleRow(
-                candybar_id=candybar.id,
-                name=candybar.name,
-                schedule=candybar.schedule,
-                noise=candybar.noise,
-                fire_time=fire,
-                state=state,
-                covered=covered,
+    try:
+        for fire in _fires_in(candybar, start, end):
+            rows.append(
+                schedule_row(candybar, fire, cut=cut, current=current, covered=skips.covers(fire))
             )
-        )
+            if len(rows) > limit:
+                raise WindowError(f"the window has more than {limit} fires; narrow it")
+    except OverflowError as exc:  # croniter walking past year 9999
+        raise WindowError("the window is out of range") from exc
     return rows
 
 
