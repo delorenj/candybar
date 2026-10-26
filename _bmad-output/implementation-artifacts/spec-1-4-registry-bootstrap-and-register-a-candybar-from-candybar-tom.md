@@ -2,7 +2,7 @@
 title: 'Story 1.4: Registry bootstrap and register a Candybar from candybar.toml'
 type: 'feature'
 created: '2026-10-25'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'a0d35af80a034011ff432c4847e83d6a15f3b95d'
 route: 'dispatch'
 review_loop_iteration: 0
