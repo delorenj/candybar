@@ -162,6 +162,18 @@ Instead it is recorded as `bloodbank.cron.candybar.skipped` with
 Write a skip through `registry.store.add_occurrence_skip`. It is idempotent
 and rejects an unknown candybar. The HTTP endpoint lands with Story 5.6.
 
+**Skipping the rest of a day (AD-13).** A `skips` row with
+`kind=rest_of_day` and a UTC `day` suppresses every fire of that candybar on
+that UTC date — no invoke commands and no `invocations` rows until the next
+UTC midnight, then the schedule dispatches normally again. Each suppressed
+fire is recorded as `bloodbank.cron.candybar.skipped` with
+`reason=rest_of_day` at the tick it would have fired (a gap that spans a
+skipped day records its fires when the gap closes). The same gap rules as
+occurrence skips apply: a day-skipped latest missed fire hands the misfire
+run to the latest fire that is not skipped, and the shared helpers omit the
+whole date. Write one through `registry.store.add_rest_of_day_skip`; same
+idempotence and validation contract as `add_occurrence_skip`.
+
 ## Metrics (Prometheus, AD-9)
 
 The api role serves `GET /metrics` (same port as the API) for everything the

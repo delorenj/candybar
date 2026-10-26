@@ -193,8 +193,9 @@ jobs:
 
       # Story 2.3 adds the occurrence-skip store (idempotent write, window
       # read); that file's live-roles test needs the bus and runs below.
+      # Story 2.4 adds the rest-of-day store on the same live Postgres.
       - name: Integration tests (live Postgres)
-        run: CANDYBAR_TEST_PG=1 uv run pytest tests/test_registry_integration.py tests/test_skip_occurrence_integration.py -q
+        run: CANDYBAR_TEST_PG=1 uv run pytest tests/test_registry_integration.py tests/test_skip_occurrence_integration.py tests/test_skip_rest_of_day_integration.py -q
         env:
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
 
@@ -206,8 +207,10 @@ jobs:
       # Story 2.2 adds misfire coalescing on the same throwaway pair: a
       # whole-daemon gap, a real dispatcher-only tick backlog, and the 24h cap.
       # Story 2.3 adds a stored occurrence skip honored by the live roles.
+      # Story 2.4 adds a rest-of-day skip: suppression across a UTC midnight
+      # and a gap spanning a fully skipped day.
       - name: "Integration tests (dispatch fault injection + misfire coalescing + skips: live NATS + Postgres)"
-        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 CANDYBAR_TEST_FAULT=1 uv run pytest tests/test_dispatch_fault_injection_integration.py tests/test_misfire_integration.py tests/test_skip_occurrence_integration.py::test_stored_skip_suppresses_exactly_that_fire_live -q
+        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 CANDYBAR_TEST_FAULT=1 uv run pytest tests/test_dispatch_fault_injection_integration.py tests/test_misfire_integration.py tests/test_skip_occurrence_integration.py::test_stored_skip_suppresses_exactly_that_fire_live tests/test_skip_rest_of_day_integration.py::test_stored_day_skip_suppresses_until_utc_midnight_live -q
         env:
           NATS_URL: nats://127.0.0.1:4222
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
