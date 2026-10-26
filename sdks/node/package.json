@@ -1,0 +1,33 @@
+{
+  "name": "candybar-sdk",
+  "version": "0.1.0",
+  "description": "Author Candybar cron jobs natively in JavaScript/TypeScript: the AD-8 process protocol (env in, result JSON out), with self-reported token spend. Never opens a network connection.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./src/index.d.ts",
+  "files": [
+    "src/",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\"",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/delorenj/candybar.git",
+    "directory": "sdks/node"
+  }
+}

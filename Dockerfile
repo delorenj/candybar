@@ -33,6 +33,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
+# Node runtime for node-SDK candybars (Story 4.2): the executor spawns every
+# candybar inside this container (AD-7), so `#!/usr/bin/env node` entrypoints
+# need node here. Only the binary — jobs bring their own node_modules
+# (candybar-sdk has zero runtime deps). Pinned to the spine's Node 24 LTS.
+COPY --from=node:24.22.1-slim /usr/local/bin/node /usr/local/bin/node
+RUN node --version
+
 RUN useradd --create-home --uid 10001 candybar
 WORKDIR /app
 

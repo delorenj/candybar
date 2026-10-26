@@ -13,3 +13,7 @@ dist/
 *.egg-info/
 .ruff_cache/
 .pytest_cache/
+
+# Node SDK (story 4.2): installed deps and npm pack output
+node_modules/
+*.tgz

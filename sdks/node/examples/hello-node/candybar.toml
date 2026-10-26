@@ -1,0 +1,12 @@
+# Example node candybar (Story 4.2). Register it with:
+#   candybar register sdks/node/examples/hello-node
+# The executor execs `entrypoint` directly, so it is an executable file with a
+# node shebang; `candybar-sdk` resolves by package self-reference here, or from
+# node_modules once the job lives in its own directory (see sdks/node/README.md).
+[candybar]
+name = "hello-node"
+description = "Node SDK example: reports its trigger and a self-reported token spend."
+tags = ["example", "sdk-node"]
+schedule = "*/5 * * * *"
+entrypoint = "candybar.mjs"
+noise = true

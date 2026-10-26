@@ -47,6 +47,12 @@ jobs:
         with:
           python-version: '3.13'
 
+      # Story 4.2: Node SDK toolchain (spine floor: Node 24 LTS, pinned).
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+
       - name: Install dependencies
         run: uv sync --frozen
 
@@ -63,6 +69,17 @@ jobs:
 
       - name: Lint
         run: uv run ruff check .
+
+      # Story 4.2: candybar-sdk (npm). node:test over the protocol matrix and
+      # the no-network guards, tsc over the hand-written .d.ts, and an empty
+      # production dependency tree (nothing in it could open a NATS socket).
+      - name: Node SDK tests + typecheck (sdks/node)
+        working-directory: sdks/node
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run typecheck
+          test "$(npm ls --omit=dev --all --parseable | wc -l)" -eq 1
 
       # Story 1.9: AD-15 grep gate — no LAN IPs or plaintext-secret shapes on
       # deploy surfaces, enforced on every push. ripgrep is not guaranteed on
@@ -82,11 +99,13 @@ jobs:
         run: |
           docker build -t candybar:ci .
           docker run --rm --entrypoint /app/.venv/bin/candybar candybar:ci --help >/dev/null
+          docker run --rm --entrypoint node candybar:ci --version
           # Story 4.1: SDK-authored python jobs import candybar_sdk from the image venv.
           docker run --rm --entrypoint python candybar:ci -c "import candybar_sdk"
 
+      # CANDYBAR_REQUIRE_NODE: the node-SDK contract suite must run, never skip.
       - name: Unit tests
-        run: uv run pytest -q
+        run: CANDYBAR_REQUIRE_NODE=1 uv run pytest -q
 
       # Story 1.7: the documented per-candybar PromQL (success/fail rate,
       # failure ratio, runtime) evaluated by promtool, pinned to the live
@@ -131,8 +150,8 @@ jobs:
       # which are both up by this point in the job. Story 1.9 adds the
       # fast-stop proof (roles stop inside docker's 10s SIGTERM grace).
       # Story 4.1 adds the python-SDK example firing off a scheduled tick.
-      - name: "Integration tests (executor + manual invoke + fast stop + python SDK: live NATS + Postgres)"
-        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py tests/test_manual_invoke_integration.py tests/test_fast_stop_integration.py tests/test_sdk_python_integration.py -q
+      - name: "Integration tests (executor + manual invoke + fast stop + python/node SDK: live NATS + Postgres)"
+        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py tests/test_manual_invoke_integration.py tests/test_fast_stop_integration.py tests/test_sdk_python_integration.py tests/test_node_sdk_integration.py -q
         env:
           NATS_URL: nats://127.0.0.1:4222
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
