@@ -54,7 +54,7 @@ A pain to solve. Scheduled work in the 33GOD pipeline is scattered: Hermes runs 
 ## Non-goals
 
 - Implementing the Holocene schedule view UI (DELEGATED to the `holocene` repo — contract-only here).
-- Migrating existing Hermes crons or user crontab entries onto Candybar (adoption is a later, separate effort).
+- ~~Migrating existing Hermes crons or user crontab entries onto Candybar (adoption is a later, separate effort).~~ Lifted 2026-10-26 by user directive: Epic 7 migrates them (inventory: `_bmad-output/planning-artifacts/cron-inventory.md`; architecture: spine AD-16..AD-22).
 - Replacing or extending NATS/Dapr, or building a new event bus.
 - Multi-node scheduling, leader election, or HA — single-node homelab operation.
 - Sub-minute scheduling granularity.
