@@ -872,12 +872,12 @@ jobs:
   source_of_truth:
     repo: DeLoDocs vault (not git)
     path: _vault/Workflows/systemd/delodocs-wiki-self-tuning-weekly.timer
-    commit: nogit-sha256:99624124a86cbe7eff67ffa4ff0e8828e40e355c58ad787aebdc5310df22091e
+    commit: nogit-sha256:2787fc74205cbf7335b691cf611bfc73d0df97877f21a41133e28c7a9844a4f2
   disable:
   - systemctl --user disable --now delodocs-wiki-self-tuning-weekly.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/delodocs-wiki-self-tuning-weekly.timer
-  status: cutover
+  status: rolled-back
   candybar_id: 01a17938-9a3b-71bc-b1b9-c0ceadfc86fe
   cutover_at: '2026-10-26T17:18:35.830721Z'
   verification:
@@ -894,6 +894,14 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17938-9a3b-71bc-b1b9-c0ceadfc86fe enabled; first fire 2026-11-02T13:45:00Z
+  - at: '2026-10-26T17:41:57.211098Z'
+    action: rollback
+    outcome: ok
+    detail: 'native scheduler restored: manual candybar invocation failed: executor stopped (SIGTERM) during concurrent restart; unit kept running'
+  - at: '2026-10-26T17:41:57.353505Z'
+    action: rollback
+    outcome: ok
+    detail: candybar 01a17938-9a3b-71bc-b1b9-c0ceadfc86fe disabled
 - id: hermes:33god-pm:777c511a009c
   wave: '7.17'
   candybar:
@@ -1927,7 +1935,7 @@ jobs:
   - systemctl --user disable --now hindsight-template-sweep.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-template-sweep.timer
-  status: cutover
+  status: rolled-back
   candybar_id: 01a1793e-46ae-724c-9c34-eed9b832445b
   cutover_at: '2026-10-26T17:24:47.477082Z'
   verification:
@@ -1944,6 +1952,14 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793e-46ae-724c-9c34-eed9b832445b enabled; first fire 2026-10-27T08:30:00Z
+  - at: '2026-10-26T17:41:51.920283Z'
+    action: rollback
+    outcome: ok
+    detail: 'native scheduler restored: manual candybar run failed on a different op vault lookup than the native run (Hindsight duplicate title vs Hypercharm missing item); parity not proven'
+  - at: '2026-10-26T17:41:52.045524Z'
+    action: rollback
+    outcome: ok
+    detail: candybar 01a1793e-46ae-724c-9c34-eed9b832445b disabled
 - id: systemd:forever-ago-vault.timer
   wave: '7.9'
   candybar:
@@ -2402,13 +2418,13 @@ jobs:
   - systemctl --user disable --now bloodbank-agent-hooks-health.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/bloodbank-agent-hooks-health.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17946-6d72-7091-8c78-aedca4bb4b29
   cutover_at: '2026-10-26T17:33:41.632439Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: b43cf1ab-fdff-5161-8a87-dd702d9dbd6e
+    result: success
+    at: '2026-10-26T17:35:03.861867Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:30:36.948832Z'
@@ -2419,6 +2435,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17946-6d72-7091-8c78-aedca4bb4b29 enabled; first fire 2026-10-26T17:35:00Z
+  - at: '2026-10-26T17:42:39.189429Z'
+    action: verify
+    outcome: ok
+    detail: invocation b43cf1ab-fdff-5161-8a87-dd702d9dbd6e (scheduled) success exit=0 runtime=3664ms memory=195489792B cpu=14.5779
 - id: systemd:candystore-project-sync.timer
   wave: '7.8'
   candybar:
@@ -2503,13 +2523,13 @@ jobs:
   - systemctl --user disable --now holocene-pad-roster.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/33GOD/holocene/services/pad-roster/holocene-pad-roster.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17947-3ec2-7286-84ea-41f2ee8ba9ee
   cutover_at: '2026-10-26T17:34:35.207349Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 2dbcf9e2-159a-5743-99cb-93c2c1a92f3c
+    result: success
+    at: '2026-10-26T17:36:01.521812Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:30:36.990011Z'
@@ -2520,6 +2540,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17947-3ec2-7286-84ea-41f2ee8ba9ee enabled; first fire 2026-10-26T17:36:00Z
+  - at: '2026-10-26T17:42:39.821448Z'
+    action: verify
+    outcome: ok
+    detail: invocation 2dbcf9e2-159a-5743-99cb-93c2c1a92f3c (scheduled) success exit=0 runtime=1461ms memory=18432000B cpu=0.9778
 - id: systemd:hermes-single-install-guard.timer
   wave: '7.8'
   candybar:
@@ -2966,3 +2990,353 @@ jobs:
     action: plan
     outcome: amended
     detail: 'wave 7.15 override: pin alone is inert on the pre-7.17 ticker, so disable also pauses (and rollback resumes after unpinning) per the story 7.15 spec'
+- id: systemd:ipm-metrics.timer
+  wave: '7.14'
+  candybar:
+    name: ipm-metrics
+    description: Migrated ipm-metrics systemd user service (wave 7.14)
+    tags:
+    - migrated
+    - james-brennan
+    schedule: '*/5 * * * *'
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: ipm-metrics.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=30s; OnCalendar=*-*-* *:0/5:00; AccuracySec=1s; Persistent=true
+    jitter_s: 1
+    unit: ipm-metrics.timer
+    unit_file: /home/delorenj/.config/systemd/user/ipm-metrics.timer
+  deviations:
+  - systemd timer jitter/phase dropped; candybar cron fixes the minute
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/DeLoContainers
+    path: systemd/user/ipm-metrics.timer
+    commit: fe111c627fd3a1af525c9765b33f4f5c31cda69e
+  disable:
+  - systemctl --user disable --now ipm-metrics.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/ipm-metrics.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:41:53.867771Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:ipm-internal-dashboard.timer
+  wave: '7.14'
+  candybar:
+    name: ipm-internal-dashboard
+    description: Migrated ipm-internal-dashboard systemd user service (wave 7.14)
+    tags:
+    - migrated
+    - james-brennan
+    schedule: 1-59/5 * * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: ipm-internal-dashboard.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=1min; OnCalendar=*-*-* *:0/5:30; AccuracySec=10s; Persistent=true
+    jitter_s: 10
+    unit: ipm-internal-dashboard.timer
+    unit_file: /home/delorenj/.config/systemd/user/ipm-internal-dashboard.timer
+  deviations:
+  - systemd timer jitter/phase dropped; candybar cron fixes the minute
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  - native :30s offset becomes +1 cron minute (inventory translation), keeping it after ipm-metrics
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/james-brennan
+    path: devops/internal-dashboard/install.sh
+    commit: e4bfb2d21ace40506cd65188e798cea93a5c84c2
+  disable:
+  - systemctl --user disable --now ipm-internal-dashboard.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/ipm-internal-dashboard.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:42:05.214692Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:james-brennan-billing-ledger.timer
+  wave: '7.14'
+  candybar:
+    name: james-brennan-billing-ledger
+    description: Migrated james-brennan-billing-ledger systemd user service (wave 7.14)
+    tags:
+    - migrated
+    - james-brennan
+    schedule: 17 6 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: james-brennan-billing-ledger.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 06:17:00; Persistent=true; AccuracySec=1min
+    jitter_s: 60
+    unit: james-brennan-billing-ledger.timer
+    unit_file: /home/delorenj/.config/systemd/user/james-brennan-billing-ledger.timer
+  deviations:
+  - systemd timer jitter/phase dropped; candybar cron fixes the minute
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/james-brennan
+    path: scripts/install-billing-ledger-timer.sh
+    commit: e4bfb2d21ace40506cd65188e798cea93a5c84c2
+  disable:
+  - systemctl --user disable --now james-brennan-billing-ledger.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-billing-ledger.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:42:05.746068Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:sync-jim-dropbox
+  wave: '7.14'
+  candybar:
+    name: sync-jim-dropbox
+    description: Migrated sync-jim-dropbox systemd user service (wave 7.14)
+    tags:
+    - migrated
+    - james-brennan
+    schedule: '*/10 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: sync-jim-dropbox.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=5min; OnActiveSec=5min; OnUnitActiveSec=10min; Persistent=true; RandomizedDelaySec=2min
+    jitter_s: 120
+    unit: sync-jim-dropbox.timer
+    unit_file: /home/delorenj/.config/systemd/user/sync-jim-dropbox.timer
+  deviations:
+  - systemd timer jitter/phase dropped; candybar cron fixes the minute
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: true
+  source_of_truth:
+    repo: delorenj/zshyzsh
+    path: systemd/sync-jim-dropbox.timer
+    commit: 2e31426c73a0e54c6f8af7d0bd0e235e81771a38
+  disable:
+  - systemctl --user disable --now sync-jim-dropbox.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/sync-jim-dropbox.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:42:06.271736Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:activity-report@james-brennan.timer
+  wave: '7.14'
+  candybar:
+    name: activity-report-james-brennan
+    description: Migrated activity-report-james-brennan systemd user service (wave 7.14)
+    tags:
+    - migrated
+    - james-brennan
+    schedule: 30 3 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: activity-report@james-brennan.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 03:30:00 America/New_York (schedule.conf); Persistent=true; AccuracySec=1min
+    jitter_s: 60
+    unit: activity-report@james-brennan.timer
+    unit_file: /home/delorenj/.config/systemd/user/activity-report@.timer
+  deviations:
+  - systemd timer jitter/phase dropped; candybar cron fixes the minute
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  - 'template instance: rollback enables by instance name, never template path; .project.json scheduler=candybar in james-brennan f5f90be169adedee0db9cb1cf9991d66a03b70a9'
+  native_failing: true
+  source_of_truth:
+    repo: delorenj/skills
+    path: activity-report/scripts/ar/schedule.py
+    commit: 9bc8d6c08c5ecfdc5bd3bf84e5e9dad35eba69f0
+  disable:
+  - systemctl --user disable --now activity-report@james-brennan.timer
+  rollback:
+  - systemctl --user enable --now activity-report@james-brennan.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: systemd:james-brennan-nightly-suite.timer
+  wave: '7.14'
+  candybar:
+    name: james-brennan-nightly-suite
+    description: Migrated james-brennan-nightly-suite systemd user service (wave 7.14)
+    tags:
+    - migrated
+    - james-brennan
+    schedule: 11 3 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: james-brennan-nightly-suite.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 03:11:00 America/New_York; Persistent=true; AccuracySec=1min
+    jitter_s: 60
+    unit: james-brennan-nightly-suite.timer
+    unit_file: /home/delorenj/.config/systemd/user/james-brennan-nightly-suite.timer
+  deviations:
+  - systemd timer jitter/phase dropped; candybar cron fixes the minute
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/james-brennan
+    path: scripts/install-nightly-fix-timer.sh
+    commit: e4bfb2d21ace40506cd65188e798cea93a5c84c2
+  disable:
+  - systemctl --user disable --now james-brennan-nightly-suite.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-nightly-suite.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:42:07.386604Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:james-brennan-daily-update.timer
+  wave: '7.14'
+  candybar:
+    name: james-brennan-daily-update
+    description: Migrated james-brennan-daily-update systemd user service (wave 7.14)
+    tags:
+    - migrated
+    - james-brennan
+    schedule: 0 3 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: james-brennan-daily-update.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 03:00:00; Persistent=true; AccuracySec=1min
+    jitter_s: 60
+    unit: james-brennan-daily-update.timer
+    unit_file: /home/delorenj/.config/systemd/user/james-brennan-daily-update.timer
+  deviations:
+  - systemd timer jitter/phase dropped; candybar cron fixes the minute
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/james-brennan
+    path: scripts/install-daily-update-timer.sh
+    commit: e4bfb2d21ace40506cd65188e798cea93a5c84c2
+  disable:
+  - systemctl --user disable --now james-brennan-daily-update.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-daily-update.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:42:07.921349Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:james-brennan-nightly-fix.timer
+  wave: '7.14'
+  candybar:
+    name: james-brennan-nightly-fix
+    description: Migrated james-brennan-nightly-fix systemd user service (wave 7.14)
+    tags:
+    - migrated
+    - james-brennan
+    schedule: 23 4 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: james-brennan-nightly-fix.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 04:23:00 America/New_York; Persistent=true; AccuracySec=1min
+    jitter_s: 60
+    unit: james-brennan-nightly-fix.timer
+    unit_file: /home/delorenj/.config/systemd/user/james-brennan-nightly-fix.timer
+  deviations:
+  - systemd timer jitter/phase dropped; candybar cron fixes the minute
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/james-brennan
+    path: scripts/install-nightly-fix-timer.sh
+    commit: e4bfb2d21ace40506cd65188e798cea93a5c84c2
+  disable:
+  - systemctl --user disable --now james-brennan-nightly-fix.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-nightly-fix.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:42:08.503339Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
