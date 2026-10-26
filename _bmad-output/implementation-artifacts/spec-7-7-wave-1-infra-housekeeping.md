@@ -108,7 +108,7 @@ Rollback-vs-retirement tension: stripping `[Install]` from a retired `.timer` wo
 
 **Commands:**
 - `uv run candybar migrate status --wave 7.7 --probe` — all entries cutover/verified, native=retired
-- `systemctl --user list-timers --all | grep -E 'cache-prune|docker-prune|state-maintain|user-logrotate|zellij-ark|gnome-shell|srvls'` — no wave-1 timer listed
+- `uv run candybar migrate status --wave 7.7 --probe` — every wave-1 native scheduler reads `retired` (systemd may still list a disabled, loaded timer with NEXT `-`; absence from list-timers is not required)
 - `curl -s http://127.0.0.1:8700/candybars` — 10 new candybars, enabled, correct schedule/timezone
 - `~/code/infra/bin/srvls | grep candybar` — registry jobs appear in the inventory
 - `git unpushed` — clean for candybar, infra, srvls
