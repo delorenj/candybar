@@ -88,3 +88,5 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+- Inline review (no subagent-spawn capability in this session): `systemctl --user list-timers` still includes disabled timers with NEXT `-`, so the original spec verification command (`grep` expected no rows) gave a false failure. **low (patched)**: use `candybar migrate status --wave 7.8 --probe`, which checks each native timer's enabled/active state and returns `native=retired` for all seven. No runtime code changed. The seven manifests validate with `load_manifest`, their schedules/timezones match `cron-inventory.md`, `tests/test_migrate_ops.py tests/test_migrate_ledger_native.py tests/test_systemd_runner.py` ran 107 passed/7 skipped, and the first scheduled invocation for every job is recorded in the ledger with metering. Skillex's exit 1 is native result parity; no other candidate defect survived verification.
