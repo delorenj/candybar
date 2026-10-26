@@ -90,13 +90,13 @@ jobs:
   - systemctl --user disable --now newapi-vm-health.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-vm-health.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1793b-612b-797c-8746-17759edbb316
   cutover_at: '2026-10-26T17:21:37.543548Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 705d1f8f-e8f6-538e-8adf-7eb587cd0c8e
+    result: success
+    at: '2026-10-26T17:25:04.522244Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:15:40.072190Z'
@@ -107,6 +107,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793b-612b-797c-8746-17759edbb316 enabled; first fire 2026-10-26T17:25:00Z
+  - at: '2026-10-26T17:28:23.630016Z'
+    action: verify
+    outcome: ok
+    detail: invocation 705d1f8f-e8f6-538e-8adf-7eb587cd0c8e (scheduled) success exit=0 runtime=4458ms memory=14807040B cpu=0.0205
 - id: systemd:newapi-db-pull
   wave: '7.13'
   candybar:
@@ -236,13 +240,13 @@ jobs:
   - systemctl --user disable --now newapi-oauth-connections.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-oauth-connections.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1793b-64ce-7e0a-aea1-1b461ff550fe
   cutover_at: '2026-10-26T17:21:38.494156Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 0bb303bf-db5e-578b-9157-46005de78cae
+    result: success
+    at: '2026-10-26T17:25:03.018617Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:15:41.144538Z'
@@ -253,6 +257,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793b-64ce-7e0a-aea1-1b461ff550fe enabled; first fire 2026-10-26T17:25:00Z
+  - at: '2026-10-26T17:28:24.108885Z'
+    action: verify
+    outcome: ok
+    detail: invocation 0bb303bf-db5e-578b-9157-46005de78cae (scheduled) success exit=0 runtime=2952ms memory=41517056B cpu=0.3311
 - id: systemd:newapi-openrouter-sync
   wave: '7.13'
   candybar:
@@ -1546,9 +1554,9 @@ jobs:
   - systemctl --user disable --now zellij-ark.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/zellij-ark.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17941-ac64-7f65-bd20-f20d8d84e0bf
+  cutover_at: '2026-10-26T17:28:30.029554Z'
   verification:
     invocation_id: null
     result: null
@@ -1559,6 +1567,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:28:30.029554Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-ac64-7f65-bd20-f20d8d84e0bf enabled; first fire 2026-10-26T17:30:00Z
 - id: systemd:gnome-shell-restart.timer
   wave: '7.7'
   candybar:
