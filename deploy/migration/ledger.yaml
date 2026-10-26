@@ -1,0 +1,6 @@
+# Candybar migration ledger (Story 7.5, AD-21): one entry per cron-inventory id.
+# Driven by `candybar migrate {plan,cutover,verify,rollback,status}`; schema and
+# procedure in deploy/migration/README.md. Commit it after every change: it is
+# how a cutover is undone when the daemon is down.
+version: 1
+jobs: []

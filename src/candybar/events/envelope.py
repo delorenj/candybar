@@ -129,6 +129,10 @@ class CandybarCreatedData(BaseModel):
     # on facts published before Epic 7, which read as UTC.
     timezone: NonBlank = "UTC"
     noise: bool = False
+    # Registered disabled (Story 7.5, AD-21): a migration cutover registers the
+    # candybar before it retires the native scheduler. Additive: absent on
+    # facts published before it existed, which read as enabled.
+    enabled: bool = True
 
 
 class CandybarUpdatedData(BaseModel):

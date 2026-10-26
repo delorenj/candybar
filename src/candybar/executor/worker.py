@@ -14,6 +14,12 @@ failed. Such a run is finalized `fail` as abandoned and is NOT executed again,
 unless the candybar carries the `retry-on-abandon` tag. Then it re-runs, at
 most until the command's delivery count passes ABANDON_RETRY_MAX_DELIVERIES.
 
+A scheduled or misfire command for a candybar that has since been DISABLED
+(Story 7.5, AD-21: a migration rollback, perhaps while this executor was
+down and the commands queued) is not run: it is recorded as a
+`bloodbank.cron.candybar.skipped` fact with `reason=disabled` and acked, so
+a rolled-back job cannot fire on both schedulers. Manual runs still run.
+
 Terminal/invoked event ids are UUIDv5 of `<phase>:<invocation_id>`, so
 JetStream `Nats-Msg-Id` dedupe makes every republication safe. Every
 child-supplied string is scrubbed of NUL and lone surrogates before it is
@@ -36,6 +42,7 @@ from ..events import (
     build_candybar_completed,
     build_candybar_failed,
     build_candybar_invoked,
+    build_candybar_skipped,
     parse_envelope,
 )
 from ..events.envelope import (
@@ -62,6 +69,9 @@ EXEC_NAMESPACE = UUID("f0a3b7e1-2c4d-4e5f-8a9b-0c1d2e3f4a5b")
 RETRY_ON_ABANDON_TAG = "retry-on-abandon"
 # Bounds that re-run, so a job that OOM-kills the executor cannot loop forever.
 ABANDON_RETRY_MAX_DELIVERIES = 3
+# The `skipped` reason for a queued scheduled/misfire command whose candybar
+# was disabled before it ran (Story 7.5).
+SKIP_DISABLED = "disabled"
 ABANDONED_MESSAGE = (
     "abandoned: the executor lost this run before recording its result "
     "(killed, OOM, or a failed terminal write); not re-executed"
@@ -197,14 +207,18 @@ class Executor:
         claim: Callable[[InvocationClaim], Awaitable[bool]] | None = None,
         retry_abandoned: Callable[[UUID], Awaitable[bool]] | None = None,
         on_failure: Callable[..., Awaitable[None]] = run_on_failure,
+        enabled: Callable[[UUID], Awaitable[bool | None]] | None = None,
     ) -> None:
         """`entrypoint` resolves what to run: the bare entrypoint path (a `str`,
         the exec default) or the stored runner dict (Story 7.3), None when the
         candybar is unknown. `claim` commits the pre-spawn running row (True) or
         reports the key already taken (False); without it no claim is written.
         `retry_abandoned` says whether a candybar opted into re-running a lost
-        run. `on_failure` fires a runner's hook after a recorded failure."""
+        run. `on_failure` fires a runner's hook after a recorded failure.
+        `enabled` reads a candybar's flag (Story 7.5); without it nothing is
+        skipped as disabled."""
         self._on_failure = on_failure
+        self._enabled = enabled
         self._claim = claim
         self._retry_abandoned = retry_abandoned
         self._by_key = by_key
@@ -340,6 +354,16 @@ class Executor:
         if entrypoint is None:
             await self._fail_unknown_candybar(envelope, msg)
             return
+        if not claimed and envelope.data.trigger != "manual" and self._enabled is not None:
+            try:
+                enabled = await self._enabled(envelope.data.candybar_id)
+            except Exception:
+                log.exception("enabled read failed for %s; requesting redelivery", key)
+                await msg.nak(delay=1)  # type: ignore[attr-defined]
+                return
+            if enabled is False:
+                await self._skip_disabled(envelope, key, msg)
+                return
 
         if self.registry.stopping:
             # Shutdown began before this command started (fetched in the
@@ -546,6 +570,31 @@ class Executor:
         await msg.ack()  # type: ignore[attr-defined]
         log.info("redelivered %s already recorded as %s; no second execution", row.idempotency_key, row.result)
 
+    async def _skip_disabled(self, cmd: CandybarInvokeCommand, key: str, msg: object) -> None:
+        """A queued scheduled/misfire command of a disabled candybar: record `skipped`, ack.
+
+        Fact only, like the dispatcher's skips: nothing ran, so no invocation
+        row. The id is deterministic per (candybar, tick), so a redelivery
+        republishes the same broker-dedupable fact.
+        """
+        event = build_candybar_skipped(
+            candybar_id=cmd.data.candybar_id,
+            name=cmd.data.name,
+            tick_id=cmd.data.tick_id,
+            reason=SKIP_DISABLED,
+            correlationid=cmd.correlationid,
+            causationid=cmd.command_id,
+            event_id=uuid5(EXEC_NAMESPACE, f"skipped:{SKIP_DISABLED}:{key}"),
+        )
+        try:
+            await self._publish(event)
+        except Exception:
+            log.exception("failed to publish skipped (disabled) for %s; requesting redelivery", key)
+            await msg.nak(delay=1)  # type: ignore[attr-defined]
+            return
+        await msg.ack()  # type: ignore[attr-defined]
+        log.info("%s is disabled; %s skipped, not run", cmd.data.name, key)
+
     async def _fail_unknown_candybar(self, cmd: CandybarInvokeCommand, msg: object) -> None:
         """No registry row: record impossible (FK), emit the failure fact, term."""
         event: CandybarFailedEvent = build_candybar_failed(
@@ -575,6 +624,7 @@ __all__ = [
     "ABANDON_RETRY_MAX_DELIVERIES",
     "EXEC_NAMESPACE",
     "RETRY_ON_ABANDON_TAG",
+    "SKIP_DISABLED",
     "Executor",
     "Resolved",
     "lifecycle_event_id",

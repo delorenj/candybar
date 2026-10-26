@@ -49,6 +49,9 @@ class CandybarManifest(BaseModel):
     entrypoint: str | None = None
     runner: dict[str, Any] | None = None
     noise: bool = False
+    # Story 7.5 (AD-21): a candybar registered disabled is stored but never
+    # dispatched until enabled (`POST /candybars/{id}/enabled`).
+    enabled: bool = True
 
     @model_validator(mode="after")
     def _entrypoint_xor_runner(self) -> CandybarManifest:

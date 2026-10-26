@@ -27,7 +27,9 @@ Client patch rule: on `current.advanced`, every row with `fireTime < cut` is
 `past`, the row matching `current` is `current`, and the rest are
 `upcoming`. On a row event, set the row at its key. On `definition.changed`,
 set `name`, `schedule` and `noise` on that candybar's rows, or replace them
-with `rows` when the stream was opened with a window.
+with `rows` when the stream was opened with a window. A change of `enabled`
+(Story 7.5) adds or removes that candybar's upcoming rows, so a stream opened
+without a window refetches `/schedule` on it.
 """
 
 from __future__ import annotations
@@ -66,6 +68,7 @@ from .schedule import (
     past_keys,
     schedule_row,
     tick_minute,
+    visible_rows,
 )
 from .shapes import candybar_row_json, utc_iso
 
@@ -93,7 +96,9 @@ STREAM_TRIGGERS: dict[str, str] = {
 
 # The contract definition fields a `definition.changed` may report: the
 # entrypoint is executor-internal and is never echoed (Story 5.1).
-VISIBLE_FIELDS = frozenset({"name", "description", "tags", "schedule", "timezone", "noise"})
+VISIBLE_FIELDS = frozenset(
+    {"name", "description", "tags", "schedule", "timezone", "noise", "enabled"}
+)
 
 BUFFER_SIZE = 1024  # events kept for Last-Event-ID replay
 QUEUE_SIZE = 1024  # undelivered events per subscriber before it is closed
@@ -310,6 +315,9 @@ class ScheduleStream:
         candybar = await self._definition(candybar_id)
         if candybar is None or not is_fire_of(candybar, fire):
             return None, None
+        if not candybar.enabled and (last_result is None or fire >= first_tick_after(self._now())):
+            # A disabled candybar's only rows are past fires that ran (Story 7.5).
+            return None, None
         row = schedule_row(
             candybar,
             fire,
@@ -371,6 +379,7 @@ class ScheduleStream:
                     "schedule": stored.schedule,
                     "timezone": stored.timezone,
                     "noise": stored.noise,
+                    "enabled": getattr(stored, "enabled", True),
                     "created_at": stored.created_at,
                 }
                 if stored is not None
@@ -388,6 +397,7 @@ class ScheduleStream:
                     "schedule": data.schedule,
                     "timezone": data.timezone,
                     "noise": data.noise,
+                    "enabled": data.enabled,
                     "created_at": fact.time,
                 }
         else:
@@ -523,7 +533,7 @@ class ScheduleStream:
         if keys:
             async with self._session_factory() as session:
                 rows = attach_results(rows, await fire_results(session, keys))
-        return [row.to_json() for row in rows]
+        return [row.to_json() for row in visible_rows(rows)]
 
 
 def parse_fact(payload: bytes) -> Envelope | None:

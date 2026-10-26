@@ -22,7 +22,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 from uuid import uuid4
 
 import pytest
@@ -147,7 +147,7 @@ def go(coro: Any) -> Any:
     return asyncio.run(coro)
 
 
-def run_unit(stub: Stub, **kw: Any):  # noqa: ANN202
+def run_unit(stub: Stub, **kw: Any):
     return go(run_systemd(runner=RUNNER, host=stub.host, **{**IDS, **kw}))
 
 
@@ -485,7 +485,7 @@ class LiveUnit:
         self.body = body
         self.extra = extra
 
-    def __enter__(self) -> LiveUnit:
+    def __enter__(self) -> Self:
         self.host.unit_dir.mkdir(parents=True, exist_ok=True)
         self.path.write_text(
             f"[Unit]\nDescription=candybar 7.3 live test (temporary)\n{self.extra}\n"

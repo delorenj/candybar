@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from candybar.executor.runner import ProcessRegistry
+from candybar.executor.worker import Executor
 from test_executor import (
     CANDYBAR_ID,
     INVOCATION_ID,
@@ -20,9 +22,6 @@ from test_executor import (
     make_outcome,
     make_row,
 )
-
-from candybar.executor.runner import ProcessRegistry
-from candybar.executor.worker import Executor
 
 EXEC_RUNNER = {"kind": "exec", "argv": ["/usr/bin/job"], "env": {}, "on_failure": ["/usr/bin/page"]}
 SYSTEMD_RUNNER = {"kind": "systemd", "unit": "cache-prune.service"}

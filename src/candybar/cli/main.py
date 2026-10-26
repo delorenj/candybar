@@ -2,7 +2,8 @@
 
 `--help`/`--version` and `daemon` (Story 1.3); `register` (Story 1.4)
 loads a candybar.toml manifest and registers it via the API; `run`
-(Story 1.8) invokes a registered candybar now via the API (AD-12).
+(Story 1.8) invokes a registered candybar now via the API (AD-12);
+`migrate` (Story 7.5, AD-21) drives the cron-migration ledger.
 """
 
 import asyncio
@@ -19,6 +20,7 @@ from typing import Annotated
 import typer
 
 from candybar import __version__
+from candybar.cli.migrate import migrate_app
 
 app = typer.Typer(
     name="candybar",
@@ -27,6 +29,8 @@ app = typer.Typer(
 
 API_URL_ENV = "CANDYBAR_API_URL"
 DEFAULT_API_URL = "http://127.0.0.1:8700"
+
+app.add_typer(migrate_app, name="migrate")
 
 
 def _version_callback(value: bool) -> None:

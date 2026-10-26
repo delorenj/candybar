@@ -49,6 +49,11 @@ A target the schedule never produces is a 404. Each NEW skip publishes one
 the row is stored in the same request flow; the dispatcher's per-tick skip
 read honors it, and the SSE hub's existing `_on_skipped` turns the fact into
 `skip.applied` with no stream changes.
+Story 7.5 (AD-21) adds the `enabled` flag: `POST /candybars/{id}/enabled`
+`{enabled}` sets it (the noise flow: lock, `updated` fact first, write), and
+register accepts `enabled: false` so a migration cutover can register a job
+before retiring its native scheduler. A disabled candybar is listed with
+`enabled: false`, never dispatched, and has no upcoming `/schedule` rows.
 All errors are RFC 7807 problem+json. Epic 5 adds the rest of the CAP-8 read surface.
 """
 
@@ -115,6 +120,7 @@ from .schedule import (
     next_row,
     past_keys,
     skip_read_start,
+    visible_rows,
     window_bounds,
     window_rows,
 )
@@ -147,6 +153,8 @@ class RegisterRequest(BaseModel):
     entrypoint: str | None = None
     runner: dict[str, Any] | None = None
     noise: bool = False
+    # Story 7.5 (AD-21): `candybar migrate cutover` registers disabled first.
+    enabled: bool = True
 
     def to_manifest(self) -> CandybarManifest:
         # Reuses the manifest validators (slug name, 5-field cron); the
@@ -188,6 +196,18 @@ class NoiseBatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ids: list[UUID] = Field(max_length=NOISE_BATCH_MAX)
+
+
+class EnabledRequest(BaseModel):
+    """POST /candybars/{id}/enabled body (Story 7.5, AD-21): the wanted state.
+
+    A state, not a blind toggle, so a retried request (or a rollback re-run)
+    converges instead of flipping the flag back.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
 
 
 class SkipRequest(BaseModel):
@@ -386,6 +406,7 @@ def create_app(
                     schedule=manifest.schedule,
                     timezone=manifest.timezone,
                     noise=manifest.noise,
+                    enabled=manifest.enabled,
                 )
                 try:
                     await sink.publish(event)
@@ -509,11 +530,11 @@ def create_app(
             )
         return JSONResponse(content=result)
 
-    async def set_noise(candybar_id: UUID, noise: bool) -> JSONResponse:
-        """Put one candybar in (`noise=True`) or out of the noise collection (Story 5.5).
+    async def set_flag(candybar_id: UUID, flag: str, value: bool) -> JSONResponse:
+        """Set one boolean definition flag: `noise` (Story 5.5) or `enabled` (Story 7.5).
 
         The PATCH flow for the one field: lock, compare, publish `updated`
-        with `changes: {noise}`, then write in the same transaction.
+        with `changes: {<flag>}`, then write in the same transaction.
         """
         async with session_factory() as session:
             row = await lock_candybar(session, candybar_id)
@@ -521,24 +542,39 @@ def create_app(
                 return problem(
                     404, "Candybar not found", f"no candybar registered with id {candybar_id}"
                 )
-            if row.noise == noise:
-                # Already in (or out of) the collection: no fact, no write.
+            if getattr(row, flag) == value:
+                # Already in that state: no fact, no write.
                 return JSONResponse(content=candybar_detail_json(row))
             event = build_candybar_updated(
-                candybar_id=candybar_id, name=row.name, changes={"noise": noise}
+                candybar_id=candybar_id, name=row.name, changes={flag: value}
             )
             try:
                 await sink.publish(event)
             except BUS_ERRORS as exc:
-                log.error("failed to publish candybar.updated (noise) for %s: %s", candybar_id, exc)
+                log.error("failed to publish candybar.updated (%s) for %s: %s", flag, candybar_id, exc)
                 return problem(
                     503,
                     "Event bus unavailable",
-                    "could not publish candybar.updated; the noise flag is unchanged",
+                    f"could not publish candybar.updated; the {flag} flag is unchanged",
                 )
-            row = await update_candybar(session, row, {"noise": noise})
+            row = await update_candybar(session, row, {flag: value})
             result = candybar_detail_json(row)
         return JSONResponse(content=result)
+
+    async def set_noise(candybar_id: UUID, noise: bool) -> JSONResponse:
+        """Put one candybar in (`noise=True`) or out of the noise collection (Story 5.5)."""
+        return await set_flag(candybar_id, "noise", noise)
+
+    @app.post("/candybars/{candybar_id}/enabled")
+    async def set_enabled(candybar_id: UUID, body: EnabledRequest) -> JSONResponse:
+        """Enable or disable a candybar (Story 7.5, AD-21). Outside the Holocene contract.
+
+        A disabled candybar stays registered and listed (with `enabled:
+        false`) but is never dispatched and has no upcoming `/schedule` rows.
+        `candybar migrate` drives it: cutover registers disabled, retires the
+        native scheduler, then enables; rollback disables.
+        """
+        return await set_flag(candybar_id, "enabled", body.enabled)
 
     @app.put("/candybars/{candybar_id}/noise")
     async def add_noise(candybar_id: UUID) -> JSONResponse:
@@ -804,7 +840,7 @@ def create_app(
         if keys:
             async with session_factory() as session:
                 rows = attach_results(rows, await fire_results(session, keys))
-        return JSONResponse(content=[row.to_json() for row in rows])
+        return JSONResponse(content=[row.to_json() for row in visible_rows(rows)])
 
     @app.get("/schedule/next")
     async def schedule_next() -> JSONResponse:

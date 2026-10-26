@@ -104,6 +104,9 @@ def test_role_wires_workqueue_durable_and_store(monkeypatch: Any) -> None:
     assert "message" in captured  # the fetched command reached the executor
     assert callable(captured["executor_kwargs"]["by_key"])
     assert callable(captured["executor_kwargs"]["record"])
+    # Story 7.5: the disabled guard is wired (a queued fire of a disabled
+    # candybar is skipped, not run).
+    assert callable(captured["executor_kwargs"]["enabled"])
     assert captured["disposed"] and captured["drained"]
     # Fast-stop contract (Story 1.9): detach the durable pull consumer before
     # draining, or nats-py waits the full ~30s drain timeout and docker

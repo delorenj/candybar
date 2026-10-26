@@ -198,7 +198,7 @@ jobs:
       # Story 5.3 the next-fire poll (two bounded statements, live budget);
       # Story 5.5 the noise collection (batch atomicity, lock set).
       - name: Integration tests (live Postgres)
-        run: CANDYBAR_TEST_PG=1 uv run pytest tests/test_registry_integration.py tests/test_skip_occurrence_integration.py tests/test_skip_rest_of_day_integration.py tests/test_schedule_window_integration.py tests/test_schedule_next_integration.py tests/test_noise_integration.py -q
+        run: CANDYBAR_TEST_PG=1 uv run pytest tests/test_registry_integration.py tests/test_skip_occurrence_integration.py tests/test_skip_rest_of_day_integration.py tests/test_schedule_window_integration.py tests/test_schedule_next_integration.py tests/test_noise_integration.py tests/test_enabled_integration.py -q
         env:
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
 

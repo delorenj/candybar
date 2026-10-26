@@ -28,5 +28,8 @@ def candybar_row_json(row: Any) -> dict[str, Any]:
         "schedule": row.schedule,
         "timezone": row.timezone,
         "noise": row.noise,
+        # Story 7.5 (AD-21): a disabled candybar is still listed, flagged here.
+        # Rows built from a pre-7.5 fact carry no flag and read as enabled.
+        "enabled": getattr(row, "enabled", True),
         "createdAt": utc_iso(row.created_at),
     }

@@ -111,7 +111,7 @@ systemctl --user restart candybar-executor                           # executor,
 
 The first time on a host, `deploy/host/install.sh` does the unit installs and
 the restart. A change to the registry (a new migration, such as 0006's `runner`
-column) is why the order is container first. Then prove it: `curl -s https://candybar.delo.sh/healthz`, and
+column or 0007's `enabled` flag) is why the order is container first. Then prove it: `curl -s https://candybar.delo.sh/healthz`, and
 the next minute tick must show a `deploy-smoke` invocation
 (`journalctl --user -u candybar-executor` or
 `GET /candybars/<id>/invocations`).

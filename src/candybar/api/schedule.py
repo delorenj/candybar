@@ -22,6 +22,11 @@ routes), the earliest non-skipped fire at or after `cut` over all candybars
 (ties in row order). It is in a window only when that fire is, so a past
 window, or a future window with an earlier fire before it, has no `current`
 row. Everything else is `upcoming`.
+
+A disabled candybar (Story 7.5, AD-21) is never dispatched, so it has no
+row at or after `cut` and is never `current`; of its past fires only those
+with a recorded invocation are rows (`visible_rows`), since a fire while it
+was disabled never ran.
 """
 
 from __future__ import annotations
@@ -72,6 +77,7 @@ class WindowCandybar:
     noise: bool
     created_at: datetime
     timezone: str = DEFAULT_TIMEZONE
+    enabled: bool = True
 
     @property
     def tz(self) -> tzinfo:
@@ -93,6 +99,7 @@ class WindowCandybar:
             noise=row.noise,
             created_at=row.created_at.astimezone(UTC),
             timezone=getattr(row, "timezone", DEFAULT_TIMEZONE),
+            enabled=getattr(row, "enabled", True),
         )
 
 
@@ -111,6 +118,7 @@ class ScheduleRow:
     state: str
     covered: bool  # an operator skip (occurrence / rest_of_day) covers this fire
     last_result: str | None = None  # past rows only: the recorded invocation's result
+    enabled: bool = True  # the candybar's flag (Story 7.5); not part of the contract row
 
     @property
     def skipped(self) -> bool:
@@ -260,11 +268,16 @@ def schedule_row(
         state=row_state(fire, candybar.id, cut=cut, current=current),
         covered=covered,
         last_result=last_result,
+        enabled=candybar.enabled,
     )
 
 
-def _fires_in(candybar: WindowCandybar, start: datetime, end: datetime) -> Iterable[datetime]:
+def _fires_in(
+    candybar: WindowCandybar, start: datetime, end: datetime, *, cut: datetime
+) -> Iterable[datetime]:
     lo = max(start, _registered_floor(candybar))
+    if not candybar.enabled:
+        end = min(end, cut)  # disabled: never dispatched, so no fire at or after `cut`
     if lo >= end:
         return ()
     return fires_between(candybar.schedule, lo, end, tz=candybar.tz)
@@ -276,8 +289,11 @@ def next_fire_of(
     """A candybar's first non-skipped fire at or after `cut` (and its registration).
 
     One croniter lookup (`next_fire`), never a window walk: O(1 + occurrence
-    skips + skipped days passed). None when the schedule never fires again.
+    skips + skipped days passed). None when the schedule never fires again,
+    and for a disabled candybar (Story 7.5), which is never dispatched.
     """
+    if not candybar.enabled:
+        return None
     try:
         return next_fire(
             candybar.schedule,
@@ -353,7 +369,7 @@ def window_rows(
     try:
         for candybar in candybars:
             overrides = skips.get(candybar.id, NO_SKIPS)
-            for fire in _fires_in(candybar, start, end):
+            for fire in _fires_in(candybar, start, end, cut=cut):
                 found.append((fire, candybar, overrides.covers(fire)))
                 if len(found) > limit:
                     raise WindowError(f"the window has more than {limit} fires; narrow it")
@@ -390,7 +406,7 @@ def candybar_rows(
     cut = first_tick_after(now)
     rows: list[ScheduleRow] = []
     try:
-        for fire in _fires_in(candybar, start, end):
+        for fire in _fires_in(candybar, start, end, cut=cut):
             rows.append(
                 schedule_row(candybar, fire, cut=cut, current=current, covered=skips.covers(fire))
             )
@@ -399,6 +415,16 @@ def candybar_rows(
     except OverflowError as exc:  # croniter walking past year 9999
         raise WindowError("the window is out of range") from exc
     return rows
+
+
+def visible_rows(rows: Iterable[ScheduleRow]) -> list[ScheduleRow]:
+    """Drop a disabled candybar's past rows that never ran (Story 7.5).
+
+    Applied after `attach_results`: a disabled candybar's fire is a row only
+    when an invocation was recorded for it (it ran while enabled). Rows of
+    enabled candybars pass unchanged.
+    """
+    return [row for row in rows if row.enabled or row.last_result is not None]
 
 
 def past_keys(rows: Iterable[ScheduleRow]) -> list[str]:

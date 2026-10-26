@@ -205,7 +205,7 @@ The shapes are `_bmad-output/specs/spec-cron-framework/holocene-view-contract.md
 field for field (`tests/contract_shapes.py` parses them out of that file):
 
 ```bash
-curl https://candybar.delo.sh/candybars          # [{id, name, description, tags, schedule, noise, createdAt}, ...] oldest first
+curl https://candybar.delo.sh/candybars          # [{id, name, description, tags, schedule, timezone, noise, enabled, createdAt}, ...] oldest first
 curl https://candybar.delo.sh/candybars/<id>     # the same + {totalInvoked, totalSuccessful}
 curl -X POST https://candybar.delo.sh/candybars -H 'content-type: application/json' \
   -d '{"name":"my-job","schedule":"*/5 * * * *","entrypoint":"/abs/run.sh"}'   # 201, single shape
@@ -221,6 +221,23 @@ row is written. Sending the stored values back is a 200 with no fact. Unknown
 or read-only keys and `null` → 422; unknown id → 404; name taken → 409; bus
 down → 503 with the row unchanged. `createdAt` is always UTC. The executor's
 `entrypoint` and `runner` (Story 7.3) are accepted on writes but never echoed.
+
+### Enabled flag (Story 7.5, AD-21)
+
+```bash
+curl -X POST https://candybar.delo.sh/candybars/<id>/enabled \
+  -H 'content-type: application/json' -d '{"enabled":false}'   # 200, single shape
+```
+
+A disabled candybar stays registered and listed (`enabled: false`) but is
+never dispatched: no tick or misfire command goes out for it, it has no
+`current`/`upcoming` `/schedule` row (only past fires that actually ran), and
+the host executor skips any of its queued scheduled/misfire commands with a
+`skipped` fact (`reason=disabled`). A manual `candybar run` still runs it.
+The body is the wanted state, not a toggle; the noise flow applies (one
+`updated` fact with `changes: {"enabled": ...}` first, then the row; no fact
+when nothing changes; 404 / 422 / 503 as on the noise routes). `POST
+/candybars` accepts `"enabled": false`. `candybar migrate` (below) drives it.
 
 ### Noise collection (Story 5.5)
 
@@ -389,6 +406,20 @@ facts all carry `trigger=manual`, and the child sees `CANDYBAR_TRIGGER=manual`
 returns once the command is accepted, not when the job finishes. Unknown id → 404,
 malformed id → 422, bus down → 503: each prints the problem+json body and
 exits 1. Needs the `api` and `executor` roles running.
+
+## Migrate a cron job onto candybar (Story 7.5, AD-21)
+
+```bash
+uv run candybar migrate plan <inventory-id> --write   # validate, probe the native scheduler, fill default commands
+uv run candybar migrate cutover <inventory-id>        # register disabled -> retire native -> enable
+uv run candybar migrate verify <inventory-id>         # first scheduled fire is the proof (exit 3 until then)
+uv run candybar migrate rollback <inventory-id>       # restore native FIRST, then disable (works with the daemon down)
+uv run candybar migrate status [--json] [--probe]
+```
+
+Drives the committed ledger `deploy/migration/ledger.yaml` as a REST client of
+the api role (never a registry writer). Schema, guard window, per-kind
+commands and the by-hand rollback: [`deploy/migration/README.md`](deploy/migration/README.md).
 
 ## Write a candybar in Python (SDK)
 

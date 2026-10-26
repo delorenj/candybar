@@ -90,6 +90,7 @@ class Def:
     tags: list[str] = field(default_factory=list)
     timezone: str = "UTC"
     runner: dict | None = None
+    enabled: bool = True
 
 
 @dataclass
@@ -633,7 +634,8 @@ def test_created_before_commit_builds_the_definition_from_the_fact(world: World)
         [definition] = [f for f in frames if f["event"] == EVENT_DEFINITION_CHANGED]
         assert definition["data"]["definition"] == {
             "id": str(ghost.id), "name": "delta", "description": "", "tags": ["ops"],
-            "schedule": "*/30 * * * *", "timezone": "UTC", "noise": False, "createdAt": at(9, 59, 30).isoformat(),
+            "schedule": "*/30 * * * *", "timezone": "UTC", "noise": False, "enabled": True,
+            "createdAt": at(9, 59, 30).isoformat(),
         }
         assert [r["fireTime"] for r in definition["data"]["rows"]] == [
             at(10).isoformat(),
@@ -1028,3 +1030,38 @@ def test_an_app_built_without_a_hub_still_serves_the_stream(world: World) -> Non
     response = asyncio.run(scenario())
     assert response.status_code == 200
     assert [f["event"] for f in parse_sse(response.text)] == [EVENT_READY]
+
+
+def test_disabling_drops_upcoming_rows_and_moves_current(world: World) -> None:
+    """Story 7.5: a disabled candybar has no current/upcoming row; its stream rows agree."""
+    alpha = world.add("alpha", "*/5 * * * *")
+    bravo = world.add("bravo", "*/7 * * * *")  # 10:14 is bravo's next fire
+    world.ran(bravo, at(10, 7), "success")
+
+    async def scenario() -> None:
+        hub = world.hub()
+        await hub.start()
+        assert hub._current_json["name"] == "bravo"
+        windowed = Client(hub, window=WINDOW)
+        await windowed.read()
+        await hub.handle(updated(bravo, enabled=False))  # fact first, row not yet committed
+        frames = dispatched(await windowed.read())
+        assert [f["event"] for f in frames] == [EVENT_CURRENT_ADVANCED, EVENT_DEFINITION_CHANGED]
+        assert frames[0]["data"]["current"]["name"] == "alpha"
+        assert frames[1]["data"]["changes"] == {"enabled": False}
+        assert frames[1]["data"]["definition"]["enabled"] is False
+        rows = frames[1]["data"]["rows"]
+        # Only the past fire that ran survives: 10:00 never ran, 10:14+ never will.
+        assert [(r["fireTime"], r["state"], r.get("lastResult")) for r in rows] == [
+            (at(10, 7).isoformat(), "past", "success")
+        ]
+        bravo.enabled = False
+        refetch = await arefetch(world, *WINDOW)
+        assert [r for r in refetch if r["name"] == "bravo"] == rows
+        # A queued run's fact for a disabled candybar names no row.
+        await hub.handle(invoked(bravo, at(10, 14)))
+        [started] = dispatched(await windowed.read())
+        assert started["data"]["row"] is None
+        assert alpha.enabled
+
+    asyncio.run(scenario())

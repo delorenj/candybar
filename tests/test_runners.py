@@ -178,7 +178,7 @@ def test_load_manifest_still_checks_a_plain_entrypoint(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # The API (in-memory registry rig, as in test_api_register.py).
 
-from test_api_register import FakeRow, FakeSink  # noqa: E402  (shared fakes)
+from test_api_register import FakeRow, FakeSink
 
 
 class Rig:

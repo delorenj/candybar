@@ -75,6 +75,11 @@
         "noise": {
           "type": "boolean",
           "description": "Noise flag from the manifest; noisy candybars are hidden from default views."
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the candybar is dispatched. A migration cutover registers it disabled and enables it once the job's native scheduler is retired. Optional and additive: facts published before it existed read as enabled."
         }
       },
       "required": [

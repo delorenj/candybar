@@ -67,6 +67,7 @@ FIELD_CHECKS: dict[str, Any] = {
     "schedule": lambda v: isinstance(v, str) and len(v.split()) == 5,
     "timezone": lambda v: isinstance(v, str) and v in available_timezones(),
     "noise": lambda v: isinstance(v, bool),
+    "enabled": lambda v: isinstance(v, bool),
     "createdAt": _utc_iso,
     "totalInvoked": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
     "totalSuccessful": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,

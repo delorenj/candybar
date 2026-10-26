@@ -250,6 +250,7 @@ flowchart LR
 | prometheus-client | 0.26.0 |
 | pydantic | 2.14.1 |
 | typer | 0.27.3 |
+| pyyaml (the AD-21 ledger, `candybar migrate`) | 6.0.3 |
 | Node (node SDK floor) | 24 LTS (v24.22.1) |
 | Rust (rust SDK floor) | 1.99.1 |
 | Postgres (existing shared instance) | existing |

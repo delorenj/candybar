@@ -24,7 +24,7 @@ PY = sys.executable
 IDS = {"invocation_id": uuid4(), "candybar_id": uuid4(), "trigger": "scheduled", "tick_id": "tick:1"}
 
 
-def run(coro):  # noqa: ANN001, ANN201
+def run(coro):
     return asyncio.run(coro)
 
 
@@ -206,7 +206,7 @@ def _hook_runner(tmp_path: Path, **extra: object) -> dict:
     return {"kind": "exec", "argv": ["true"], "on_failure": [PY, "-c", code, "arg1"], **extra}
 
 
-def _hook(runner: dict, message: str | None = "it broke", **kw: object):  # noqa: ANN202
+def _hook(runner: dict, message: str | None = "it broke", **kw: object):
     return run_on_failure(runner, message=message, **{**IDS, **kw})
 
 

@@ -19,9 +19,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from prometheus_client import CollectorRegistry
-from test_executor_claim_integration import Harness, Msg, _command, _counters, _drop
-from test_executor_integration import _ensure_schema
-from test_systemd_runner import LOADED, RAN_OK, Stub
 
 from candybar.executor import ExecutorMetrics, ProcessRegistry
 from candybar.executor.targets import run_on_failure, run_target
@@ -33,6 +30,9 @@ from candybar.registry import (
     insert_candybar,
     session_scope,
 )
+from test_executor_claim_integration import Harness, Msg, _command, _counters, _drop
+from test_executor_integration import _ensure_schema
+from test_systemd_runner import LOADED, RAN_OK, Stub
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("CANDYBAR_TEST_PG") != "1",

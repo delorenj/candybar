@@ -27,6 +27,7 @@ from ..registry.store import (
     DuplicateInvocationError,
     InvocationClaim,
     TerminalInvocation,
+    candybar_enabled,
     candybar_tags,
     claim_invocation,
     create_registry_engine,
@@ -114,6 +115,10 @@ async def _run_executor(stop: asyncio.Event) -> None:
             except DuplicateInvocationError:
                 return False
 
+        async def enabled(candybar_id) -> bool | None:
+            async with session_scope(engine) as session:
+                return await candybar_enabled(session, candybar_id)
+
         async def retry_abandoned(candybar_id) -> bool:
             async with session_scope(engine) as session:
                 tags = await candybar_tags(session, candybar_id)
@@ -127,6 +132,7 @@ async def _run_executor(stop: asyncio.Event) -> None:
             registry=registry,
             claim=claim,
             retry_abandoned=retry_abandoned,
+            enabled=enabled,
         )
         while not stop.is_set():
             if gate is not None and not await gate.open():

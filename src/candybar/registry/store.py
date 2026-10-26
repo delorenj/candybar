@@ -126,7 +126,11 @@ class ScheduleEntry:
 
 
 async def list_schedules(session: AsyncSession) -> list[ScheduleEntry]:
-    """Read the current registry inventory without exposing ORM to dispatchers."""
+    """The dispatchable inventory, without exposing ORM to dispatchers.
+
+    Enabled candybars only (Story 7.5, AD-21): a disabled candybar is never
+    dispatched, on the tick path or as a misfire.
+    """
     result = await session.execute(
         select(
             Candybar.id,
@@ -134,7 +138,7 @@ async def list_schedules(session: AsyncSession) -> list[ScheduleEntry]:
             Candybar.schedule,
             Candybar.created_at,
             Candybar.timezone,
-        )
+        ).where(Candybar.enabled.is_(True))
     )
     return [
         ScheduleEntry(
@@ -367,6 +371,7 @@ async def insert_candybar(
         entrypoint=manifest.entrypoint_label,
         runner=dict(manifest.runner) if manifest.runner is not None else None,
         noise=manifest.noise,
+        enabled=manifest.enabled,
         total_invoked=0,
         total_successful=0,
         created_at=now,
@@ -437,6 +442,7 @@ UPDATABLE_FIELDS = (
     "entrypoint",
     "runner",
     "noise",
+    "enabled",
 )
 
 
@@ -467,6 +473,12 @@ async def update_candybar(
             raise DuplicateNameError(str(changes.get("name", ""))) from exc
         raise
     return row
+
+
+async def candybar_enabled(session: AsyncSession, candybar_id: UUID) -> bool | None:
+    """Whether a candybar is enabled (Story 7.5), or None when it is not registered."""
+    result = await session.execute(select(Candybar.enabled).where(Candybar.id == candybar_id))
+    return result.scalar_one_or_none()
 
 
 async def get_entrypoint(session: AsyncSession, candybar_id: UUID) -> str | None:

@@ -14,7 +14,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import BigInteger, DateTime, Double, ForeignKey, Index, Text
+from sqlalchemy import BigInteger, DateTime, Double, ForeignKey, Index, Text, true
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -50,6 +50,10 @@ class Candybar(Base):
     # `{kind: exec|systemd, ...}`, or SQL NULL for the bare-entrypoint default.
     runner: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     noise: Mapped[bool] = mapped_column(nullable=False, default=False)
+    # A disabled candybar is never dispatched and has no upcoming schedule rows
+    # (Story 7.5, AD-21, migration 0007): a migration cutover registers it
+    # disabled and enables it once the native scheduler is retired.
+    enabled: Mapped[bool] = mapped_column(nullable=False, default=True, server_default=true())
     total_invoked: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_successful: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
