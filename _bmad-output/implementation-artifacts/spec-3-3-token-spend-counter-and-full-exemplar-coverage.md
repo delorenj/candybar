@@ -133,6 +133,22 @@ Review layers ran inline (blind-hunter, edge-case-hunter, verification-gap), bec
 | C1 | claims | "Served by the existing `invocations_candybar_started` index" | false | `WHERE candybar_id = ? ORDER BY started_at DESC` is that composite index scanned backward. The `id` tiebreak only sorts ties. |
 | V | verification-gap | No verification gaps found. | n/a | Tests catch the realistic regressions. Dropping the `token_spend` kwarg in `_observe` fails `test_llm_job_counts_spend_and_records_cost` (asserts 1200). A route or serializer regression against real rows fails `test_invocation_reads_round_trip_through_the_api`, which CI runs (`CANDYBAR_TEST_PG=1` step). A new metric family added without an exemplar fails `test_every_family_is_exemplar_covered_or_has_a_covered_twin`. |
 
+### Independent review (fresh context, 2026-10-26)
+
+A second reviewer, not the implementer, reviewed commits `1e4d683` + `ef7df23` + `1736eda` (diff 1235 lines) against the current tree. Layers ran inline because no subagent capability was available.
+- AC 1 holds. Live, `hello-node` reports 42 tokens per run on `candybar_token_spend_total`.
+- AC 2 holds. A live OpenMetrics scrape shows the runtime, memory, CPU, GPU, token and invocation families carrying `invocation_id` exemplars, and the coverage guard test passes.
+- AC 3 holds. The live `GET /candybars/{id}/invocations` and `GET /invocations/{id}` return all five measures plus `tokenSpend`/`costUsd`, with UTC timestamps.
+- Epic 3 suites: 215 passed, 3 skipped.
+
+| # | Layer | Finding | Verdict | Evidence / route |
+|---|---|---|---|---|
+| R1 | edge | `_record` can raise after the commit actually landed (connection lost on the response). The command naks, redelivery republishes from the row, and that execution's tokens are never counted | low | It undercounts by one execution and never double counts, which matches the frozen "never on republish" rule. **reject**. |
+| R2 | edge | A stopped (SIGTERM) child that already wrote a result file has its self-reported tokens dropped (`resolve_outcome` stopped path) | low | Pre-existing 1.6 precedence, and the run is a fail by executor stop. **reject**. |
+| R3 | blind | `GET /candybars/{id}/invocations` has no cursor past the newest 500 | low | Same as B4. Exemplar lookups are by id. **reject**. |
+
+Verdict: **done**. All ACs hold, and no defect needs a patch.
+
 ## Design Notes
 
 - The counter is incremented even by 0, so every observation carries an exemplar, as the AC says literally. A zero exemplar only overwrites the previous one within the same `{candybar_id, result}` series, and a candybar's reporting style is stable across its runs.

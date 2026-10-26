@@ -131,3 +131,18 @@ Review layers ran inline (blind-hunter, edge-case-hunter, verification-gap) beca
 | C1 | edge/claim | AC 3 "deploy-smoke's new row has memory_peak_bytes > 0" is falsified: the live row is 0 | medium | Root cause is B2 (frozen design). Fixing it means editing the spec AC or breaking the frozen Never, so **reject** per the triage rule. Implementation Notes record the deviation, and the live proof uses `hello-node` instead. |
 | V1 | verification-gap | CI checks delegation and uid but never runs a scoped invocation as uid 10001, so dropping the cgroup.procs chown would ship green with every prod run unscoped | gap | **patch**: `scripts/container-metering-smoke.py` runs in the CI boot smoke via `docker exec -u candybar` and asserts scoped plus peak ≥ 32 MiB. Verified against the live container: uid=10001, scoped=True, 32.3 MiB. |
 | V2 | verification-gap | Migration 0002 is only exercised on empty tables in CI | low | NOT NULL + server_default was proven on the populated live table at redeploy, and applied migrations are immutable. **reject**. |
+
+### Independent review (fresh context, 2026-10-26)
+
+A second reviewer, not the implementer, reviewed commits `8527960` + `15f8805` (diff 1774 lines) against the current tree. Layers ran inline because no subagent capability was available.
+- AC 1 holds. Re-run on the host as root: `tests/test_cgroup_metering_integration.py` 4/4.
+- AC 2 holds. A live OpenMetrics scrape shows the memory and CPU-load buckets carrying `invocation_id` exemplars on `{candybar_id, result}` only.
+- AC 3 does not hold. Every live `deploy-smoke` row still reads memory_peak_bytes 0.
+
+| # | Layer | Finding | Verdict | Evidence / route |
+|---|---|---|---|---|
+| R1 | edge/live | The post-spawn join window is about 20 ms, not sub-ms. The `cgroup.procs` write blocks on `cgroup_threadgroup_rwsem` (a percpu rwsem waiting on an RCU grace period; the cgroup2 mount has no `favordynmods`). A short child exits meanwhile, and the kernel skips it silently. The run then reports `scoped=True` but meters 0/0. | high | Instrumented probe in the live container, 60 `hello-node` runs: 8 had join_ms 19–28, `cgroup.procs` empty, peak 0, cpu 0. About 30% of live `hello-node` rows read memory 0. Spawn returns in 0.3 ms with the child in state R. **defer**: this is the pre-exec/clone-into-cgroup join item, which a dedicated agent owns. Evidence appended to deferred-work.md. |
+| R2 | blind | That same synchronous write blocks the daemon's event loop for about 20 ms per invocation | low | Same root cause as R1, so it is fixed by the same change. **defer** with R1. |
+| R3 | edge | A NaN could reach the measures, pass the PG `>= 0` check (PG sorts NaN above every number), and then fail `InvocationMetrics(ge=0)` on every republish | low | Not reachable: cpu/memory come from integer cgroupfs fields, and pmon prints integer or `-` SM values. **reject**. |
+
+Verdict: **stays at review**. AC 3 is blocked on the deferred pre-exec join (R1). Every other AC and constraint holds.

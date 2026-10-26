@@ -55,9 +55,9 @@ development_status:
   epic-2-retrospective: optional
 
   epic-3: in-progress
-  3-1-memory-peak-and-average-cpu-load-per-invocation: review
-  3-2-average-gpu-load-per-invocation-nvidia-smi-or-zero: review
-  3-3-token-spend-counter-and-full-exemplar-coverage: review
+  3-1-memory-peak-and-average-cpu-load-per-invocation: review  # AC3 blocked: deferred pre-exec cgroup join (deferred-work.md)
+  3-2-average-gpu-load-per-invocation-nvidia-smi-or-zero: done
+  3-3-token-spend-counter-and-full-exemplar-coverage: done
   epic-3-retrospective: optional
 
   epic-4: in-progress

@@ -138,6 +138,22 @@ Review layers ran inline (blind-hunter, edge-case-hunter, verification-gap), bec
 | V1 | verification-gap | The compose GPU wiring (`gpus: all`, `pid: host`) has no automated check; dropping `pid: host` would make prod GPU load silently 0 | gap | No YAML parser is in the dependencies, and a source-text assertion does not count as verification. Proven live instead (row 0.505 after redeploy). **defer** (deferred-work.md). |
 | V2 | verification-gap | Real-pmon attribution never runs in CI (env-gated, no GPU runner); a driver output-format change would ship green | gap | Parser tests use the real captured header and line shapes, and the live deploy is the backstop. A GPU CI runner would mean self-hosted runners on a public repo. **defer** (deferred-work.md). |
 
+### Independent review (fresh context, 2026-10-26)
+
+A second reviewer, not the implementer, reviewed commits `90c0adb` + `b22582e` (diff 1633 lines) against the current tree. Layers ran inline because no subagent capability was available.
+- AC 1 holds. Re-run on the RTX 3090 with `CANDYBAR_TEST_GPU=1 CANDYBAR_NVIDIA_SMI=nvidia-smi`: the real-pmon tests passed 3/3 (CUDA burner attributed, foreign GPU processes not attributed, overhead inside 50 ms).
+- AC 2 holds. GPU-less runs are silent because the unit suite pins `CANDYBAR_NVIDIA_SMI=""`, and the CI image has no nvidia-smi.
+- AC 3 holds. The live `gpu-burn` row reads gpu_load 0.505 after the redeploy. Live `hello-node`/`deploy-smoke` rows read 0.0, and the container logs show no GPU warnings.
+
+| # | Layer | Finding | Verdict | Evidence / route |
+|---|---|---|---|---|
+| R1 | edge | If two pmon samples share one wall-clock second with disjoint PID sets, they merge into one block, which undercounts samples | low | Needs both cadence drift and a PID-set change inside one second. Effect is at most one sample per occurrence. **reject**. |
+| R2 | edge | A session tracked while a block is open misses that block's earlier lines but still counts it as a full sample | low | Costs at most one partial sample at the start of the job. **reject**. |
+| R3 | edge | A NaN SM token would propagate as NaN gpu_load (the `max`/`min` clamp passes NaN through) | low | pmon prints integer or `-` SM values only. **reject**. |
+| R4 | verification | Compose keeps `cgroup: private`, `pid: host`, `gpus: all`, and the live container inspect shows `private host true` | n/a | Verified live. Automating the compose check stays deferred (V1). |
+
+Verdict: **done**. All ACs hold, and no defect needs a patch.
+
 ## Design Notes
 
 - The histogram is named `_ratio` for parity with cpu_load. It is the spine's "GPU load summary" and, unlike a Summary, can carry exemplars.
