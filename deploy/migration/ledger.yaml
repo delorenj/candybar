@@ -438,9 +438,9 @@ jobs:
   - systemctl --user disable --now intelliforia-pull-prod.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-pull-prod.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17938-39bc-74a6-a5d3-26e2d01f9f75
+  cutover_at: '2026-10-26T17:18:10.854333Z'
   verification:
     invocation_id: null
     result: null
@@ -451,6 +451,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:18:10.854333Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17938-39bc-74a6-a5d3-26e2d01f9f75 enabled; first fire 2026-10-27T08:15:00Z
 - id: systemd:intelliforia-client-health.timer
   wave: '7.12'
   candybar:
@@ -482,9 +486,9 @@ jobs:
   - systemctl --user disable --now intelliforia-client-health.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-client-health.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17938-56bc-7741-aba0-83c8ba8cf906
+  cutover_at: '2026-10-26T17:18:18.429218Z'
   verification:
     invocation_id: null
     result: null
@@ -495,6 +499,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:18:18.429218Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17938-56bc-7741-aba0-83c8ba8cf906 enabled; first fire 2026-10-27T09:30:00Z
 - id: systemd:intelliforia-client-health-monday.timer
   wave: '7.12'
   candybar:
@@ -524,9 +532,9 @@ jobs:
   - systemctl --user disable --now intelliforia-client-health-monday.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-client-health-monday.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17938-5cb9-7594-a7a6-f6a3e96e3a4b
+  cutover_at: '2026-10-26T17:18:19.828062Z'
   verification:
     invocation_id: null
     result: null
@@ -537,6 +545,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:18:19.828062Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17938-5cb9-7594-a7a6-f6a3e96e3a4b enabled; first fire 2026-11-02T13:30:00Z
 - id: systemd:intelliforia-staging-track-main.timer
   wave: '7.12'
   candybar:
@@ -567,9 +579,9 @@ jobs:
   - systemctl --user disable --now intelliforia-staging-track-main.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-staging-track-main.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17938-6222-7abf-b39e-41495eff680f
+  cutover_at: '2026-10-26T17:18:21.515299Z'
   verification:
     invocation_id: null
     result: null
@@ -580,6 +592,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:18:21.515299Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17938-6222-7abf-b39e-41495eff680f enabled; first fire 2026-10-27T11:05:00Z
 - id: systemd:tolt-forge-daily
   wave: '7.16'
   candybar:
@@ -612,9 +628,9 @@ jobs:
   - systemctl --user disable --now tolt-forge-daily.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-forge-daily.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17938-5381-7f92-8f1e-6966648dd452
+  cutover_at: '2026-10-26T17:18:17.559351Z'
   verification:
     invocation_id: null
     result: null
@@ -625,6 +641,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:18:17.559351Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17938-5381-7f92-8f1e-6966648dd452 enabled; first fire 2026-10-26T20:00:00Z
 - id: systemd:tolt-items-daily
   wave: '7.16'
   candybar:
@@ -658,9 +678,9 @@ jobs:
   - systemctl --user disable --now tolt-items-daily.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-items-daily.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17938-6fff-7821-bcf3-3048d43cce18
+  cutover_at: '2026-10-26T17:18:24.754946Z'
   verification:
     invocation_id: null
     result: null
@@ -671,6 +691,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:18:24.754946Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17938-6fff-7821-bcf3-3048d43cce18 enabled; first fire 2026-10-27T07:00:00Z
 - id: systemd:pr-crusher
   wave: '7.16'
   candybar:
@@ -704,9 +728,9 @@ jobs:
   - systemctl --user disable --now pr-crusher.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/pr-crusher.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17938-75c4-7219-8204-dfa8d0572a1f
+  cutover_at: '2026-10-26T17:18:26.351942Z'
   verification:
     invocation_id: null
     result: null
@@ -717,6 +741,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:18:26.351942Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17938-75c4-7219-8204-dfa8d0572a1f enabled; first fire 2026-10-27T07:00:00Z
 - id: systemd:honda-hunt-daily-check.timer
   wave: '7.16'
   candybar:
@@ -749,9 +777,9 @@ jobs:
   - systemctl --user disable --now honda-hunt-daily-check.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/honda-hunt-daily-check.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17938-961c-7581-b9c2-ec6f9e3a708a
+  cutover_at: '2026-10-26T17:18:34.537833Z'
   verification:
     invocation_id: null
     result: null
@@ -762,6 +790,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:18:34.537833Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17938-961c-7581-b9c2-ec6f9e3a708a enabled; first fire 2026-10-27T13:00:00Z
 - id: systemd:delodocs-wiki-self-tuning-weekly.timer
   wave: '7.16'
   candybar:
@@ -793,9 +825,9 @@ jobs:
   - systemctl --user disable --now delodocs-wiki-self-tuning-weekly.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/delodocs-wiki-self-tuning-weekly.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17938-9a3b-71bc-b1b9-c0ceadfc86fe
+  cutover_at: '2026-10-26T17:18:35.830721Z'
   verification:
     invocation_id: null
     result: null
@@ -806,6 +838,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:18:35.830721Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17938-9a3b-71bc-b1b9-c0ceadfc86fe enabled; first fire 2026-11-02T13:45:00Z
 - id: hermes:33god-pm:777c511a009c
   wave: '7.17'
   candybar:
@@ -835,7 +871,7 @@ jobs:
   source_of_truth:
     repo: delorenj/agents
     path: tools/jev-clairic/hermes/cron-jobs.json
-    commit: null
+    commit: 03761d6
   disable:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler external'
   rollback:
@@ -882,7 +918,7 @@ jobs:
   source_of_truth:
     repo: delorenj/agents
     path: tools/jev-clairic/hermes/aperture-lane-monitor.sh
-    commit: null
+    commit: 03761d6
   disable:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler external'
   rollback:
@@ -926,9 +962,9 @@ jobs:
   deviations: []
   native_failing: false
   source_of_truth:
-    repo: unversioned
-    path: /home/delorenj/code/DeLoDocs/agents/hermes/pm/runtime/cron/jobs.json (DeLoDocs vault is not git; live record pinned scheduler=external, diff recorded in history)
-    commit: null
+    repo: delorenj/candybar
+    path: deploy/migration/ledger.yaml
+    commit: SELF
   disable:
   - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler external'
   rollback:
@@ -972,9 +1008,9 @@ jobs:
   deviations: []
   native_failing: false
   source_of_truth:
-    repo: unversioned
-    path: /home/delorenj/.hermes/profiles/dumply/cron/jobs.json (no git home; live record pinned scheduler=external, diff recorded in history)
-    commit: null
+    repo: delorenj/candybar
+    path: deploy/migration/ledger.yaml
+    commit: SELF
   disable:
   - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler external'
   rollback:
@@ -1018,9 +1054,9 @@ jobs:
   deviations: []
   native_failing: false
   source_of_truth:
-    repo: unversioned
-    path: /home/delorenj/.hermes/profiles/peter-griffin/cron/jobs.json (no git home; live record pinned scheduler=external, diff recorded in history)
-    commit: null
+    repo: delorenj/candybar
+    path: deploy/migration/ledger.yaml
+    commit: SELF
   disable:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler external'
   rollback:
@@ -1064,9 +1100,9 @@ jobs:
   deviations: []
   native_failing: false
   source_of_truth:
-    repo: unversioned
-    path: /home/delorenj/.hermes/profiles/peter-griffin/cron/jobs.json (no git home; live record pinned scheduler=external, diff recorded in history)
-    commit: null
+    repo: delorenj/candybar
+    path: deploy/migration/ledger.yaml
+    commit: SELF
   disable:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler external'
   rollback:
