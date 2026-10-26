@@ -53,6 +53,13 @@ jobs:
         with:
           node-version: '24.22.1'
 
+      # Story 4.3: Rust SDK toolchain, pinned to the spine floor (1.99.1).
+      - name: Set up Rust
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component clippy,rustfmt
+          rustup default 1.99.1
+          cargo --version
+
       - name: Install dependencies
         run: uv sync --frozen
 
@@ -81,6 +88,18 @@ jobs:
           npm run typecheck
           test "$(npm ls --omit=dev --all --parseable | wc -l)" -eq 1
 
+      # Story 4.3: candybar-sdk (crate). fmt + clippy + unit/doc tests for the
+      # SDK and its author-style example crate; --locked pins both lockfiles.
+      # The zero-dependency (no NATS) proof runs in tests/test_sdk_rust.py.
+      - name: Rust SDK fmt + clippy + tests (sdks/rust)
+        working-directory: sdks/rust
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+          cargo fmt --check --manifest-path examples/hello/Cargo.toml
+          cargo clippy --locked --manifest-path examples/hello/Cargo.toml -- -D warnings
+
       # Story 1.9: AD-15 grep gate — no LAN IPs or plaintext-secret shapes on
       # deploy surfaces, enforced on every push. ripgrep is not guaranteed on
       # the runner image (Ubuntu 26 dropped it) — install it; the script
@@ -106,18 +125,30 @@ jobs:
             -e CANDYBAR_INVOCATION_ID=ci -e CANDYBAR_ID=ci -e CANDYBAR_TRIGGER=manual \
             -e CANDYBAR_TICK_ID= -e CANDYBAR_RESULT_FILE=/tmp/result.json candybar:ci \
             -c '/sdk/examples/hello-node/candybar.mjs && grep -q "\"status\":\"success\"" /tmp/result.json'
-          # Story 4.2: a node-SDK candybar runs inside the image the way the
-          # executor spawns it (direct exec via shebang, AD-8 env in).
-          docker run --rm --entrypoint sh -v "$PWD/sdks/node:/sdk:ro" \
-            -e CANDYBAR_INVOCATION_ID=ci -e CANDYBAR_ID=ci -e CANDYBAR_TRIGGER=manual \
-            -e CANDYBAR_TICK_ID= -e CANDYBAR_RESULT_FILE=/tmp/result.json candybar:ci \
-            -c '/sdk/examples/hello-node/candybar.mjs && grep -q "\"status\":\"success\"" /tmp/result.json'
           # Story 4.1: SDK-authored python jobs import candybar_sdk from the image venv.
           docker run --rm --entrypoint python candybar:ci -c "import candybar_sdk"
 
       # CANDYBAR_REQUIRE_NODE: the node-SDK contract suite must run, never skip.
+      # CANDYBAR_REQUIRE_RUST: the rust-SDK contract suite must run, never skip.
       - name: Unit tests
-        run: CANDYBAR_REQUIRE_NODE=1 uv run pytest -q
+        run: CANDYBAR_REQUIRE_NODE=1 CANDYBAR_REQUIRE_RUST=1 uv run pytest -q
+
+      # Story 4.3: a Rust candybar built on the runner (the unit tests built the
+      # hello example) must load and speak the protocol inside the daemon
+      # image (python:3.13-slim glibc), running as the image's non-root user.
+      - name: Rust SDK example runs inside the image
+        run: |
+          out=$(mktemp -d) && chmod 777 "$out"
+          docker run --rm --entrypoint /job/candybar-hello \
+            -v "$PWD/sdks/rust/examples/hello/target/release:/job:ro" -v "$out:/out" \
+            -e CANDYBAR_INVOCATION_ID=00000000-0000-7000-8000-000000000001 \
+            -e CANDYBAR_ID=00000000-0000-7000-8000-000000000002 \
+            -e CANDYBAR_TRIGGER=manual -e CANDYBAR_TICK_ID= \
+            -e CANDYBAR_RESULT_FILE=/out/result.json \
+            candybar:ci
+          cat "$out/result.json"
+          grep -q '"status":"success"' "$out/result.json"
+          grep -q '"token_spend":1545' "$out/result.json"
 
       # Story 3.1: real cgroup v2 canaries — a 64 MiB allocation must report a
       # memory.peak inside the asserted band and a one-core busy loop a CPU
@@ -182,8 +213,8 @@ jobs:
       # which are both up by this point in the job. Story 1.9 adds the
       # fast-stop proof (roles stop inside docker's 10s SIGTERM grace).
       # Story 4.1 adds the python-SDK example firing off a scheduled tick.
-      - name: "Integration tests (executor + manual invoke + fast stop + python/node SDK: live NATS + Postgres)"
-        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py tests/test_manual_invoke_integration.py tests/test_fast_stop_integration.py tests/test_sdk_python_integration.py tests/test_node_sdk_integration.py -q
+      - name: "Integration tests (executor + manual invoke + fast stop + python/node/rust SDK: live NATS + Postgres)"
+        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py tests/test_manual_invoke_integration.py tests/test_fast_stop_integration.py tests/test_sdk_python_integration.py tests/test_node_sdk_integration.py tests/test_sdk_rust_integration.py -q
         env:
           NATS_URL: nats://127.0.0.1:4222
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
