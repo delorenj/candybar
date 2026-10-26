@@ -1,0 +1,79 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; the status view surfaces open ones
+generated: 10-25-2026 21:37
+last_updated: 10-25-2026 21:37
+project: candybar
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+development_status:
+  epic-1: backlog
+  1-1-project-scaffold-pinned-stack-and-ci: backlog
+  1-2-bloodbank-cron-event-vocabulary-envelopes-and-governance-pr: backlog
+  1-3-heartbeat-publisher-fires-the-minute-tick: backlog
+  1-4-registry-bootstrap-and-register-a-candybar-from-candybar-tom: backlog
+  1-5-dispatcher-evaluates-schedules-off-the-tick: backlog
+  1-6-executor-runs-a-bare-executable-and-records-the-result: backlog
+  1-7-basic-prometheus-metrics-and-metrics-endpoint: backlog
+  1-8-manual-invoke-via-candybar-run-id: backlog
+  1-9-deployment-envelope-on-the-delo-sh-stack: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-effectively-once-dispatch-proven-under-fault-injection: backlog
+  2-2-misfire-coalesce-to-latest-after-downtime: backlog
+  2-3-skip-a-single-occurrence: backlog
+  2-4-skip-the-rest-of-a-day: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-memory-peak-and-average-cpu-load-per-invocation: backlog
+  3-2-average-gpu-load-per-invocation-nvidia-smi-or-zero: backlog
+  3-3-token-spend-counter-and-full-exemplar-coverage: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-python-sdk-sdks-python: backlog
+  4-2-node-sdk-sdks-node: backlog
+  4-3-rust-sdk-sdks-rust: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-definitions-api-completion: backlog
+  5-2-schedule-window-endpoint-with-exact-skip-aware-fire-times: backlog
+  5-3-next-fire-poll-fallback: backlog
+  5-4-live-updates-over-sse: backlog
+  5-5-noise-collection-endpoints: backlog
+  5-6-skip-operations-api: backlog
+  epic-5-retrospective: optional
+
+  epic-6: backlog
+  epic-6-retrospective: optional
