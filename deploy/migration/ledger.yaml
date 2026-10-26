@@ -407,3 +407,616 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+- id: systemd:intelliforia-pull-prod.timer
+  wave: '7.12'
+  candybar:
+    name: intelliforia-pull-prod
+    description: Nightly Heroku prod pg_dump restored into the local docker stack, then pushed to the staging droplet (was intelliforia-pull-prod.timer)
+    tags:
+    - migrated
+    - intelliforia
+    schedule: 15 4 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: intelliforia-pull-prod.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 04:15:00; RandomizedDelaySec=15m; Persistent=true
+    jitter_s: 900
+    unit: intelliforia-pull-prod.timer
+    unit_file: /home/delorenj/.config/systemd/user/intelliforia-pull-prod.timer
+  deviations:
+  - RandomizedDelaySec=15m dropped (candybar fires on the minute)
+  - Persistent=true maps to candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: IntelliForia/intelliforia
+    path: infra/pull-prod/install.sh
+    commit: 9ff09c5d1237ebed21522078ec12368068aa2958
+  disable:
+  - systemctl --user disable --now intelliforia-pull-prod.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-pull-prod.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:17:26.005859Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:intelliforia-client-health.timer
+  wave: '7.12'
+  candybar:
+    name: intelliforia-client-health
+    description: Nightly IntelliForia client health and tripwires from the local prod copy (INT-406); ntfy Intelliforia, Cait delivery off
+    tags:
+    - migrated
+    - intelliforia
+    schedule: 30 5 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: intelliforia-client-health.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 05:30:00; RandomizedDelaySec=300; Persistent=true
+    jitter_s: 300
+    unit: intelliforia-client-health.timer
+    unit_file: /home/delorenj/.config/systemd/user/intelliforia-client-health.timer
+  deviations:
+  - RandomizedDelaySec=300 dropped (candybar fires on the minute)
+  - Persistent=true maps to candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: IntelliForia/intelliforia
+    path: infra/client-health/install.sh
+    commit: 9ff09c5d1237ebed21522078ec12368068aa2958
+  disable:
+  - systemctl --user disable --now intelliforia-client-health.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-client-health.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:17:26.027730Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:intelliforia-client-health-monday.timer
+  wave: '7.12'
+  candybar:
+    name: intelliforia-client-health-monday
+    description: Monday one-line-per-client health summary (INT-406); ntfy Intelliforia, Cait delivery off
+    tags:
+    - migrated
+    - intelliforia
+    schedule: 30 8 * * 1
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: intelliforia-client-health-monday.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=Mon *-*-* 08:30:00 America/New_York; Persistent=false
+    jitter_s: 0
+    unit: intelliforia-client-health-monday.timer
+    unit_file: /home/delorenj/.config/systemd/user/intelliforia-client-health-monday.timer
+  deviations: []
+  native_failing: false
+  source_of_truth:
+    repo: IntelliForia/intelliforia
+    path: infra/client-health/install.sh
+    commit: 9ff09c5d1237ebed21522078ec12368068aa2958
+  disable:
+  - systemctl --user disable --now intelliforia-client-health-monday.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-client-health-monday.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:17:26.046671Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:intelliforia-staging-track-main.timer
+  wave: '7.12'
+  candybar:
+    name: intelliforia-staging-track-main
+    description: 'Weekday mornings: rebuild and ship origin/main to the IntelliForia staging droplet and health-check it (stands down while pull-prod runs)'
+    tags:
+    - migrated
+    - intelliforia
+    schedule: 5 7 * * 1-5
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: intelliforia-staging-track-main.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=Mon..Fri *-*-* 07:05:00; Persistent=true
+    jitter_s: 0
+    unit: intelliforia-staging-track-main.timer
+    unit_file: /home/delorenj/.config/systemd/user/intelliforia-staging-track-main.timer
+  deviations:
+  - Persistent=true maps to candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: IntelliForia/intelliforia
+    path: infra/staging/systemd/intelliforia-staging-track-main.timer
+    commit: 9ff09c5d1237ebed21522078ec12368068aa2958
+  disable:
+  - systemctl --user disable --now intelliforia-staging-track-main.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-staging-track-main.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:17:26.066794Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:tolt-forge-daily
+  wave: '7.16'
+  candybar:
+    name: tolt-forge-daily
+    description: Daily Foundry run of Tower of Lost Things on headless Claude Code (subscription)
+    tags:
+    - migrated
+    - llm
+    - personal
+    schedule: 0 16 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: tolt-forge-daily.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 16:00:00; Persistent=true; RandomizedDelaySec=60
+    jitter_s: 60
+    unit: tolt-forge-daily.timer
+    unit_file: /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-forge-daily.timer
+  deviations:
+  - RandomizedDelaySec=60 dropped (now fires exactly 16:00 local)
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: true
+  source_of_truth:
+    repo: delorenj/tower-of-lost-things
+    path: foundry/cron/tolt-forge-daily.timer
+    commit: 1576845debc6f6e03d17bfdcbe76b3a9327c2e47
+  disable:
+  - systemctl --user disable --now tolt-forge-daily.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-forge-daily.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:17:31.252762Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:tolt-items-daily
+  wave: '7.16'
+  candybar:
+    name: tolt-items-daily
+    description: Nightly Item Forge batch (10 candidates, fal-ai image generation)
+    tags:
+    - migrated
+    - llm
+    - personal
+    schedule: 0 3 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: tolt-items-daily.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 03:00:00; Persistent=true; RandomizedDelaySec=120
+    jitter_s: 120
+    unit: tolt-items-daily.timer
+  deviations:
+  - RandomizedDelaySec=120 dropped (now fires exactly 03:00 local)
+  - Persistent=true catch-up replaced by candybar misfire policy
+  - tolt-items-inbox.path trigger stays on systemd (not this job)
+  native_failing: true
+  source_of_truth:
+    repo: delorenj/tower-of-lost-things
+    path: foundry/cron/tolt-items-daily.timer
+    commit: 1576845debc6f6e03d17bfdcbe76b3a9327c2e47
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: systemd:pr-crusher
+  wave: '7.16'
+  candybar:
+    name: pr-crusher
+    description: Nightly hardened PR-crusher session against mcp-server-trello (opencode workers, automerge off)
+    tags:
+    - migrated
+    - llm
+    - personal
+    schedule: 0 3 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: pr-crusher.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 03:00:00; RandomizedDelaySec=15m; Persistent=true
+    jitter_s: 900
+    unit: pr-crusher.timer
+  deviations:
+  - RandomizedDelaySec=15m dropped (now fires exactly 03:00 local)
+  - Persistent=true catch-up replaced by candybar misfire policy
+  - bwrap sandbox, MemoryMax/CPUQuota, systemd-creds stay in the .service (systemd runner)
+  native_failing: true
+  source_of_truth:
+    repo: delorenj/pr-crusher
+    path: scripts/install.sh
+    commit: 8c64f90d688686d920889607009ee0eb18aceb81
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: systemd:honda-hunt-daily-check.timer
+  wave: '7.16'
+  candybar:
+    name: honda-hunt-daily-check
+    description: Daily Civic Si negotiation inbox check (read-only codex agent, desktop notify)
+    tags:
+    - migrated
+    - llm
+    - personal
+    schedule: 0 9 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: honda-hunt-daily-check.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 09:00:00 America/New_York; Persistent=true; AccuracySec=1min
+    jitter_s: 0
+    unit: honda-hunt-daily-check.timer
+  deviations:
+  - AccuracySec=1min dropped
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: true
+  source_of_truth:
+    repo: DeLoDocs vault (not git)
+    path: Projects/project-fuckudeer/scripts/systemd/honda-hunt-daily-check.timer
+    commit: nogit-sha256:dd4b6353c8147cc8e7a5e3cf00701d10eca22ec69f145dbe4abd9e2fca979716
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: systemd:delodocs-wiki-self-tuning-weekly.timer
+  wave: '7.16'
+  candybar:
+    name: delodocs-wiki-self-tuning-weekly
+    description: Weekly DeLoDocs wiki self-tuning reviewer (hermes openrouter deepseek-v4-flash)
+    tags:
+    - migrated
+    - llm
+    - personal
+    schedule: 45 8 * * 1
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: delodocs-wiki-self-tuning-weekly.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=Mon *-*-* 08:45:00
+    jitter_s: 0
+    unit: delodocs-wiki-self-tuning-weekly.timer
+  deviations:
+  - no jitter; Persistent absent natively
+  native_failing: true
+  source_of_truth:
+    repo: DeLoDocs vault (not git)
+    path: _vault/Workflows/systemd/delodocs-wiki-self-tuning-weekly.timer
+    commit: nogit-sha256:99624124a86cbe7eff67ffa4ff0e8828e40e355c58ad787aebdc5310df22091e
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: hermes:33god-pm:777c511a009c
+  wave: '7.17'
+  candybar:
+    name: crank-beat
+    description: 'Crank heartbeat: zcrank-gate monitor + agent prods stalled Workspace panes (was hermes 33god-pm:777c511a009c)'
+    tags:
+    - migrated
+    - hermes-agent
+    - wave-7-17
+    schedule: '*/5 * * * *'
+    timezone: America/New_York
+    noise: true
+    runner:
+      kind: hermes
+      profile: 33god-pm
+      job_id: 777c511a009c
+      timeout_s: 1800
+  native:
+    kind: hermes
+    schedule: '*/5 * * * * (hermes cron expr, profile tz America/New_York)'
+    jitter_s: 0
+    profile: 33god-pm
+    job_id: 777c511a009c
+    jobs_file: /home/delorenj/code/33GOD/agents/hermes/pm/runtime/cron/jobs.json
+  deviations: []
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/agents
+    path: tools/jev-clairic/hermes/cron-jobs.json
+    commit: null
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: hermes:33god-pm:f3db72089593
+  wave: '7.17'
+  candybar:
+    name: aperture-lane-beat
+    description: Aperture delivery-lane PM beat on lane-state change (was hermes 33god-pm:f3db72089593, every 120m -> even hours :00)
+    tags:
+    - migrated
+    - hermes-agent
+    - wave-7-17
+    schedule: 0 */2 * * *
+    timezone: UTC
+    runner:
+      kind: hermes
+      profile: 33god-pm
+      job_id: f3db72089593
+      timeout_s: 3600
+  native:
+    kind: hermes
+    schedule: every 120m (hermes interval, anchored to last run)
+    jitter_s: 0
+    profile: 33god-pm
+    job_id: f3db72089593
+    jobs_file: /home/delorenj/code/33GOD/agents/hermes/pm/runtime/cron/jobs.json
+  deviations:
+  - 'interval ''every 120m'' (anchored to last run) -> cron ''0 */2 * * *'' UTC: phase not preserved, only the interval (cron-inventory.md mapping for interval jobs)'
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/agents
+    path: tools/jev-clairic/hermes/aperture-lane-monitor.sh
+    commit: null
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: hermes:delodocs-pm:fc39bd8b33c8
+  wave: '7.17'
+  candybar:
+    name: delodocs-triage-second-pass
+    description: DeLoDocs vault _triage/ backlog drain, <=10 files/day (was hermes delodocs-pm:fc39bd8b33c8)
+    tags:
+    - migrated
+    - hermes-agent
+    - wave-7-17
+    schedule: 0 9 * * *
+    timezone: America/New_York
+    runner:
+      kind: hermes
+      profile: delodocs-pm
+      job_id: fc39bd8b33c8
+      timeout_s: 3600
+  native:
+    kind: hermes
+    schedule: 0 9 * * * (hermes cron expr, profile tz America/New_York)
+    jitter_s: 0
+    profile: delodocs-pm
+    job_id: fc39bd8b33c8
+    jobs_file: /home/delorenj/code/DeLoDocs/agents/hermes/pm/runtime/cron/jobs.json
+  deviations: []
+  native_failing: false
+  source_of_truth:
+    repo: unversioned
+    path: /home/delorenj/code/DeLoDocs/agents/hermes/pm/runtime/cron/jobs.json (DeLoDocs vault is not git; live record pinned scheduler=external, diff recorded in history)
+    commit: null
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: hermes:dumply:8aecd027dbd0
+  wave: '7.17'
+  candybar:
+    name: dumply-daily-story
+    description: Dumply daily TIKT story session (was hermes dumply:8aecd027dbd0); telegram:-5546637302
+    tags:
+    - migrated
+    - hermes-agent
+    - wave-7-17
+    schedule: 30 20 * * *
+    timezone: America/New_York
+    runner:
+      kind: hermes
+      profile: dumply
+      job_id: 8aecd027dbd0
+      timeout_s: 3600
+  native:
+    kind: hermes
+    schedule: 30 20 * * * (hermes cron expr, profile tz America/New_York)
+    jitter_s: 0
+    profile: dumply
+    job_id: 8aecd027dbd0
+    jobs_file: /home/delorenj/.hermes/profiles/dumply/cron/jobs.json
+  deviations: []
+  native_failing: false
+  source_of_truth:
+    repo: unversioned
+    path: /home/delorenj/.hermes/profiles/dumply/cron/jobs.json (no git home; live record pinned scheduler=external, diff recorded in history)
+    commit: null
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: hermes:peter-griffin:b240575fae0c
+  wave: '7.17'
+  candybar:
+    name: token-usage-report
+    description: Daily system token usage and anomaly report (was hermes peter-griffin:b240575fae0c); telegram:7564050286
+    tags:
+    - migrated
+    - hermes-agent
+    - wave-7-17
+    schedule: 53 5 * * *
+    timezone: America/New_York
+    runner:
+      kind: hermes
+      profile: peter-griffin
+      job_id: b240575fae0c
+      timeout_s: 3600
+  native:
+    kind: hermes
+    schedule: 53 5 * * * (hermes cron expr, profile tz America/New_York)
+    jitter_s: 0
+    profile: peter-griffin
+    job_id: b240575fae0c
+    jobs_file: /home/delorenj/.hermes/profiles/peter-griffin/cron/jobs.json
+  deviations: []
+  native_failing: false
+  source_of_truth:
+    repo: unversioned
+    path: /home/delorenj/.hermes/profiles/peter-griffin/cron/jobs.json (no git home; live record pinned scheduler=external, diff recorded in history)
+    commit: null
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
+- id: hermes:peter-griffin:3684c5aa8eac
+  wave: '7.17'
+  candybar:
+    name: token-optimization
+    description: Daily token optimization and verification (was hermes peter-griffin:3684c5aa8eac); gates on token-usage-report manifest
+    tags:
+    - migrated
+    - hermes-agent
+    - wave-7-17
+    schedule: 23 6 * * *
+    timezone: America/New_York
+    runner:
+      kind: hermes
+      profile: peter-griffin
+      job_id: 3684c5aa8eac
+      timeout_s: 3600
+  native:
+    kind: hermes
+    schedule: 23 6 * * * (hermes cron expr, profile tz America/New_York)
+    jitter_s: 0
+    profile: peter-griffin
+    job_id: 3684c5aa8eac
+    jobs_file: /home/delorenj/.hermes/profiles/peter-griffin/cron/jobs.json
+  deviations: []
+  native_failing: false
+  source_of_truth:
+    repo: unversioned
+    path: /home/delorenj/.hermes/profiles/peter-griffin/cron/jobs.json (no git home; live record pinned scheduler=external, diff recorded in history)
+    commit: null
+  disable: []
+  rollback: []
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history: []
