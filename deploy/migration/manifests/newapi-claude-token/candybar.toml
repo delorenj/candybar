@@ -1,0 +1,14 @@
+# Migrated from systemd:newapi-claude-token (wave 7.13). PRE-EXISTING FAILURE:
+# every native run since at least 2026-10-21 exits 1 ("credential is not an
+# sk-ant-oat OAuth token; nothing to sync"); the ledger entry is
+# native_failing: true and verifies on result parity.
+[candybar]
+name = "newapi-claude-token"
+description = "Copy Claude Code's OAuth access token onto the new-api Claude channel"
+tags = ["migrated", "automaticai"]
+schedule = "*/30 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "newapi-claude-token.service"

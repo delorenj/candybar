@@ -276,6 +276,20 @@ def test_a_collected_unit_meters_zero_but_still_succeeds(stub: Stub) -> None:
     assert outcome.scoped is False
 
 
+def test_success_exit_status_maps_exit1_to_success(stub: Stub) -> None:
+    """Story 7.13 pin: a unit with `SuccessExitStatus=1` (newapi-vm-health) exits 1 when it
+    found problems it already pushed to ntfy; systemd then reports Result=success with
+    ExecMainStatus=1, and the runner must record a candybar success — not a failure."""
+    ok_with_exit1 = {**RAN_OK, "Result": "success", "ExecMainStatus": "1", "ActiveState": "inactive"}
+    stub.set(show=[LOADED, ok_with_exit1])
+    outcome = run_unit(stub)
+    assert outcome.exit_code == 0
+    assert outcome.detail is None
+    assert resolve_outcome(outcome).success is True
+    # No journal fetch for a success.
+    assert stub.calls("-o") == []
+
+
 def test_a_unit_that_exits_nonzero_fails_with_its_status_and_journal_tail(stub: Stub) -> None:
     failed = {**RAN_OK, "Result": "exit-code", "ExecMainStatus": "3", "ActiveState": "failed"}
     stub.set(show=[LOADED, failed], start_rc=1, start_stderr="Job failed", journal="boom\nlast line\n")

@@ -1,0 +1,13 @@
+# Migrated from systemd:newapi-oauth-connections (wave 7.13). Renews the
+# AutomaticAI dedicated Claude/Codex OAuth grants; OP_SERVICE_ACCOUNT_TOKEN
+# reaches the unit from the user-manager environment, unchanged.
+[candybar]
+name = "newapi-oauth-connections"
+description = "Renew AutomaticAI dedicated OAuth grants and synchronize access credentials"
+tags = ["migrated", "automaticai"]
+schedule = "*/5 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "newapi-oauth-connections.service"

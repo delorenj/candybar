@@ -1,0 +1,20 @@
+# Migrated from hermes:33god-pm:777c511a009c (wave 7.17, AD-19/AD-21).
+# The crank beat: zcrank-gate.sh monitors Workspace zellij panes; on change the
+# 33god-pm agent prods stalled panes forward. Hermes keeps the session,
+# monitor, economics and local delivery; candybar owns the schedule.
+# The deadman is the excluded hermes job crank-watchdog (061c4dbedc1c), which
+# reads this job's hermes output dir — still written on every attempt.
+# 288 fires/day -> noise. Rollback: ledger entry hermes:33god-pm:777c511a009c.
+[candybar]
+name = "crank-beat"
+description = "Crank heartbeat: zcrank-gate monitor + agent prods stalled Workspace panes (was hermes 33god-pm:777c511a009c)"
+tags = ["migrated", "hermes-agent", "wave-7-17"]
+schedule = "*/5 * * * *"
+timezone = "America/New_York"
+noise = true
+
+[candybar.runner]
+kind = "hermes"
+profile = "33god-pm"
+job_id = "777c511a009c"
+timeout_s = 1800

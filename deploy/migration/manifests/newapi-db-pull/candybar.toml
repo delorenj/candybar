@@ -1,0 +1,13 @@
+# Migrated from systemd:newapi-db-pull (wave 7.13). Nightly pull of the cloud
+# gateway database; keeps its 08:05 America/New_York wall time so it still runs
+# after the host's ~07:35 excluded cron.daily dump.
+[candybar]
+name = "newapi-db-pull"
+description = "Pull the cloud gateway database onto this machine and restore-test it"
+tags = ["migrated", "automaticai"]
+schedule = "5 8 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "newapi-db-pull.service"

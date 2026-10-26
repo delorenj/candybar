@@ -1,0 +1,14 @@
+# Migrated from systemd:newapi-openrouter-sync (wave 7.13). Nightly OpenRouter
+# catalog/pricing sync; keeps its 03:47 America/New_York wall time. Changes
+# live billing prices on the client-facing gateway: first scheduled fire is
+# the proof; never manually run.
+[candybar]
+name = "newapi-openrouter-sync"
+description = "Sync OpenRouter's catalog and prices into the AutomaticAI passthrough family"
+tags = ["migrated", "automaticai"]
+schedule = "47 3 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "newapi-openrouter-sync.service"

@@ -1,0 +1,18 @@
+# Migrated from hermes:peter-griffin:b240575fae0c (wave 7.17, AD-19/AD-21).
+# Report stage of daily-token-ops: read-only token/dollar usage report with
+# anomalies, written under ~/.hermes/profiles/peter-griffin/reports/
+# daily-token-ops/<date>/. The optimization candybar (token-optimization,
+# 06:23) gates on this report's manifest <2h old — the 30-minute gap is
+# preserved. Rollback: ledger entry hermes:peter-griffin:b240575fae0c.
+[candybar]
+name = "token-usage-report"
+description = "Daily system token usage and anomaly report (was hermes peter-griffin:b240575fae0c); telegram:7564050286"
+tags = ["migrated", "hermes-agent", "wave-7-17"]
+schedule = "53 5 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "hermes"
+profile = "peter-griffin"
+job_id = "b240575fae0c"
+timeout_s = 3600

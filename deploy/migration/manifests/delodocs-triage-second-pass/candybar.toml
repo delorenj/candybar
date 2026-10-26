@@ -1,0 +1,17 @@
+# Migrated from hermes:delodocs-pm:fc39bd8b33c8 (wave 7.17, AD-19/AD-21).
+# Drains up to 10 files a day from the DeLoDocs vault _triage/ backlog
+# (agents-only, internal side effects, deliver local). Hermes keeps the
+# session and prompt; candybar owns the 09:00 America/New_York schedule.
+# Rollback: ledger entry hermes:delodocs-pm:fc39bd8b33c8.
+[candybar]
+name = "delodocs-triage-second-pass"
+description = "DeLoDocs vault _triage/ backlog drain, <=10 files/day (was hermes delodocs-pm:fc39bd8b33c8)"
+tags = ["migrated", "hermes-agent", "wave-7-17"]
+schedule = "0 9 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "hermes"
+profile = "delodocs-pm"
+job_id = "fc39bd8b33c8"
+timeout_s = 3600

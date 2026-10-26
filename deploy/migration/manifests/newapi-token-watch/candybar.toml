@@ -1,0 +1,13 @@
+# Migrated from systemd:newapi-token-watch (wave 7.13). Daily renewal of
+# GitHub-bound gateway consumer tokens plus 14-day expiry alerts; keeps its
+# 08:30 America/New_York wall time.
+[candybar]
+name = "newapi-token-watch"
+description = "Renew GitHub-bound gateway consumer tokens near expiry and alert on any token expiring within 14 days"
+tags = ["migrated", "automaticai"]
+schedule = "30 8 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "newapi-token-watch.service"

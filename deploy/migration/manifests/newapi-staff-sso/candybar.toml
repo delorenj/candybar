@@ -1,0 +1,12 @@
+# Migrated from systemd:newapi-staff-sso (wave 7.13). The native timer was a
+# relative 1h timer; the recorded cron keeps the current phase (minute 7).
+[candybar]
+name = "newapi-staff-sso"
+description = "Provision AutomaticAI staff rows in new-api for Google SSO (allowlist)"
+tags = ["migrated", "automaticai"]
+schedule = "7 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "newapi-staff-sso.service"

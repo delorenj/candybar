@@ -1,0 +1,13 @@
+# Migrated from systemd:newapi-allowances (wave 7.13). The .service unit stays
+# exactly as it is in ~/code/client-portal/gateway/ops/systemd/; only its timer
+# retired. Cutover record: deploy/migration/ledger.yaml.
+[candybar]
+name = "newapi-allowances"
+description = "Collect read-only AutomaticAI provider subscription allowances"
+tags = ["migrated", "automaticai"]
+schedule = "*/5 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "newapi-allowances.service"

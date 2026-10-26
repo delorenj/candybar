@@ -1,0 +1,16 @@
+# Migrated from systemd:aai-free-scout.timer (wave 7.13). Daily free-provider
+# scout: drives the operator's browser (kapture) and desktop (computer-use)
+# through headless Claude Code stages, then builds/deploys/verifies the
+# gateway. External side effects throughout: first scheduled fire is the
+# proof; never manually run. Keeps its 04:37 America/New_York wall time
+# (inside the 07-12 UTC usage trough).
+[candybar]
+name = "aai-free-scout"
+description = "AutomaticAI free-provider scout: sign up one free LLM provider and add it to automaticai/free"
+tags = ["migrated", "automaticai", "llm"]
+schedule = "37 4 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "aai-free-scout.service"

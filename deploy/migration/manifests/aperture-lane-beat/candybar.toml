@@ -1,0 +1,20 @@
+# Migrated from hermes:33god-pm:f3db72089593 (wave 7.17, AD-19/AD-21).
+# Aperture delivery-lane PM beat: on a lane-state change the 33god-pm agent
+# authors/proves accept+gate kits, verifies G8 delegated workers, re-runs
+# smokes. Native schedule was the hermes interval "every 120m" (anchored to
+# the last run); per the inventory mapping, interval jobs phase-lock to
+# `0 */2 * * *` UTC — accepted deviation: phase not preserved, interval is.
+# Monitor script aperture-lane-monitor.sh now tracked in delorenj/agents
+# tools/jev-clairic/hermes/. Rollback: ledger entry hermes:33god-pm:f3db72089593.
+[candybar]
+name = "aperture-lane-beat"
+description = "Aperture delivery-lane PM beat on lane-state change (was hermes 33god-pm:f3db72089593, every 120m -> even hours :00)"
+tags = ["migrated", "hermes-agent", "wave-7-17"]
+schedule = "0 */2 * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "hermes"
+profile = "33god-pm"
+job_id = "f3db72089593"
+timeout_s = 3600

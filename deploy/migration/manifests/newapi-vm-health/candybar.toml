@@ -1,0 +1,14 @@
+# Migrated from systemd:newapi-vm-health (wave 7.13). Exit 1 means problems
+# were found and already pushed to ntfy; the unit's SuccessExitStatus=1 makes
+# systemd report Result=success, which the systemd runner maps to a candybar
+# success (pinned by tests/test_systemd_runner.py).
+[candybar]
+name = "newapi-vm-health"
+description = "Check the cloud gateway VM and push problems to ntfy"
+tags = ["migrated", "automaticai"]
+schedule = "*/5 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "newapi-vm-health.service"

@@ -3,4 +3,407 @@
 # procedure in deploy/migration/README.md. Commit it after every change: it is
 # how a cutover is undone when the daemon is down.
 version: 1
-jobs: []
+jobs:
+- id: systemd:newapi-allowances
+  wave: '7.13'
+  candybar:
+    name: newapi-allowances
+    description: Collect read-only AutomaticAI provider subscription allowances
+    tags:
+    - migrated
+    - automaticai
+    schedule: '*/5 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: newapi-allowances.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=1m; OnActiveSec=1m; OnUnitActiveSec=5m; RandomizedDelaySec=15s; Persistent=true
+    jitter_s: 15
+    unit: newapi-allowances.timer
+    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-allowances.timer
+  deviations:
+  - RandomizedDelaySec=15s dropped
+  - OnBootSec/OnActiveSec boot re-arm dropped
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/client-portal
+    path: gateway/ops/systemd/newapi-allowances.timer
+    commit: null
+  disable:
+  - systemctl --user disable --now newapi-allowances.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-allowances.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:15:39.722006Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:newapi-vm-health
+  wave: '7.13'
+  candybar:
+    name: newapi-vm-health
+    description: Check the cloud gateway VM and push problems to ntfy
+    tags:
+    - migrated
+    - automaticai
+    schedule: '*/5 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: newapi-vm-health.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=2min; OnActiveSec=2min; OnUnitActiveSec=5min; RandomizedDelaySec=20s; Persistent=true
+    jitter_s: 20
+    unit: newapi-vm-health.timer
+    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-vm-health.timer
+  deviations:
+  - RandomizedDelaySec=20s dropped
+  - OnBootSec/OnActiveSec boot re-arm dropped
+  - Persistent=true catch-up replaced by candybar misfire policy
+  - exit 1 = problems pushed to ntfy, mapped to success by the unit SuccessExitStatus=1
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/client-portal
+    path: gateway/ops/systemd/newapi-vm-health.timer
+    commit: null
+  disable:
+  - systemctl --user disable --now newapi-vm-health.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-vm-health.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:15:40.072190Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:newapi-db-pull
+  wave: '7.13'
+  candybar:
+    name: newapi-db-pull
+    description: Pull the cloud gateway database onto this machine and restore-test it
+    tags:
+    - migrated
+    - automaticai
+    schedule: 5 8 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: newapi-db-pull.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 08:05:00; RandomizedDelaySec=10m; Persistent=true
+    jitter_s: 600
+    unit: newapi-db-pull.timer
+    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-db-pull.timer
+  deviations:
+  - RandomizedDelaySec=10m dropped (now fires exactly 08:05 local)
+  - Persistent=true catch-up replaced by candybar misfire policy
+  - still after the ~07:35 excluded cron.daily dump
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/client-portal
+    path: gateway/ops/systemd/newapi-db-pull.timer
+    commit: null
+  disable:
+  - systemctl --user disable --now newapi-db-pull.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-db-pull.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:15:40.439162Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:newapi-claude-token
+  wave: '7.13'
+  candybar:
+    name: newapi-claude-token
+    description: Copy Claude Code's OAuth access token onto the new-api Claude channel
+    tags:
+    - migrated
+    - automaticai
+    schedule: '*/30 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: newapi-claude-token.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=2min; OnActiveSec=2min; OnUnitActiveSec=30min; Persistent=true
+    jitter_s: 0
+    unit: newapi-claude-token.timer
+    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-claude-token.timer
+  deviations:
+  - OnBootSec/OnActiveSec boot re-arm dropped
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: true
+  source_of_truth:
+    repo: AutomaticAI-io/client-portal
+    path: gateway/ops/systemd/newapi-claude-token.timer
+    commit: null
+  disable:
+  - systemctl --user disable --now newapi-claude-token.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-claude-token.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:15:40.798925Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:newapi-oauth-connections
+  wave: '7.13'
+  candybar:
+    name: newapi-oauth-connections
+    description: Renew AutomaticAI dedicated OAuth grants and synchronize access credentials
+    tags:
+    - migrated
+    - automaticai
+    schedule: '*/5 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: newapi-oauth-connections.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=2m; OnActiveSec=2m; OnUnitActiveSec=5m; RandomizedDelaySec=20s; Persistent=true
+    jitter_s: 20
+    unit: newapi-oauth-connections.timer
+    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-oauth-connections.timer
+  deviations:
+  - RandomizedDelaySec=20s dropped
+  - OnBootSec/OnActiveSec boot re-arm dropped
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/client-portal
+    path: gateway/ops/systemd/newapi-oauth-connections.timer
+    commit: null
+  disable:
+  - systemctl --user disable --now newapi-oauth-connections.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-oauth-connections.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:15:41.144538Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:newapi-openrouter-sync
+  wave: '7.13'
+  candybar:
+    name: newapi-openrouter-sync
+    description: Sync OpenRouter's catalog and prices into the AutomaticAI passthrough family
+    tags:
+    - migrated
+    - automaticai
+    schedule: 47 3 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: newapi-openrouter-sync.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 03:47:00; RandomizedDelaySec=10m; Persistent=true
+    jitter_s: 600
+    unit: newapi-openrouter-sync.timer
+    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-openrouter-sync.timer
+  deviations:
+  - RandomizedDelaySec=10m dropped (now fires exactly 03:47 local)
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/client-portal
+    path: gateway/ops/systemd/newapi-openrouter-sync.timer
+    commit: null
+  disable:
+  - systemctl --user disable --now newapi-openrouter-sync.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-openrouter-sync.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:15:41.490900Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:newapi-staff-sso
+  wave: '7.13'
+  candybar:
+    name: newapi-staff-sso
+    description: Provision AutomaticAI staff rows in new-api for Google SSO (allowlist)
+    tags:
+    - migrated
+    - automaticai
+    schedule: 7 * * * *
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: newapi-staff-sso.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=5min; OnActiveSec=5min; OnUnitActiveSec=1h; Persistent=true
+    jitter_s: 0
+    unit: newapi-staff-sso.timer
+    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-staff-sso.timer
+  deviations:
+  - relative 1h timer pinned to minute 7 of each hour (matches the timer phase at inventory)
+  - OnBootSec/OnActiveSec boot re-arm dropped
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/client-portal
+    path: gateway/ops/systemd/newapi-staff-sso.timer
+    commit: null
+  disable:
+  - systemctl --user disable --now newapi-staff-sso.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-staff-sso.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:15:41.842351Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:newapi-token-watch
+  wave: '7.13'
+  candybar:
+    name: newapi-token-watch
+    description: Renew GitHub-bound gateway consumer tokens near expiry and alert on any token expiring within 14 days
+    tags:
+    - migrated
+    - automaticai
+    schedule: 30 8 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: newapi-token-watch.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 08:30:00; RandomizedDelaySec=10min; Persistent=true
+    jitter_s: 600
+    unit: newapi-token-watch.timer
+    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-token-watch.timer
+  deviations:
+  - RandomizedDelaySec=10min dropped (now fires exactly 08:30 local)
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/client-portal
+    path: gateway/ops/systemd/newapi-token-watch.timer
+    commit: null
+  disable:
+  - systemctl --user disable --now newapi-token-watch.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-token-watch.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:15:42.216875Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:aai-free-scout.timer
+  wave: '7.13'
+  candybar:
+    name: aai-free-scout
+    description: 'AutomaticAI free-provider scout: sign up one free LLM provider and add it to automaticai/free'
+    tags:
+    - migrated
+    - automaticai
+    - llm
+    schedule: 37 4 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: aai-free-scout.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 04:37:00; RandomizedDelaySec=10m; Persistent=true
+    jitter_s: 600
+    unit: aai-free-scout.timer
+    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/aai-free-scout.timer
+  deviations:
+  - RandomizedDelaySec=10m dropped (now fires exactly 04:37 local)
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: false
+  source_of_truth:
+    repo: AutomaticAI-io/client-portal
+    path: gateway/ops/systemd/aai-free-scout.timer
+    commit: null
+  disable:
+  - systemctl --user disable --now aai-free-scout.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/aai-free-scout.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:15:42.566444Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer

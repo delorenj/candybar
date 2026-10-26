@@ -1,0 +1,17 @@
+# Migrated from hermes:peter-griffin:3684c5aa8eac (wave 7.17, AD-19/AD-21).
+# Optimization stage of daily-token-ops: applies at most one reversible
+# production efficiency change, only when today's report manifest from
+# token-usage-report (05:53) exists and is <2h old. Must stay after
+# token-usage-report. Rollback: ledger entry hermes:peter-griffin:3684c5aa8eac.
+[candybar]
+name = "token-optimization"
+description = "Daily token optimization and verification (was hermes peter-griffin:3684c5aa8eac); gates on token-usage-report manifest"
+tags = ["migrated", "hermes-agent", "wave-7-17"]
+schedule = "23 6 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "hermes"
+profile = "peter-griffin"
+job_id = "3684c5aa8eac"
+timeout_s = 3600
