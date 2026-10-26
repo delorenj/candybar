@@ -2,7 +2,7 @@
 title: 'Story 2.3: Skip a single occurrence'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'done'
 route: 'dispatch'
 baseline_commit: '90c0adbb02a628a82f3177e4ea23d5ff9196cc26'
 review_loop_iteration: 0
@@ -69,14 +69,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/candybar/registry/{models,store,__init__}.py` -- skip kind vocabulary, `SkipEntry`, idempotent `add_occurrence_skip`, `list_skips`.
-- [ ] `src/candybar/dispatcher/schedule.py` -- `SkipSet`, `group_skips`, skip-aware helpers, `next_fire`.
-- [ ] `src/candybar/dispatcher/{worker,role}.py` -- skips port, tick-path suppression, skip-aware coalescing, role wiring.
-- [ ] `tests/test_skips.py` -- NEW: every matrix row except the DB-bound ones, plus deterministic ids, redelivery identity, and a no-skips-port regression.
-- [ ] `tests/test_dispatcher_role.py` -- assert the skips port is wired.
-- [ ] `tests/test_skip_occurrence_integration.py` -- NEW live suite. Store: idempotence, unknown candybar, window read. Roles: production `run_dispatcher` + `run_executor` on a throwaway bus; a stored skip suppresses exactly that fire, the next fire runs, and a gap with a skipped latest fire runs the earlier fire as misfire.
-- [ ] `.github/workflows/ci.yml` -- run the live suite: store test in the registry step, role test in the fault + misfire step.
-- [ ] `README.md` -- short skip-semantics note under the misfire section.
+- [x] `src/candybar/registry/{models,store,__init__}.py` -- skip kind vocabulary, `SkipEntry`, idempotent `add_occurrence_skip`, `list_skips`.
+- [x] `src/candybar/dispatcher/schedule.py` -- `SkipSet`, `group_skips`, skip-aware helpers, `next_fire`.
+- [x] `src/candybar/dispatcher/{worker,role}.py` -- skips port, tick-path suppression, skip-aware coalescing, role wiring.
+- [x] `tests/test_skips.py` -- NEW: every matrix row except the DB-bound ones, plus deterministic ids, redelivery identity, and a no-skips-port regression.
+- [x] `tests/test_dispatcher_role.py` -- assert the skips port is wired.
+- [x] `tests/test_skip_occurrence_integration.py` -- NEW live suite. Store: idempotence, unknown candybar, window read. Roles: production `run_dispatcher` + `run_executor` on a throwaway bus; a stored skip suppresses exactly that fire, the next fire runs, and a gap with a skipped latest fire runs the earlier fire as misfire.
+- [x] `.github/workflows/ci.yml` -- run the live suite: store test in the registry step, role test in the fault + misfire step.
+- [x] `README.md` -- short skip-semantics note under the misfire section.
 
 **Acceptance Criteria:**
 - Given a registered candybar and a stored occurrence skip for its 10:10 fire, when the live dispatcher consumes ticks 10:05, 10:10 and 10:15, then exactly two child runs happen (10:05 and 10:15, `trigger=scheduled`), no `invocations` row or command exists for 10:10, and `BLOODBANK_EVENTS` holds exactly one `skipped` fact with `reason=occurrence` and `tick_id` 10:10.
@@ -84,9 +84,72 @@ context:
 
 ## Implementation Notes
 
+I implemented this directly in this session. There is no subagent-spawn tool, the same deviation as Stories 1.1 to 2.2. The spec runs to about 2.4k tokens, over the 1600 guide, and I kept it whole: it is a single cohesive goal and the run is unattended. Commits on main: 1754461 (spec), ee04dc5 (code + unit tests), 8c45a74 (live suite, CI, README), 96c6145 (review patches).
+
+**What was built**
+- Registry: `SKIP_OCCURRENCE`/`SKIP_KINDS`, the `SkipEntry` dataclass, `UnknownCandybarError` (a `KeyError`, like the executor's unknown-candybar path), and `occurrence_skip_id`. `add_occurrence_skip` checks that the candybar exists and inserts with `ON CONFLICT (id) DO NOTHING RETURNING id`. It also maps an FK race to `UnknownCandybarError`. `list_skips` reads a half-open UTC window. No migration was needed, because the 0001 `skips` columns already fit.
+- Schedule helpers: `SkipSet`, `NO_SKIPS` and `group_skips` (unknown kinds are ignored). `previous_fire` and `fires_between` take `skips=` as a keyword, so existing callers are unchanged. The new `next_fire` is the upcoming-fire helper.
+- Dispatcher: the `skips` port is read once per dispatched tick, after the backlog check. On a gap it reads from `cursor+1m`. A skipped matching fire publishes `occurrence_skipped_for` instead of a command. `MisfirePlan` gains `overridden`, and `latest` may be None when every missed fire is skipped. Skipped facts are published oldest first, then the misfire run.
+- The role wires the port through `list_skips`.
+
+**Live proof** (production `run_dispatcher` and `run_executor`, throwaway nats:2.10.29 and postgres:17-alpine, `cb23-*`)
+- Setup: a skip stored on one of two `*/5` candybars for 10:10, then ticks 10:05, 10:10 and 10:15, each dispatched in turn.
+  - The skipped candybar ran 10:05 and 10:15 as scheduled, with no 10:10 row or key and counters at 2/2.
+  - The neighbour ran all three.
+  - The bus held exactly one `skipped` fact (`occurrence`, 10:10).
+  - `next_fire`/`fires_between` over the same registry rows omit 10:10.
+- Gap with the latest missed fire skipped: cursor 10:15, a skip at 10:25, tick 10:28.
+  - The skipped candybar ran 10:20 as misfire, and 10:25 was recorded as `occurrence`.
+  - The neighbour ran 10:25 as misfire, and 10:20 was recorded as `misfire_coalesced`.
+- Sanity counter-test: with `group_skips` forced to return `{}`, the live suite fails because 10:10 runs.
+- Test fix during implementation: the first live draft published the three ticks in a burst, and the dispatcher handled them as a 2.2 backlog. That is correct behaviour but made the test racy, so each tick now waits for the cursor to advance.
+
+**Verification results**
+- 466 unit tests pass and ruff is clean.
+- Live: the skip suite 2 passed. The fault, misfire, dispatcher and heartbeat suites gave 9 passed and 1 skipped (the 5-minute end-to-end test). The registry suite 8 passed.
+
+**Decisions where the spine is silent**
+- Skip row ids are UUIDv5 of `(candybar, fire minute)`, so storing is idempotent without a unique-index migration. They are not UUIDv7, which stays the convention for candybar ids.
+- The event reason is the kind token (`occurrence`). The operator's free-text note stays on the row only.
+- Rows are kept after they are honored, as override state Epic 5 renders.
+- A fire time that is not UTC is refused rather than converted.
+- The skip API and CLI are out of scope (Story 5.6), and the store does not check the fire time against the schedule.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+The three review layers (blind-hunter, edge-case-hunter, verification-gap) ran inline, because no subagent-spawn tool was available; the same deviation as 1.1 to 2.2. Diff: 90c0adb..8c45a74 over src, tests, .github and README, excluding Story 3.2's `executor/gpu.py` and `tests/test_gpu.py` that landed in between. It is 62.0 kB, so the finding floor is N = min(floor(sqrt(62.0)+1), 10) = 8.
+
+**Patched** (96c6145)
+- *Blind + Code Map deviation.* `store.py` had a second UTC-minute validator, `_require_fire_minute`, beside `_require_tick_minute`. The Code Map said to reuse the existing one, and two copies of one rule would drift. low, patched: one validator with a `what` label.
+- *Blind.* The >24h gap warning still said "latest missed fire still runs", but a skipped latest fire now hands the run to an earlier one. low, patched: the text says "latest non-skipped".
+- *Blind.* The `Dispatcher.dispatch` docstring did not mention the skips read or the skipped-fact publish. low, patched.
+- *Verification-gap.* The FK-race mapping in `add_occurrence_skip` keys on the constraint name `skips_candybar_id_fkey`, which the 0001 migration does not name explicitly. No test pinned it, so a different name would leak a raw `IntegrityError` on the race path. Patched: the live store test asserts the name from `pg_constraint`. Verified against the throwaway database.
+
+**Rejected**
+- *Blind.* `list_skips` scans the whole `skips` table on every tick, and rows are never deleted. low, rejected: the table is operator-sized and read once a minute, and an index needs a migration, which is more than a direct correction.
+- *Blind + edge.* `add_occurrence_skip` reads the row back after the insert, and the read could return None if the candybar were deleted at the same moment. false: nothing in `src/` deletes candybars (grep found no `session.delete` or `delete(`), so the row cannot vanish in between.
+- *Blind.* `UnknownCandybarError` subclasses `KeyError`, so `str()` comes out quoted. low, rejected: cosmetic, it matches the executor's `KeyError` convention, and 5.6 writes its own problem+json detail.
+- *Blind.* A skip stored between a failed gap attempt and its redelivery yields two `skipped` facts for one fire (`misfire_coalesced` then `occurrence`). low, rejected: this needs a mid-plan publish failure plus an operator write inside the 1s nak delay. Executions are unaffected.
+- *Blind.* Replaying a tick older than the broker's duplicate window republishes the occurrence fact. low, rejected: the id is the same, which is the same at-least-once contract every other fact has, and consumers key on the id.
+- *Blind.* `SkipSet.__bool__` is unused in production. false: there is no harm to name.
+- *Blind.* `group_skips` drops unknown kinds silently. low, rejected: only a daemon rollback can hit it, and the fix adds a logging branch.
+- *Edge.* A gap with a very old cursor reads skips back to that cursor without a bound. low, rejected: same operator-sized table as above, and the read must reach the floor so that a skipped latest fire is honored.
+- *Edge.* A row written by hand-run SQL with an off-minute `fire_time` never matches. low, rejected: the store is the sole writer (AD-10) and enforces minute alignment.
+
+**Claims check:** nothing falsified. Checked:
+- `reason=occurrence` and the skipped-fact id format;
+- idempotent storage that reports a repeat as not-created;
+- the unknown-candybar and bad-time errors;
+- the skip-aware `previous_fire`, `fires_between` and `next_fire`;
+- that an unwired port is exactly Story 2.2 (same fire sets, only the gap log text differs);
+- that rows persist after they are honored;
+- the CI placement of both live tests.
+
+**Deleted code check:** clean. The old `previous_fire` try/except and the `earlier` enumeration are re-established in the new loops. The unconditional misfire publish is now conditional on `latest`, which is intentional for an all-skipped gap.
+
+**Deferred:** nothing.
 
 ## Design Notes
 
