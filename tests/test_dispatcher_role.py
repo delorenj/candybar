@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+from datetime import UTC, datetime
 from typing import Any
 
 from candybar.daemon import ROLES, resolve_roles
@@ -66,10 +68,11 @@ def test_role_wires_durable_inventory_and_sink(monkeypatch: Any):
             captured["published"] = event
 
     class FakeDispatcher:
-        def __init__(self, schedules: Any, publish: Any, cursor: Any = None):
+        def __init__(self, schedules: Any, publish: Any, cursor: Any = None, *, skips: Any = None):
             captured["schedules"] = schedules
             captured["publish"] = publish
             captured["cursor"] = cursor
+            captured["skips"] = skips
 
         async def handle_message(self, msg: Any):
             captured["message"] = msg
@@ -90,6 +93,25 @@ def test_role_wires_durable_inventory_and_sink(monkeypatch: Any):
     # Story 2.2: the misfire cursor is the registry row of THE tick durable.
     assert isinstance(captured["cursor"], role.RegistryTickCursor)
     assert captured["cursor"].name == role.DURABLE
+    # Story 2.3: operator skips are read from the registry on every tick,
+    # through list_skips over the role's engine, for the requested window.
+    seen: dict[str, Any] = {}
+
+    @contextlib.asynccontextmanager
+    async def fake_scope(engine: Any):
+        seen["engine"] = engine
+        yield "session"
+
+    async def fake_list_skips(session: Any, start: Any, end: Any):
+        seen["args"] = (session, start, end)
+        return ["row"]
+
+    monkeypatch.setattr(role, "session_scope", fake_scope)
+    monkeypatch.setattr(role, "list_skips", fake_list_skips)
+    start, end = datetime(2026, 10, 26, 10, 0, tzinfo=UTC), datetime(2026, 10, 26, 10, 1, tzinfo=UTC)
+    assert asyncio.run(captured["skips"](start, end)) == ["row"]
+    assert isinstance(seen["engine"], FakeEngine)
+    assert seen["args"] == ("session", start, end)
     assert captured["disposed"] and captured["drained"]
     # Fast-stop contract (Story 1.9): unsubscribe before drain so an idle
     # stop completes well inside docker's 10s default grace.

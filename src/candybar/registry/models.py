@@ -21,6 +21,11 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 TRIGGERS = ("scheduled", "manual", "misfire")
 RESULTS = ("success", "fail")
 
+# Skip kinds (Epic 2 owns the vocabulary). The kind is also the `skipped`
+# event's `data.reason` for an operator skip. Story 2.4 adds `rest_of_day`.
+SKIP_OCCURRENCE = "occurrence"  # one fire `{candybar_id, fire_time}` (Story 2.3)
+SKIP_KINDS = (SKIP_OCCURRENCE,)
+
 
 class Base(DeclarativeBase):
     pass
@@ -79,7 +84,8 @@ class Skip(Base):
     candybar_id: Mapped[UUID] = mapped_column(
         ForeignKey("candybars.id", ondelete="CASCADE"), nullable=False
     )
-    kind: Mapped[str] = mapped_column(Text, nullable=False)  # Epic 2 owns the vocabulary
+    kind: Mapped[str] = mapped_column(Text, nullable=False)  # one of SKIP_KINDS
+    # `occurrence`: the suppressed UTC fire minute.
     fire_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     day: Mapped[date | None] = mapped_column()
     reason: Mapped[str | None] = mapped_column(Text)

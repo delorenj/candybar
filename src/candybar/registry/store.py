@@ -11,9 +11,9 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -22,10 +22,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 
 from .ids import uuid7
 from .manifest import CandybarManifest
-from .models import Candybar, DispatchCursor, Invocation
+from .models import SKIP_OCCURRENCE, Candybar, DispatchCursor, Invocation, Skip
 
 DATABASE_URL_ENV = "DATABASE_URL"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://localhost:5432/candybar"
+# Skip row ids are UUIDv5 of the override's identity, so storing the same
+# skip twice is a primary-key no-op (Story 2.3) — no unique index migration.
+SKIP_NAMESPACE = UUID("5b1c0f3e-8a52-4d0b-9a7e-2c6f1d4e8b90")
 
 
 class DuplicateNameError(Exception):
@@ -34,6 +37,10 @@ class DuplicateNameError(Exception):
     Registry-level error so callers never import sqlalchemy themselves — the
     sole-writer guard forbids DB imports outside this package.
     """
+
+
+class UnknownCandybarError(KeyError):
+    """No candybar with this id is registered (e.g. storing a skip for it)."""
 
 
 class DuplicateInvocationError(Exception):
@@ -133,6 +140,104 @@ async def advance_dispatch_cursor(session: AsyncSession, name: str, minute: date
         },
     )
     await session.execute(stmt)
+
+
+@dataclass(frozen=True)
+class SkipEntry:
+    """One schedule override row (`skips`), without exposing the ORM."""
+
+    id: UUID
+    candybar_id: UUID
+    kind: str
+    fire_time: datetime | None
+    day: date | None
+    reason: str | None  # free operator note; never the event reason
+    created_at: datetime
+
+
+def _skip_entry(row: Skip) -> SkipEntry:
+    return SkipEntry(
+        id=row.id,
+        candybar_id=row.candybar_id,
+        kind=row.kind,
+        fire_time=row.fire_time.astimezone(UTC) if row.fire_time is not None else None,
+        day=row.day,
+        reason=row.reason,
+        created_at=row.created_at,
+    )
+
+
+def _require_fire_minute(fire_time: datetime) -> None:
+    if (
+        fire_time.tzinfo is None
+        or fire_time.utcoffset() is None
+        or fire_time.utcoffset().total_seconds()
+    ):
+        raise ValueError("fire_time must be timezone-aware UTC")
+    if fire_time.second or fire_time.microsecond:
+        raise ValueError("fire_time must be on a minute boundary")
+
+
+def occurrence_skip_id(candybar_id: UUID, fire_time: datetime) -> UUID:
+    """The deterministic row id of the occurrence skip `{candybar_id, fire_time}`."""
+    _require_fire_minute(fire_time)
+    epoch_minute = int(fire_time.timestamp()) // 60
+    return uuid5(SKIP_NAMESPACE, f"{SKIP_OCCURRENCE}:{candybar_id}:{epoch_minute}")
+
+
+async def add_occurrence_skip(
+    session: AsyncSession, candybar_id: UUID, fire_time: datetime, *, reason: str | None = None
+) -> tuple[SkipEntry, bool]:
+    """Store a skip of the single fire `fire_time` of a candybar (Story 2.3).
+
+    Idempotent: returns `(entry, created)`, and `created` is False when the
+    same skip was already stored (the first row, and its note, are kept).
+    Whether `fire_time` is a fire the schedule actually produces is the
+    caller's check (the API's 404, Story 5.6): a skip that matches no fire is
+    inert. Raises UnknownCandybarError and ValueError (naive/off-minute time).
+    """
+    _require_fire_minute(fire_time)
+    if await session.get(Candybar, candybar_id) is None:
+        raise UnknownCandybarError(str(candybar_id))
+    skip_id = occurrence_skip_id(candybar_id, fire_time)
+    stmt = (
+        pg_insert(Skip)
+        .values(
+            id=skip_id,
+            candybar_id=candybar_id,
+            kind=SKIP_OCCURRENCE,
+            fire_time=fire_time,
+            day=None,
+            reason=reason,
+            created_at=datetime.now(UTC),
+        )
+        .on_conflict_do_nothing(index_elements=[Skip.id])
+        .returning(Skip.id)
+    )
+    try:
+        created = (await session.execute(stmt)).scalar_one_or_none() is not None
+    except IntegrityError as exc:  # the candybar was deleted under us
+        if "skips_candybar_id_fkey" in str(exc):
+            raise UnknownCandybarError(str(candybar_id)) from exc
+        raise
+    row = await session.get(Skip, skip_id, populate_existing=True)
+    return _skip_entry(row), created
+
+
+async def list_skips(session: AsyncSession, start: datetime, end: datetime) -> list[SkipEntry]:
+    """Occurrence skips with `start <= fire_time < end`, oldest fire first."""
+    _require_fire_minute(start)
+    _require_fire_minute(end)
+    result = await session.scalars(
+        select(Skip)
+        .where(
+            Skip.kind == SKIP_OCCURRENCE,
+            Skip.fire_time >= start,
+            Skip.fire_time < end,
+        )
+        .order_by(Skip.fire_time, Skip.candybar_id)
+    )
+    return [_skip_entry(row) for row in result]
 
 
 async def insert_candybar(

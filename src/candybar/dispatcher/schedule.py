@@ -2,16 +2,69 @@
 
 All fire-time math is UTC (AD-13) over standard five-field cron via croniter.
 Nothing here reads the wall clock: callers pass the tick minute they consumed.
+
+Operator skips (Story 2.3) are applied here too: the fire-time helpers take
+an optional per-candybar `SkipSet` and omit the fires it covers, so the
+dispatcher and the read API (Epic 5) compute the same skip-aware fires.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
+from uuid import UUID
 
 from croniter import CroniterBadDateError, croniter
 
+from ..registry.models import SKIP_OCCURRENCE
+
 ONE_MINUTE = timedelta(minutes=1)
+
+
+class SkipRow(Protocol):
+    """The fields of a registry skip row the helpers read (`SkipEntry`)."""
+
+    candybar_id: UUID
+    kind: str
+    fire_time: datetime | None
+
+
+@dataclass(frozen=True)
+class SkipSet:
+    """The operator skips of ONE candybar (registry `skips` rows).
+
+    `reason_for(fire)` is the `skipped` event reason (the skip kind) when an
+    override covers that fire, else None. Story 2.4 adds rest-of-day dates.
+    """
+
+    occurrences: frozenset[datetime] = frozenset()
+
+    def reason_for(self, fire: datetime) -> str | None:
+        return SKIP_OCCURRENCE if fire in self.occurrences else None
+
+    def covers(self, fire: datetime) -> bool:
+        return self.reason_for(fire) is not None
+
+    def __bool__(self) -> bool:
+        return bool(self.occurrences)
+
+
+NO_SKIPS = SkipSet()
+
+
+def group_skips(rows: Iterable[SkipRow]) -> dict[UUID, SkipSet]:
+    """Fold registry skip rows into one SkipSet per candybar id.
+
+    Unknown kinds are ignored, never guessed at: a newer daemon's override a
+    rolled-back daemon cannot interpret must not suppress or wedge dispatch.
+    """
+    occurrences: dict[UUID, set[datetime]] = {}
+    for row in rows:
+        if row.kind == SKIP_OCCURRENCE and row.fire_time is not None:
+            occurrences.setdefault(row.candybar_id, set()).add(row.fire_time.astimezone(UTC))
+    return {cid: SkipSet(occurrences=frozenset(fires)) for cid, fires in occurrences.items()}
 
 
 def _require_utc_minute(minute: datetime, what: str = "tick minute") -> None:
@@ -40,25 +93,33 @@ def ceil_minute(instant: datetime) -> datetime:
     return floor if floor == instant else floor + ONE_MINUTE
 
 
-def previous_fire(schedule: str, before: datetime) -> datetime | None:
-    """The latest fire time strictly before the UTC minute `before`.
+def previous_fire(
+    schedule: str, before: datetime, *, skips: SkipSet = NO_SKIPS
+) -> datetime | None:
+    """The latest non-skipped fire time strictly before the UTC minute `before`.
 
     None when the schedule never fires: a syntactically valid expression such
     as `0 0 30 2 *` (Feb 30) passes registration, and croniter raises
     CroniterBadDateError searching for it — that must read as "nothing
-    missed", never as a dispatch failure that wedges the tick.
+    missed", never as a dispatch failure that wedges the tick. Fires covered
+    by `skips` are walked past (a finite set, so the walk terminates).
     """
     _require_utc_minute(before)
     _require_five_fields(schedule)
-    try:
-        fire = croniter(schedule, before.astimezone(UTC)).get_prev(datetime)
-    except CroniterBadDateError:
-        return None
-    return fire.astimezone(UTC)
+    it = croniter(schedule, before.astimezone(UTC))
+    while True:
+        try:
+            fire = it.get_prev(datetime).astimezone(UTC)
+        except CroniterBadDateError:
+            return None
+        if not skips.covers(fire):
+            return fire
 
 
-def fires_between(schedule: str, start: datetime, end: datetime) -> Iterator[datetime]:
-    """Fire times `start <= t < end` in ascending order (UTC minute bounds)."""
+def fires_between(
+    schedule: str, start: datetime, end: datetime, *, skips: SkipSet = NO_SKIPS
+) -> Iterator[datetime]:
+    """Non-skipped fire times `start <= t < end`, ascending (UTC minute bounds)."""
     _require_utc_minute(start, "window start")
     _require_utc_minute(end, "window end")
     _require_five_fields(schedule)
@@ -73,4 +134,24 @@ def fires_between(schedule: str, start: datetime, end: datetime) -> Iterator[dat
             return
         if fire >= end:
             return
-        yield fire
+        if not skips.covers(fire):
+            yield fire
+
+
+def next_fire(schedule: str, at: datetime, *, skips: SkipSet = NO_SKIPS) -> datetime | None:
+    """The upcoming fire: the first non-skipped fire time `>= at` (UTC minute).
+
+    The read API's upcoming-fire computation (AD-13): the same croniter
+    evaluation the dispatcher matches ticks with, honoring skips. None when
+    the schedule never fires again.
+    """
+    _require_utc_minute(at, "from minute")
+    _require_five_fields(schedule)
+    it = croniter(schedule, (at - ONE_MINUTE).astimezone(UTC))
+    while True:
+        try:
+            fire = it.get_next(datetime).astimezone(UTC)
+        except CroniterBadDateError:
+            return None
+        if not skips.covers(fire):
+            return fire

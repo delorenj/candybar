@@ -5,6 +5,11 @@ cursor holds the newest tick minute fully dispatched. A consumed tick more
 than one minute past it is a gap; per candybar, only the LATEST missed fire
 in that gap runs (`trigger=misfire`), and earlier missed fires inside the 24h
 catch-up window are recorded as `skipped` (`reason=misfire_coalesced`).
+
+Operator skips (Story 2.3, AD-13) are registry override rows applied before
+any invoke command is emitted: a skipped fire publishes `skipped` with the
+skip kind as its reason instead of a command, on the tick path and inside a
+gap alike, and coalescing runs the latest NON-skipped missed fire.
 """
 
 from __future__ import annotations
@@ -27,11 +32,14 @@ from ..events.envelope import (
     TickFiredEvent,
 )
 from ..events.vocabulary import tick_id_for_minute
-from ..registry.store import ScheduleEntry
+from ..registry.store import ScheduleEntry, SkipEntry
 from .schedule import (
+    NO_SKIPS,
     ONE_MINUTE,
+    SkipSet,
     ceil_minute,
     fires_between,
+    group_skips,
     matches_tick,
     previous_fire,
 )
@@ -107,13 +115,38 @@ def misfire_skipped_for(
     )
 
 
+def occurrence_skipped_for(
+    entry: ScheduleEntry, fire: datetime, reason: str, tick: TickFiredEvent
+) -> CandybarSkippedEvent:
+    """The `skipped` fact for a fire an operator skip suppressed (Story 2.3).
+
+    Keyed on (reason, candybar, fire tick) only, so the tick path, a gap
+    tick and any redelivery all rebuild the same broker-dedupable id.
+    """
+    fired = _tick_id_of(fire)
+    return build_candybar_skipped(
+        candybar_id=entry.id,
+        name=entry.name,
+        tick_id=fired,
+        reason=reason,
+        correlationid=tick.correlationid,
+        causationid=tick.id,
+        event_id=uuid5(DISPATCH_NAMESPACE, f"skipped:{reason}:{entry.id}:{fired}"),
+    )
+
+
 @dataclass(frozen=True)
 class MisfirePlan:
-    """What one gap coalesces to for one candybar."""
+    """What one gap coalesces to for one candybar.
+
+    `latest` runs (it is never operator-skipped); `skipped` are the earlier
+    coalesced fires and `overridden` the operator-skipped ones in the window.
+    """
 
     entry: ScheduleEntry
-    latest: datetime
+    latest: datetime | None
     skipped: list[datetime] = field(default_factory=list)
+    overridden: list[datetime] = field(default_factory=list)
 
 
 def plan_misfires(
@@ -122,23 +155,39 @@ def plan_misfires(
     minute: datetime,
     *,
     window: timedelta = CATCH_UP_WINDOW,
+    skips: dict[UUID, SkipSet] | None = None,
 ) -> list[MisfirePlan]:
     """Missed fires `cursor < t < minute` (and `t >= created_at`), coalesced.
 
-    Pure: the latest missed fire per candybar runs; earlier ones inside
-    `[minute - window, latest)` are listed for `skipped` facts, oldest first.
+    Pure: the latest NON-skipped missed fire per candybar runs; every other
+    missed fire inside `[minute - window, minute)` is listed for a `skipped`
+    fact, oldest first — operator-skipped ones in `overridden`, the rest in
+    `skipped`. A gap whose missed fires are all operator-skipped runs nothing.
     """
     plans: list[MisfirePlan] = []
     window_start = minute - window
     for entry in entries:
+        overrides = (skips or {}).get(entry.id, NO_SKIPS)
         floor = cursor + ONE_MINUTE
         if entry.created_at is not None:
             floor = max(floor, ceil_minute(entry.created_at))
-        latest = previous_fire(entry.schedule, minute)
-        if latest is None or latest < floor:
+        latest = previous_fire(entry.schedule, minute, skips=overrides)
+        if latest is not None and latest < floor:
+            latest = None  # the newest runnable fire predates the gap
+        coalesced: list[datetime] = []
+        overridden: list[datetime] = []
+        for fire in fires_between(entry.schedule, max(floor, window_start), minute):
+            if fire == latest:
+                continue
+            if overrides.covers(fire):
+                overridden.append(fire)
+            elif latest is not None and fire < latest:
+                coalesced.append(fire)
+        if latest is None and not overridden:
             continue  # no missed fire for this candybar (or it never fires)
-        earlier = list(fires_between(entry.schedule, max(floor, window_start), latest))
-        plans.append(MisfirePlan(entry=entry, latest=latest, skipped=earlier))
+        plans.append(
+            MisfirePlan(entry=entry, latest=latest, skipped=coalesced, overridden=overridden)
+        )
     return plans
 
 
@@ -173,11 +222,15 @@ class Dispatcher:
         cursor: TickCursor | None = None,
         *,
         catch_up_window: timedelta = CATCH_UP_WINDOW,
+        skips: Callable[[datetime, datetime], Awaitable[list[SkipEntry]]] | None = None,
     ) -> None:
         self._schedules = schedules
         self._publish = publish
         self._cursor = cursor
         self._window = catch_up_window
+        # Registry skip rows with `start <= fire_time < end` (Story 2.3);
+        # None = no override source, exactly the Story 2.2 behaviour.
+        self._skips = skips
 
     async def dispatch(self, tick: TickFiredEvent, *, pending: int = 0) -> int:
         """Publish the tick's scheduled commands (after any misfire coalescing).
@@ -208,18 +261,36 @@ class Dispatcher:
             return 0
 
         entries = await self._schedules()
-        if ahead and minute - last > ONE_MINUTE:  # type: ignore[operator]
-            await self._coalesce(entries, last, tick)  # type: ignore[arg-type]
+        gap = ahead and minute - last > ONE_MINUTE  # type: ignore[operator]
+        # Overrides are read once per dispatched tick, before any command
+        # goes out (AD-13); a gap reads them back to the cursor.
+        overrides: dict[UUID, SkipSet] = {}
+        if self._skips is not None:
+            start = last + ONE_MINUTE if gap else minute  # type: ignore[operator]
+            overrides = group_skips(await self._skips(start, minute + ONE_MINUTE))
+        if gap:
+            await self._coalesce(entries, last, tick, overrides)  # type: ignore[arg-type]
         count = 0
         for entry in entries:
             if matches_tick(entry.schedule, minute):
+                reason = overrides.get(entry.id, NO_SKIPS).reason_for(minute)
+                if reason is not None:
+                    await self._publish(occurrence_skipped_for(entry, minute, reason, tick))
+                    log.info("skipped %s at %s (%s)", entry.name, tick.data.tick_id, reason)
+                    continue
                 await self._publish(command_for(entry, tick))
                 count += 1
         if self._cursor is not None and (last is None or minute > last):
             await self._cursor.advance(minute)
         return count
 
-    async def _coalesce(self, entries: list[ScheduleEntry], last: datetime, tick: TickFiredEvent) -> None:
+    async def _coalesce(
+        self,
+        entries: list[ScheduleEntry],
+        last: datetime,
+        tick: TickFiredEvent,
+        overrides: dict[UUID, SkipSet],
+    ) -> None:
         minute = tick.data.minute
         if minute - last > self._window:
             log.warning(
@@ -230,17 +301,26 @@ class Dispatcher:
                 self._window,
                 (minute - self._window).isoformat(),
             )
-        plans = plan_misfires(entries, last, minute, window=self._window)
+        plans = plan_misfires(entries, last, minute, window=self._window, skips=overrides)
         for plan in plans:
-            for fire in plan.skipped:
-                await self._publish(misfire_skipped_for(plan.entry, fire, tick))
-            await self._publish(misfire_command_for(plan.entry, plan.latest, tick))
+            overrides_for = overrides.get(plan.entry.id, NO_SKIPS)
+            facts = [(fire, None) for fire in plan.skipped]
+            facts += [(fire, overrides_for.reason_for(fire)) for fire in plan.overridden]
+            for fire, reason in sorted(facts, key=lambda f: f[0]):  # oldest first
+                if reason is None:
+                    await self._publish(misfire_skipped_for(plan.entry, fire, tick))
+                else:
+                    await self._publish(occurrence_skipped_for(plan.entry, fire, reason, tick))
+            if plan.latest is not None:
+                await self._publish(misfire_command_for(plan.entry, plan.latest, tick))
         log.info(
-            "tick %s closed gap after %s: %d misfire run(s), %d coalesced fire(s) skipped",
+            "tick %s closed gap after %s: %d misfire run(s), %d coalesced and %d "
+            "operator-skipped fire(s) recorded",
             tick.data.tick_id,
             last.isoformat(),
-            len(plans),
+            sum(1 for p in plans if p.latest is not None),
             sum(len(p.skipped) for p in plans),
+            sum(len(p.overridden) for p in plans),
         )
 
     async def handle_message(self, msg: object) -> None:

@@ -22,6 +22,7 @@ from ..registry.store import (
     create_registry_engine,
     get_dispatch_cursor,
     list_schedules,
+    list_skips,
     session_scope,
 )
 from .worker import Dispatcher
@@ -80,7 +81,18 @@ async def run_dispatcher(stop: asyncio.Event) -> None:
             async with session_scope(engine) as session:
                 return await list_schedules(session)
 
-        dispatcher = Dispatcher(schedules, sink.publish, cursor=RegistryTickCursor(engine, DURABLE))
+        async def skips(start: datetime, end: datetime):
+            # Operator overrides (Story 2.3): read from the registry per tick,
+            # never cached in dispatcher memory.
+            async with session_scope(engine) as session:
+                return await list_skips(session, start, end)
+
+        dispatcher = Dispatcher(
+            schedules,
+            sink.publish,
+            cursor=RegistryTickCursor(engine, DURABLE),
+            skips=skips,
+        )
         while not stop.is_set():
             try:
                 messages = await sub.fetch(1, timeout=1)
