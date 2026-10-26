@@ -2,7 +2,7 @@
 title: 'Story 7.15: Wave 9 — Dev Journal and reporting'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'in-review'
 route: 'dispatch'
 review_loop_iteration: 0
 baseline_commit: '79ce5de'
@@ -62,15 +62,15 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] infra timer headers + `systemd/user/README.md` -- commit+push delorenj/infra, record SHA
-- [ ] `~/.agents` jev-clairic snapshot marks 9b5dadbd1e4d migrated -- commit+push delorenj/agents, record SHA
-- [ ] fleet_health candybar source + tests; skill suite green -- commit+push delorenj/skills, bump the skillex pin, commit+push delorenj/skillex, record SHA
-- [ ] five manifests + five ledger entries (custom hermes disable/rollback pairs) -- commit candybar
-- [ ] `candybar migrate plan --write` per id (fills `unit_file`); commit ledger
-- [ ] cutover `dev-journal-reconcile` → `sync-daily-reports-to-s3` → `jev-rollup-cadence` → `dev-journal-nightly` → `dev-journal-ensure-nightly`; commit ledger after each
-- [ ] one manual `candybar run` for the three internal jobs; reconcile must fail with exit 3 exactly (parity), the other two succeed
-- [ ] `candybar migrate verify` wherever a first scheduled fire has landed (jev-rollup ≤10 min, reconcile ≤1 h); the rest stay `cutover` pending first fire
-- [ ] sprint-status 7-15 → review (only my line; another agent has uncommitted edits in the file)
+- [x] infra timer headers + `systemd/user/README.md` -- commit+push delorenj/infra, record SHA
+- [x] `~/.agents` jev-clairic snapshot marks 9b5dadbd1e4d migrated -- commit+push delorenj/agents, record SHA
+- [x] fleet_health candybar source + tests; skill suite green -- commit+push delorenj/skills, bump the skillex pin, commit+push delorenj/skillex, record SHA
+- [x] five manifests + five ledger entries (custom hermes disable/rollback pairs) -- commit candybar
+- [x] `candybar migrate plan --write` per id (fills `unit_file`); commit ledger
+- [x] cutover `dev-journal-reconcile` → `sync-daily-reports-to-s3` → `jev-rollup-cadence` → `dev-journal-nightly` → `dev-journal-ensure-nightly`; commit ledger after each
+- [x] one manual `candybar run` for the three internal jobs; reconcile must fail with exit 3 exactly (parity), the other two succeed
+- [x] `candybar migrate verify` wherever a first scheduled fire has landed (jev-rollup ≤10 min, reconcile ≤1 h); the rest stay `cutover` pending first fire
+- [x] sprint-status 7-15 → review (only my line; another agent has uncommitted edits in the file)
 
 **Acceptance Criteria:**
 - Given the five natives active, when the wave lands, then the chain holds as candybars `dev-journal-nightly` (06:00) → `dev-journal-ensure-nightly` (06:15) → `sync-daily-reports-to-s3` (06:30), each native scheduler probed retired, and no job ever on two or zero schedulers during cutover
@@ -79,9 +79,30 @@ context:
 
 ## Implementation Notes
 
+- **Foundation live-check (2026-10-26 ~13:10 EDT):** `https://candybar.delo.sh/healthz` 200; API definitions expose `timezone` and `enabled`, host `candybar-executor.service` active, `deploy-smoke-systemd` scheduled invocations succeed with metering (17:00 and 17:15 UTC). Five native jobs were active and scheduling in America/New_York. No daemon code changed; no container redeploy.
+- **Source of truth:** infra 4cd59522819cbd97b3dbfbde244f790b6ad46905 adds RETIRED headers to the three timer units and `systemd/user/README.md`; infra 7c1b7d2129cdc099de084d66c6549f601b00ee8d tracks the unversioned nightly wrapper's home (`scripts/README-dev-journal.md`) and marks the canonical script. Agents 584098d9ec560584b10252ce4b326cd47f5b0378 records jev-rollup's migrated state in its snapshot; agents 9a1cce1d7664b8276d80018ab841c7a7bdc74471 sets the versioned rollup source to executable 755.
+- **Collector:** skills 5ffb526fe346e999bc6ca1fabe4876ad217d7a0e adds the candybar API source and five stubbed-HTTP tests; c10180cc08a5ab065ef64c1fe40de8cbb3180560 stops counting externally scheduled Hermes jobs as ticker-owned; d798feac257d591cd0c4858f709784d3a71e92a4 lists successful candybars in detail too. Skillex pins end at eec54ddce911df9d96ccd6bf3a6fdaf88617abd5. A live collector pass read 77 candybars and rendered the migrated nightly/recovery/rollup jobs, with status `complete`. The skills suite is 450 passed + 820 subtests, 4 failing; all four fail identically on HEAD before this change (1713c60 switched skill lookup to profile dirs but the tests still build global skills dirs). New candybar tests: 6 passed.
+- **Cutovers:** reconcile `bf8ebdd` (13:42 EDT), S3 sync `dcd3fad` (13:43), jev-rollup `47f6b74` (13:44), nightly `c2eeabf` (13:45), ensure-nightly `bd57925` (13:45). The two Hermes jobs are both `enabled=false`, `state=paused`, `scheduler=external`; the three timers are inactive/not-found after `disable --now`; all five candybars are enabled and `candybar migrate status --probe --wave 7.15` reports native=retired. Every ledger mutation was committed/pushed, including source-of-truth updates in `fce2366`.
+- **Immediate failure and rollback (jev-rollup):** the first manual candybar run failed with `PermissionError: [Errno 13]` on the versioned source (mode 644, while Hermes's profile copy was 755). Immediately ran `candybar migrate rollback` (restored Hermes before disabling candybar), committed mode 755 in agents 9a1cce1, then re-cut over (`22087c3`) and repeated the one manual run; it succeeded (165 ms, 13.98 MB). The first scheduled fire at 13:50 EDT succeeded (exit 0, 290 ms, 16.48 MB, cpu 0.659); `candybar migrate verify` marked it verified (`79943b0`). It is not in the final rolledBack list: the native scheduler is retired again and candybar owns it.
+- **Other manual proofs:** reconcile returned `fail` exit=3, 1.025s, 19.65 MB — exact parity with the native timer's `ExecMainStatus=3`. S3 mirror returned `success` exit=0, 2.021s, 14.07 MB. Both systemd runner invocations installed `<unit>.d/50-candybar.conf` and the holder reference automatically; ensure-nightly's drop-in awaits its first scheduled fire. External jobs (`dev-journal-nightly` and `dev-journal-ensure-nightly`) were not manually run.
+- **Verification:** candybar suite 1104 passed, 71 skipped; `ruff check .` clean. No daemon code changed. Healthz stayed 200. `candybar migrate status --probe --wave 7.15`: all five natives retired, all five candybars enabled; jev-rollup verified, the four others pending first scheduled fire (nightly/recovery/S3 tomorrow morning; reconcile at 14:00 EDT).
+- **Review (inline, no subagent capability):** The three bmad-build review lenses were executed inline. Blind-hunter found the 644 source-script mode (the immediate rollback above) and the collector detail omission (successful candybars invisible); both are fixed with a failing-on-first-cut probe/test. Edge-case-hunter identified the pre-7.17 ticker's inert external pin (pin+pause was in the spec/ledger before cutover, live jobs.json confirms both flags) and linked-unit rollback by path (the `plan --write` resolved absolute paths). Verification-gap identified the lack of first-fire proof for four jobs; it is recorded as pending, not falsely marked verified. The collector's 4 pre-existing stale tests remain deferred to its owner; nothing from this wave changed their failure set.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+Inline review layers (no subagent tool in this session). Findings verified against the diff and live state.
+
+| # | Finding | Verdict | Evidence / route |
+|---|---------|---------|------------------|
+| 1 | Jev-rollup's versioned source was mode 644; exec runner could not spawn it | high | Real: first manual run `PermissionError`; immediate `candybar migrate rollback`, fixed source mode 755 (agents 9a1cce1), re-cut over, repeat manual run success; first scheduled fire verified. |
+| 2 | Fleet collector listed only failed/disabled/no-run candybars; successful migrated jobs were invisible in the report detail | medium | Real: live pass showed a summary count but no successful jobs; collector d798fea renders one bounded line per candybar, test covers success. |
+| 3 | `scheduler=external` Hermes job can stay enabled in agent-mode wave 7.17, but collector counted it as ticker-owned and displayed stale last_status/next_run_at | medium | Real: live 7.17 jobs already pin external while enabled; collector c10180c excludes them from Hermes active count and directs detail to candybar registry. |
+| 4 | Pin-only retirement is inert in the running gateway until wave 7.17 restart | high | Real and already handled before cutover: both no-agent jobs use `cron edit --scheduler external` AND `cron pause`; jobs.json has enabled=false/state=paused/scheduler=external. |
+| 5 | Systemd `disable` of a linked unit removes the name link; rollback-by-name fails | medium | Real and already handled by `plan --write`: absolute unit_file paths stored for all three timers; no ad hoc disable commands. |
+| 6 | Four jobs have no first scheduled fire yet (06:00/06:15/06:30 tomorrow; reconcile 14:00 today) | low | Expected temporal gap, not a defect: ledger status remains `cutover`, not `verified`; first-fire verification is pending. |
+| 7 | Four fleet_health skill-resolution tests fail on the unchanged HEAD | low | Pre-existing: 1713c60 moved lookup to profile skills dirs, but tests still build global skills dirs; compared baseline vs current, exact same four fail. Rejected as unrelated; the six new tests pass. |
 
 ## Design Notes
 
