@@ -195,10 +195,12 @@ def test_single_database_failure_is_500_problem(noise: Rig, monkeypatch: Any) ->
 
 
 def test_batch_replaces_the_collection(noise: Rig) -> None:
-    noise.add("a", noise=True)
-    b = noise.add("b", noise=True)
-    c = noise.add("c")
-    noise.add("d")
+    # Ids run opposite to registration order, so the answer's order can only
+    # come from (created_at, id), never from id or lock order.
+    noise.add("a", noise=True, id=UUID(int=4))
+    b = noise.add("b", noise=True, id=UUID(int=3))
+    c = noise.add("c", id=UUID(int=2))
+    noise.add("d", id=UUID(int=1))
     resp = client(noise).put("/noise/batch", json={"ids": [str(c.id), str(b.id), str(c.id)]})
     assert resp.status_code == 200
     # The resulting collection, oldest candybar first (b registered before c).

@@ -180,15 +180,20 @@ def test_lock_noise_batch_holds_exactly_the_rows_a_batch_can_change(
     async def scenario() -> None:
         engine = create_registry_engine(migrated_db)
         try:
+            # Insert in DESCENDING id order, so heap (scan) order is the reverse
+            # of id order: only the statement's ORDER BY can return id order.
+            names = [("lock-n1", True), ("lock-n2", True), ("lock-x", False), ("lock-y", False)]
+            minted = sorted((uuid7() for _ in names), reverse=True)
             async with session_scope(engine) as session:
                 made = {}
-                for name, noisy in [("lock-n1", True), ("lock-n2", True), ("lock-x", False),
-                                    ("lock-y", False)]:
+                for (name, noisy), candybar_id in zip(names, minted, strict=True):
                     made[name] = await insert_candybar(
                         session, CandybarManifest(name=name, schedule="* * * * *",
                                                   entrypoint="/bin/true", noise=noisy),
+                        candybar_id=candybar_id,
                     )
             n1, n2, x, y = (made[n].id for n in ("lock-n1", "lock-n2", "lock-x", "lock-y"))
+            assert [n1, n2, x] == sorted([n1, n2, x], reverse=True)
             ghost = uuid7()
 
             async with session_scope(engine) as session:

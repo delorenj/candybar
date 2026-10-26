@@ -2,7 +2,7 @@
 title: 'Story 5.5: Noise collection endpoints'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: '02b1559e16246ff137a744cc94d656e580d2b985'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -113,6 +113,33 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+The three layers ran inline because this session has no subagent tool: blind-hunter, edge-case-hunter (with the deletion and claims checks) and verification-gap. This is the same deviation as 1.1 to 5.4. The blind-hunter floor was N = min(floor(sqrt(44.1) + 1), 10) = 7.
+
+| # | Layer | Finding | Verdict | Evidence / route |
+|---|-------|---------|---------|------------------|
+| 1 | verification-gap | `lock_noise_batch`'s id order, the batch-vs-batch deadlock guard, was only verified by chance. uuid7 ids minted in the same millisecond insert in random id order, so dropping `ORDER BY` failed the live test in 1 of 6 runs. | low | Patched: the live test inserts rows in descending id order, so only the `ORDER BY` can return id order. The mutation now fails 5 of 5 runs. |
+| 2 | verification-gap | The batch answer's `(created_at, id)` order was only verified by chance. The rig's uuid4 ids made sorting by id pass about half the time. | low | Patched: the unit test gives ids that run opposite to registration order. Sorting by id now fails 3 of 3 runs. |
+| 3 | blind-hunter | The batch holds its row locks across up to N sequential bus publishes, so a slow bus delays executor counter writes on those candybars. | low | Rejected. This is an operator-rate call, and a dead bus fails the first publish inside the publish timeout. The fix (concurrent publishes or a later lock) changes the partial-failure semantics. |
+| 4 | blind-hunter | A partially published batch leaves facts on the bus for flags that never changed, so the stream shows them until a retry or refetch. | low | Rejected: the frozen Never rule. The 503 says retry, replace semantics make a retry converge, and 5.1's rename race carries the same event-first caveat. |
+| 5 | blind-hunter | The unknown ids appear only in the free-text `detail`, truncated at 500 characters, with no machine-readable list. | low | Rejected: the fix adds public problem surface. Unknown ids need a stale client, since no delete path exists in `src/`. |
+| 6 | blind-hunter | An unknown candybar is a 404 on the single routes and a 422 in the batch body. | low | Rejected: a recorded decision. The batch route exists; its body names missing things. |
+| 7 | blind-hunter | The noise routes skip the merged-manifest validation PATCH applies, so `PATCH {noise}` can 422 on a row whose other stored fields no longer validate while `PUT .../noise` succeeds. | low | Rejected: toggling noise should not depend on unrelated fields. PATCH's whole-definition check is 5.1's frozen rule. |
+| 8 | blind-hunter | The live round-trip test disposes its engine only on the success path. | low | Rejected: NullPool holds no connections, and this is test-only. |
+| 9 | blind-hunter | Each fact in a batch makes the stream hub do a registry read (`_refresh_current`). | low | Rejected: operator-rate events, the precedent of 5.4 #9. |
+| 10 | blind-hunter | `NOISE_BATCH_MAX` caps the whole collection under replace semantics. | low | Rejected: the registry holds tens of candybars, and the cap is documented in the README. |
+| 11 | blind-hunter | There is no CLI for the noise collection. | low | Rejected: the contract is the API, as in 5.1. |
+| 12 | edge-case-hunter | A request cancelled between batch publishes (role stop) leaves earlier facts out while `session_scope` rolls the rows back. | low | Rejected: the same caveat as #4, and `session_scope` rolls back on BaseException, so no row is half-applied. |
+| 13 | edge-case-hunter | The 422 detail joins up to 10,000 unknown ids before slicing to 500 characters. | low | Rejected: bounded by the cap, about 360 KB once per refused request. |
+| 14 | edge-case-hunter (claims) | The Tasks line names `noise_batch_keys()`; the code ships `noise_batch_fields()`. | low | Rejected: naming only, recorded in Implementation Notes. |
+| 15 | edge-case-hunter (claims) | Other claims checked: no stream or schedule code change (the diff touches neither file); only register, PATCH and the noise routes write `noise` (grep of `src/`); facts before writes; one transaction; dedupe; `[]` clears; the lock set; every error status; no new event type. | — | None falsified except #14. Deletion check: only an import reflow and a CI comment line were replaced; nothing qualifies. |
+
+Real-daemon smoke on throwaway nats:2.10.29 and postgres:17-alpine, with `candybar daemon --roles api` and `curl -N` on `/schedule/stream`:
+- Two real registrations, then PUT, a no-op PUT, a batch, an unknown-id batch, and DELETE.
+- Each changed flag streamed `definition.changed` with `changes: {noise}`. The no-op and the refused batch streamed nothing.
+- `GET /candybars` read back the final flags.
+- SIGTERM stopped the role in 308 ms.
+- Everything was torn down. The live candybar container was not touched.
 
 ## Design Notes
 
