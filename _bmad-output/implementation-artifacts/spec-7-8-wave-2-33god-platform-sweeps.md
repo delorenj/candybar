@@ -54,10 +54,10 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] 7x owning-repo source-of-truth edits above -- commit + push each; record the sha in the ledger entry's `source_of_truth.commit`
-- [ ] `deploy/migration/ledger.yaml` -- 7 entries with cron/tz/deviations/native_failing per inventory; `candybar migrate plan --write` fills `unit_file` + default disable/rollback; commit
-- [ ] 7x `candybar migrate cutover <id> --wait 600` -- register disabled -> retire timer -> enable; commit ledger after each batch
-- [ ] 7x manual `candybar run <id>` then read the invocation row -- success (skillex: exit 1 parity); roll back any real failure via `candybar migrate rollback`
+- [x] 7x owning-repo source-of-truth edits above -- commit + push each; record the sha in the ledger entry's `source_of_truth.commit`
+- [x] `deploy/migration/ledger.yaml` -- 7 entries with cron/tz/deviations/native_failing per inventory; `candybar migrate plan --write` fills `unit_file` + default disable/rollback; commit
+- [x] 7x `candybar migrate cutover <id> --wait 600` -- register disabled -> retire timer -> enable; commit ledger after each batch
+- [x] 7x manual `candybar run <id>` then read the invocation row -- success (skillex: exit 1 parity); roll back any real failure via `candybar migrate rollback`
 - [ ] `candybar migrate verify <id>` per job once its first scheduled fire lands; commit ledger; jobs whose first fire is far out go to pendingFirstFire
 - [ ] `sprint-status.yaml` 7-8 -> review; this spec -> done; commit + push (candybar repo)
 
@@ -76,6 +76,14 @@ context:
 - `cd <owning repo> && git log --oneline -1` per repo -- the source-of-truth commit is on origin
 
 ## Implementation Notes
+
+- Seven owning-repo source-of-truth commits pushed: bloodbank `3bced422fdedb333a994eab751ad9ad548bfc3de`; candystore `175a54dc5ab1990e83005afbd1052c1b513449ce`; holocene `95529e9eab7e48bb223364acd5a18da8b4760988`; hermes-agent-template `fb2d8fd78e6b3e958254cd4bf3e1a574436bf022` (flume submodule pointer bumped in `24634ee`); skillex `7a0becd7fa06bad73289bf60a2835b76686d6cbb` + installer test `e19780b`; naipkins `14db6532f824b88299120b1d5ac353b1d73f2051`; delonet-n8n-workflows `2be096eccf868baf0afe3432de64de742289b011`.
+- The ledger plan (commit `6a011dc`) was authored against a stale shared checkout during concurrent wave commits; it dropped 23 other-wave records on origin. Another agent restored the union in `1365145`. My seven entries, their full source-of-truth commits, and all other waves' records are intact. Future wave writes must merge by inventory id, not replace the whole shared ledger from a stale tree.
+- All seven cutovers used `candybar migrate cutover` with `--wait` as needed. Each registered disabled, retired its native timer, then enabled the candybar. The `.service` units stayed and the executor installed its own `50-candybar.conf` drop-in. `skillex-hermes-resync.path` remains active/enabled.
+- Every job received one `candybar run` manual invocation; six succeeded and skillex failed with exit 1 exactly as it did natively. Holocene's first manual invocation was coalesced with a scheduled fire, so a second manual invocation was sent and succeeded.
+- First scheduled fires verified in the ledger: bloodbank-agent-hooks-health `b43cf1ab-fdff-5161-8a87-dd702d9dbd6e`, holocene-pad-roster `2dbcf9e2-159a-5743-99cb-93c2c1a92f3c`, naipkins-registry-snapshot `1146c109-c204-5495-b7e1-6fadc1599412`, hermes-single-install-guard `6dfcb340-9451-528c-9e20-5b4b693bd9f8`, delonet-n8n-workflows-sync `8db145e7-efca-5ff9-8eb4-f1b7d4d8d734`. Skillex's first scheduled fire is 17:52Z; candystore's is 18:05Z. Both are pending first-fire proof at 17:45Z.
+- Seven manifests committed at `deploy/migration/manifests/<name>/candybar.toml` (commit `811f768`), validated by `load_manifest`. No daemon code was changed and no container redeploy was made.
+- Verification: `/healthz` 200; executor active; seven candybars enabled and seven timers retired (`migrate status --wave 7.8 --probe`). Live first-fire rows carry nonzero memory metering. `skillex-hermes-resync.path` still active. No job was rolled back.
 
 ## Spec Change Log
 
