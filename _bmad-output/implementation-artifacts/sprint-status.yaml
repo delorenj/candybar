@@ -42,7 +42,7 @@ development_status:
   1-4-registry-bootstrap-and-register-a-candybar-from-candybar-tom: review
   1-5-dispatcher-evaluates-schedules-off-the-tick: review
   1-6-executor-runs-a-bare-executable-and-records-the-result: review
-  1-7-basic-prometheus-metrics-and-metrics-endpoint: backlog
+  1-7-basic-prometheus-metrics-and-metrics-endpoint: in-progress
   1-8-manual-invoke-via-candybar-run-id: backlog
   1-9-deployment-envelope-on-the-delo-sh-stack: backlog
   epic-1-retrospective: optional
