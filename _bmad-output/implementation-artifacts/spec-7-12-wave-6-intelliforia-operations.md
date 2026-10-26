@@ -2,7 +2,7 @@
 title: 'Story 7.12: Wave 6 — IntelliForia operations (4 jobs)'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 0
 baseline_commit: '8576544'
@@ -58,11 +58,11 @@ context:
 
 **Execution:**
 - [x] Confirm foundations live: `/healthz` 200, `candybar-executor.service` active, `deploy-smoke-systemd` canary succeeding with metering (17:00Z run, memory 3.0 MB)
-- [ ] intelliforia repo: `infra/pull-prod/` tracked home + install.sh; `infra/client-health/install.sh` stops enabling timers; staging README/timer/mise comment updated; commit + push
-- [ ] Ledger: add 4 entries (wave 7.12), `plan --write`, record the intelliforia commit sha, commit ledger
-- [ ] Cut over all four jobs with `candybar migrate cutover`; commit ledger
-- [ ] Manual `candybar run` smoke for `intelliforia-client-health` and `intelliforia-client-health-monday` (internal); must succeed
-- [ ] Spec + sprint-status updates; commit + push candybar
+- [x] intelliforia repo: `infra/pull-prod/` tracked home + install.sh; `infra/client-health/install.sh` stops enabling timers; staging README/timer/mise comment updated; commit + push (9ff09c5d)
+- [x] Ledger: add 4 entries (wave 7.12), `plan --write`, record the intelliforia commit sha, commit ledger (d14d229)
+- [x] Cut over all four jobs with `candybar migrate cutover`; commit ledger (0b0b1c7)
+- [x] Manual `candybar run` smoke for `intelliforia-client-health` and `intelliforia-client-health-monday` (internal); both succeeded
+- [x] Spec + sprint-status updates; commit + push candybar
 
 **Acceptance (from epics.md Story 7.12):**
 - Ordering holds: pull-prod 04:15 → client-health 05:30 (ExecStartPre wait intact — unit unchanged) and staging-track-main 07:05 weekdays stands down while pull-prod is active
@@ -76,4 +76,37 @@ context:
 - Wave-5 dependency ("Given Wave 5 done") is not met (ledger is empty; waves run concurrently per the orchestrator). Proceeding: nothing in wave 6 depends on wave 5's jobs, and the intra-chain ordering is preserved by the unchanged units.
 - Cutover window: all four next native fires are ≥15h out at cutover time (13:1x EDT); the 2-minute guard is nowhere near binding.
 - `intelliforia-client-health.timer` installed copy is a plain file (not a `systemctl link`), but rollback still enables by resolved path per the AD-21 default.
+
+## Results (2026-10-26)
+
+**Cutovers (all four, one scheduler each at every step):**
+
+| inventory id | candybar | id | first fire |
+|---|---|---|---|
+| systemd:intelliforia-pull-prod.timer | intelliforia-pull-prod | 01a17938-39bc-74a6-a5d3-26e2d01f9f75 | Tue 04:15 EDT (2026-10-27T08:15Z) |
+| systemd:intelliforia-client-health.timer | intelliforia-client-health | 01a17938-56bc-7741-aba0-83c8ba8cf906 | Tue 05:30 EDT |
+| systemd:intelliforia-client-health-monday.timer | intelliforia-client-health-monday | 01a17938-5cb9-7594-a7a6-f6a3e96e3a4b | Mon 2026-11-02 08:30 EST (13:30Z — correct across the Nov 1 DST end) |
+| systemd:intelliforia-staging-track-main.timer | intelliforia-staging-track-main | 01a17938-6222-7abf-b39e-41495eff680f | Tue 07:05 EDT |
+
+**Verification:**
+- Foundations live before cutover: `/healthz` 200, `candybar-executor.service` active, `deploy-smoke-systemd` canary succeeding with metering (17:00Z, memory 3.0 MB).
+- `migrate status --wave 7.12 --probe`: all four `cutover`, candybar enabled, native=retired.
+- Manual runs (internal jobs): `intelliforia-client-health` success in 1.3 s (journal: "health snapshot … (12 organizations)", "no tripwires fire today"), metered memory 39 MB / cpu 0.53; `intelliforia-client-health-monday` success, exit 0, metered 36 MB. Both ran through the candybar drop-in/holder path on the unchanged units.
+- External jobs (pull-prod, staging-track-main) were NOT manually run (AD-21); their first scheduled fires tomorrow morning are the proof. Ledger `verify` stays pending for all four until then.
+
+**Commits:** intelliforia 9ff09c5d (source of truth); candybar d14d229 (plan), 0b0b1c7 (cutover ledger).
+
+## Independent Review (2026-10-26)
+
+Review layers ran inline (no subagent capability in this session — same documented deviation as 7.1-7.6).
+
+- **AC1 (ordering):** schedules registered exactly as inventoried; the ExecStartPre wait and track-main stand-down live in the unchanged units/scripts. Holds by construction; observable at tomorrow's 04:15/05:30/07:05 fires.
+- **AC2 (tracked home + pushed):** infra/pull-prod/ created with verbatim unit copies + repo-sync; install.sh refuses (exit 1, warning) to leave an enabled timer outside a rollback. Holds.
+- **AC3 (SuccessExitStatus=75):** the systemd runner's verdict comes from the unit's `Result` property (systemd_runner.py), and systemd reports `success` for exit 75 under `SuccessExitStatus=75`. The unit is unchanged, so the mapping is systemd's own. Holds by construction; a live 75 needs an unreachable droplet and was not forced.
+- **AC4 (env preserved):** `CLIENT_HEALTH_NOTIFY_CAIT=0` is a unit `Environment=` line (untouched); the ntfy token is `op read` by the script at runtime over the unit's PATH (untouched). The manual run exercised exactly this path and succeeded.
+- **AC5 (no manual runs of staging-touching jobs):** honored.
+- **Rejected candidate finding:** pull-prod's RandomizedDelaySec=15m drop means the candybar fires at 04:15 sharp where the timer fired 04:15-04:30. Recorded as an accepted deviation in the ledger (the jitter existed to avoid hammering prod at a round number alongside on-the-hour jobs; 04:15 is not on the hour and the inventory classified the job migrate with the cron `15 4 * * *`).
+- **Rejected candidate finding:** both client-health manual runs started in the same second. They are distinct units with no shared lock; the nightly pull-prod ordering guard only matters against pull-prod, which was idle. Not a defect.
+
+**Deferred:** none. Ledger `verify` for the four entries completes at their first scheduled fires (orchestrator/owner follow-up; external jobs tracked in the story's pendingFirstFire report).
 </content>
