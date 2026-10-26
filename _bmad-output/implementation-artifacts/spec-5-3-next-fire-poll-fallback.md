@@ -2,7 +2,7 @@
 title: 'Story 5.3: Next-fire poll fallback'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'd974adb1d6f3ff5f7ae5efcd252985fc6fa8d5d3'
 route: 'dispatch'
 review_loop_iteration: 0
