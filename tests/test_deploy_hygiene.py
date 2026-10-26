@@ -42,6 +42,23 @@ def test_repo_deploy_surfaces_are_clean() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_gate_fails_loudly_without_ripgrep(tmp_path: Path) -> None:
+    # The Ubuntu 26 runner image dropped ripgrep; without this guard every
+    # scan silently returned empty and the gate printed OK over unchecked
+    # files (CI run 40275446031). Exit 2 = tooling error, never clean.
+    _plant(tmp_path, "NATS_URL=nats://192.168.1.50:4222\n")
+    result = subprocess.run(
+        ["/bin/bash", str(SCRIPT), str(tmp_path)],  # absolute: PATH is stripped below
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env={"PATH": str(tmp_path)},
+    )
+    assert result.returncode == 2
+    assert "ripgrep" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("line", "label"),
     [

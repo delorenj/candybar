@@ -16,6 +16,15 @@
 
 set -uo pipefail
 
+# rg drives every scan. If it is missing, every scan below would return
+# empty and the gate would print OK over unchecked files — a green CI lying
+# about the one thing it exists to check (this happened: the Ubuntu 26
+# runner image dropped ripgrep). Fail LOUDLY instead.
+if ! command -v rg >/dev/null 2>&1; then
+    echo "check-deploy-hygiene: ERROR: ripgrep (rg) not on PATH — cannot scan" >&2
+    exit 2
+fi
+
 ROOT="${1:-$(git rev-parse --show-toplevel)}"
 cd "$ROOT"
 
@@ -38,8 +47,14 @@ FAIL=0
 
 report() {
     local label="$1" pattern="$2"
-    local hits
-    hits=$(rg --no-heading -n -e "$pattern" -- "${TARGETS[@]}" 2>/dev/null)
+    local hits rc
+    hits=$(rg --no-heading -n -e "$pattern" -- "${TARGETS[@]}")
+    rc=$?
+    # rg: 0 = hits, 1 = clean, 2 = actual error (never swallow it)
+    if [[ $rc -eq 2 ]]; then
+        echo "check-deploy-hygiene: ERROR: rg failed during '$label' scan" >&2
+        exit 2
+    fi
     if [[ -n "$hits" ]]; then
         echo "check-deploy-hygiene: FAIL ($label)" >&2
         echo "$hits" >&2
@@ -58,6 +73,10 @@ report "private key block" \
 
 # Secret-shaped assignments, line-filtered: op:// references, shell ${...}
 # interpolation and empty values are the sanctioned shapes.
+SECRET_HITS=$(rg --no-heading -n -i \
+    '(password|passwd|secret|api[_-]?key|access[_-]?token)["'"'"']?\s*[:=]\s*["'"'"']?[A-Za-z0-9_/+.@-]{8,}' \
+    -- "${TARGETS[@]}")
+[[ $? -eq 2 ]] && { echo "check-deploy-hygiene: ERROR: rg failed during secret scan" >&2; exit 2; }
 while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     case "$line" in
@@ -66,12 +85,13 @@ while IFS= read -r line; do
     echo "check-deploy-hygiene: FAIL (plaintext secret)" >&2
     echo "$line" >&2
     FAIL=1
-done < <(rg --no-heading -n -i \
-    '(password|passwd|secret|api[_-]?key|access[_-]?token)["'"'"']?\s*[:=]\s*["'"'"']?[A-Za-z0-9_/+.@-]{8,}' \
-    -- "${TARGETS[@]}" 2>/dev/null)
+done <<< "$SECRET_HITS"
 
 # DSN userinfo passwords (scheme://user:PASSWORD@host). op:// references are
 # stripped before the re-check so `...:op://...@...` is sanctioned.
+DSN_HITS=$(rg --no-heading -n '[a-zA-Z][a-zA-Z0-9+.-]*://[^/@\s:]+:[^/@\s]+@' \
+    -- "${TARGETS[@]}")
+[[ $? -eq 2 ]] && { echo "check-deploy-hygiene: ERROR: rg failed during DSN scan" >&2; exit 2; }
 while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     stripped=$(printf '%s' "$line" | sed 's|op://[^@/ "]*||g')
@@ -80,8 +100,7 @@ while IFS= read -r line; do
         echo "$line" >&2
         FAIL=1
     fi
-done < <(rg --no-heading -n '[a-zA-Z][a-zA-Z0-9+.-]*://[^/@\s:]+:[^/@\s]+@' \
-    -- "${TARGETS[@]}" 2>/dev/null)
+done <<< "$DSN_HITS"
 
 if [[ "$FAIL" -eq 0 ]]; then
     echo "check-deploy-hygiene: OK (${#TARGETS[@]} surfaces scanned)"

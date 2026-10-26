@@ -65,9 +65,15 @@ jobs:
         run: uv run ruff check .
 
       # Story 1.9: AD-15 grep gate — no LAN IPs or plaintext-secret shapes on
-      # deploy surfaces, enforced on every push.
+      # deploy surfaces, enforced on every push. ripgrep is not guaranteed on
+      # the runner image (Ubuntu 26 dropped it) — install it; the script
+      # exit(2)s loudly if rg is missing so the gate can never pass vacuously.
       - name: Deploy hygiene gate (no LAN IPs / plaintext secrets)
-        run: bash scripts/check-deploy-hygiene.sh
+        run: |
+          if ! command -v rg >/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+          fi
+          bash scripts/check-deploy-hygiene.sh
 
       # Story 1.9: the deployment envelope must build on every push. The
       # image entrypoint migrates the registry first, so the CLI smoke
