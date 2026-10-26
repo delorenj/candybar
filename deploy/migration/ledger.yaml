@@ -2801,15 +2801,19 @@ jobs:
   rollback:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 8da3f24263f9 --scheduler internal'
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron resume 8da3f24263f9'
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17951-0470-7f83-8bbd-dfa5c7ce30f2
+  cutover_at: '2026-10-26T17:45:21.922759Z'
   verification:
     invocation_id: null
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:45:21.922759Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17951-0470-7f83-8bbd-dfa5c7ce30f2 enabled; first fire 2026-10-27T10:00:00Z
 - id: systemd:dev-journal-ensure-nightly.timer
   wave: '7.15'
   candybar:
