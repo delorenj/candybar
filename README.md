@@ -144,6 +144,24 @@ If only the dispatcher role was down while the heartbeat kept publishing,
 the queued ticks are acked without dispatch, and the newest one coalesces the
 whole backlog. A fresh install, which has no cursor yet, never misfires.
 
+**Skipping one occurrence (AD-13).** A row in the registry `skips` table
+with `kind=occurrence` and a UTC `fire_time` suppresses that one fire of that
+candybar. The dispatcher reads skips on every tick, before it emits any
+command. A skipped fire gets no invoke command and no `invocations` row.
+Instead it is recorded as `bloodbank.cron.candybar.skipped` with
+`reason=occurrence`. Later fires dispatch normally.
+
+- Inside a misfire gap, a skipped fire is never the one that runs; the latest
+  missed fire that is not skipped runs instead.
+- Skips only affect scheduled fires. `candybar run` is unaffected, and so is a
+  fire whose tick was already dispatched before the skip was stored.
+- The shared helpers in `dispatcher/schedule.py` (`next_fire`,
+  `fires_between`, `previous_fire`) omit skipped fires, so the dispatcher
+  and the Epic 5 schedule API compute the same fire times.
+
+Write a skip through `registry.store.add_occurrence_skip`. It is idempotent
+and rejects an unknown candybar. The HTTP endpoint lands with Story 5.6.
+
 ## Metrics (Prometheus, AD-9)
 
 The api role serves `GET /metrics` (same port as the API) for everything the
