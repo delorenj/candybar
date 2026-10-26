@@ -302,3 +302,58 @@ def test_resource_metering_round_trip_and_constraints(migrated_db: str) -> None:
         pytest.raises(Exception, match="invocations_metering_nonnegative"),
     ):
         conn.execute(text("UPDATE invocations SET cpu_load = -1"))
+
+
+def test_dispatch_cursor_is_owner_only_monotonic_and_utc(migrated_db: str) -> None:
+    """Story 2.2: migration 0003's cursor row only ever moves forward, and the
+    schedule inventory carries created_at for the misfire floor."""
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+
+    from candybar.registry import advance_dispatch_cursor, get_dispatch_cursor
+    from candybar.registry.store import list_schedules
+
+    with create_engine(migrated_db).connect() as conn:
+        relacl = conn.execute(
+            text("SELECT relacl FROM pg_class WHERE relname = 'dispatch_cursor'")
+        ).scalar_one()
+        assert relacl is None  # owner-only, like the ERD tables (AD-10)
+
+    base = datetime(2026, 10, 26, 10, 0, tzinfo=UTC)
+
+    async def scenario() -> None:
+        engine = create_registry_engine(migrated_db)
+        try:
+            async with session_scope(engine) as session:
+                assert await get_dispatch_cursor(session, "d") is None
+                await advance_dispatch_cursor(session, "d", base)
+            # Concurrent advances (two dispatchers, redelivered older ticks):
+            # the row converges on the newest minute, never rewinds.
+            minutes = [base + timedelta(minutes=m) for m in (5, 2, 9, 1, 7, 9, 3)]
+
+            async def advance(minute: datetime) -> None:
+                async with session_scope(engine) as session:
+                    await advance_dispatch_cursor(session, "d", minute)
+
+            await asyncio.gather(*(advance(m) for m in minutes))
+            await advance(base)  # an old replay
+            async with session_scope(engine) as session:
+                got = await get_dispatch_cursor(session, "d")
+                assert got == base + timedelta(minutes=9) and got.utcoffset() == timedelta(0)
+                assert await get_dispatch_cursor(session, "other") is None  # keyed by durable
+            with pytest.raises(ValueError, match="minute boundary"):
+                await advance(base + timedelta(seconds=30))
+            with pytest.raises(ValueError, match="UTC"):
+                await advance(datetime(2026, 10, 26, 10, 0))
+            async with session_scope(engine) as session:
+                row = await insert_candybar(
+                    session,
+                    CandybarManifest(name="cursor-inv", schedule="* * * * *", entrypoint="/bin/true"),
+                )
+            async with session_scope(engine) as session:
+                (entry,) = [e for e in await list_schedules(session) if e.id == row.id]
+                assert entry.created_at is not None and entry.created_at.tzinfo is not None
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

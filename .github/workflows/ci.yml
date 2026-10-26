@@ -201,8 +201,10 @@ jobs:
       # Postgres, with tick redelivery, command redelivery and a dispatcher
       # death mid-tick. It resets the BLOODBANK_* streams (throwaway bus only;
       # it refuses foreign traffic) and leaves them empty for the steps below.
-      - name: "Integration tests (dispatch fault injection: live NATS + Postgres)"
-        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 CANDYBAR_TEST_FAULT=1 uv run pytest tests/test_dispatch_fault_injection_integration.py -q
+      # Story 2.2 adds misfire coalescing on the same throwaway pair: a
+      # whole-daemon gap, a real dispatcher-only tick backlog, and the 24h cap.
+      - name: "Integration tests (dispatch fault injection + misfire coalescing: live NATS + Postgres)"
+        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 CANDYBAR_TEST_FAULT=1 uv run pytest tests/test_dispatch_fault_injection_integration.py tests/test_misfire_integration.py -q
         env:
           NATS_URL: nats://127.0.0.1:4222
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
