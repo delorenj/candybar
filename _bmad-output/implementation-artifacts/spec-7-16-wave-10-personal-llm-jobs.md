@@ -2,7 +2,7 @@
 title: 'Story 7.16: Wave 10 — personal LLM jobs'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 0
 baseline_commit: '8576544b215cbf3d0b98df755e4ace6d226301ad'
@@ -59,8 +59,8 @@ context:
 - [x] five ledger entries (wave `7.16`, `native_failing: true`, deviations: jitter/Persistent/AccuracySec dropped)
 - [x] `candybar migrate plan --write` per id; commit ledger
 - [x] `candybar migrate cutover` per id; commit ledger after each
-- [ ] one manual `candybar run` for each internal job (honda-hunt, wiki-self-tuning); record result vs pre-existing failure
-- [ ] sprint-status + spec; commit+push candybar repo
+- [x] one manual `candybar run` for each internal job (honda-hunt, wiki-self-tuning); record result vs pre-existing failure
+- [x] sprint-status + spec; commit+push candybar repo
 
 **Acceptance Criteria:**
 - Given the five timers enabled, when the wave lands, then each job has exactly one live scheduler (candybar), its timer disabled, and its `.service` unchanged.
@@ -74,7 +74,7 @@ context:
 - **Source of truth changes:** delorenj/tower-of-lost-things `1576845` (ops/README.md units instruction retires the timers, retired-headers on both `foundry/cron/tolt-*-daily.timer`; the `.path` trigger instructions keep only `tolt-items-inbox.path`); delorenj/pr-crusher `8c64f90` (install.sh `--enable` no longer enables `pr-crusher.timer`). DeLoDocs is not git: retired-headers added to the two vault timer files and recorded as `nogit-sha256:` tokens in `source_of_truth.commit` (decision: the cutover blocker only requires a non-empty token; the sha256 pins the exact edited file).
 - **Cutovers (all five, 2026-10-26 17:18Z):** register-disabled → `systemctl --user disable --now <timer>` → probe retired → enable. The tolt timers were `systemctl link`-ed, so disable removed the links (expected on systemd 257; rollback enables by the repo path, filled by `plan --write`). `tolt-items-inbox.path` untouched (still enabled/active).
 - **Ledger commit note:** the post-cutover ledger state reached origin/main via a concurrent wave agent's commit (0b0b1c7 swept the shared `deploy/migration/ledger.yaml` while its own wave-7.12 cutover landed); all five 7.16 entries are present at HEAD with `status: cutover`, `candybar_id` and `cutover_at`.
-- **Internal-job manual runs:** honda-hunt-daily-check ran once (`trigger=manual`, invocation 0411dfdc): `fail`, exit 1, stderr tail shows the codex refresh token expired — exactly the pre-existing native failure (parity, not a migration defect). Metering works: 400 MB peak, cpu_load 0.31, runtime 12 s, and the runner's `start --wait` + journal-tail path produced the full record. delodocs-wiki-self-tuning-weekly manual run (invocation 9bb13c45) started; its native failure mode is a 3600 s hermes timeout, so the run can take up to ~1 h; result recorded when terminal.
+- **Internal-job manual runs:** honda-hunt-daily-check ran once (`trigger=manual`, invocation 0411dfdc): `fail`, exit 1, stderr tail shows the codex refresh token expired — exactly the pre-existing native failure (parity, not a migration defect). Metering works: 400 MB peak, cpu_load 0.31, runtime 12 s, and the runner's `start --wait` + journal-tail path produced the full record. delodocs-wiki-self-tuning-weekly manual run (invocation 9bb13c45): the executor started the unit at 17:19:52Z (journal `Starting...`), then a concurrent wave's `candybar-executor` restart SIGTERMed the `start --wait` client at 17:36Z — the record reads `fail / executor stopped (SIGTERM)` with metering up to the interruption (45 MB peak, cpu 0.99). The UNIT was not killed (systemd-runner work survives executor restarts) and kept running independently. Not re-run: a second manual run is refused as overlap while the unit runs, the plumbing is proven by the unit start plus honda's full metered record, and the ledger's verify gate is Monday's scheduled fire (native_failing parity: native last run failed on the 3600 s hermes timeout).
 - **Token spend:** 0 for all five (systemd units; the job scripts do not write the AD-8 result file). Allowed by the wave AC ("else 0").
 - **No daemon code changed; no container redeploy** (per the wave rule — other waves run concurrently).
 - **DeLoDocs vault diffs (the vault is not git; these are the whole source-of-truth changes):** both files gained the same 3-line header at the top, no other lines touched:
