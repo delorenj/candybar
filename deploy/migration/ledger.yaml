@@ -31,7 +31,7 @@ jobs:
   source_of_truth:
     repo: AutomaticAI-io/client-portal
     path: gateway/ops/systemd/newapi-allowances.timer
-    commit: null
+    commit: f337c6f7049094132085b332604f24c974d8de1a
   disable:
   - systemctl --user disable --now newapi-allowances.timer
   rollback:
@@ -77,7 +77,7 @@ jobs:
   source_of_truth:
     repo: AutomaticAI-io/client-portal
     path: gateway/ops/systemd/newapi-vm-health.timer
-    commit: null
+    commit: f337c6f7049094132085b332604f24c974d8de1a
   disable:
   - systemctl --user disable --now newapi-vm-health.timer
   rollback:
@@ -122,7 +122,7 @@ jobs:
   source_of_truth:
     repo: AutomaticAI-io/client-portal
     path: gateway/ops/systemd/newapi-db-pull.timer
-    commit: null
+    commit: f337c6f7049094132085b332604f24c974d8de1a
   disable:
   - systemctl --user disable --now newapi-db-pull.timer
   rollback:
@@ -166,7 +166,7 @@ jobs:
   source_of_truth:
     repo: AutomaticAI-io/client-portal
     path: gateway/ops/systemd/newapi-claude-token.timer
-    commit: null
+    commit: f337c6f7049094132085b332604f24c974d8de1a
   disable:
   - systemctl --user disable --now newapi-claude-token.timer
   rollback:
@@ -211,7 +211,7 @@ jobs:
   source_of_truth:
     repo: AutomaticAI-io/client-portal
     path: gateway/ops/systemd/newapi-oauth-connections.timer
-    commit: null
+    commit: f337c6f7049094132085b332604f24c974d8de1a
   disable:
   - systemctl --user disable --now newapi-oauth-connections.timer
   rollback:
@@ -255,7 +255,7 @@ jobs:
   source_of_truth:
     repo: AutomaticAI-io/client-portal
     path: gateway/ops/systemd/newapi-openrouter-sync.timer
-    commit: null
+    commit: f337c6f7049094132085b332604f24c974d8de1a
   disable:
   - systemctl --user disable --now newapi-openrouter-sync.timer
   rollback:
@@ -300,7 +300,7 @@ jobs:
   source_of_truth:
     repo: AutomaticAI-io/client-portal
     path: gateway/ops/systemd/newapi-staff-sso.timer
-    commit: null
+    commit: f337c6f7049094132085b332604f24c974d8de1a
   disable:
   - systemctl --user disable --now newapi-staff-sso.timer
   rollback:
@@ -344,7 +344,7 @@ jobs:
   source_of_truth:
     repo: AutomaticAI-io/client-portal
     path: gateway/ops/systemd/newapi-token-watch.timer
-    commit: null
+    commit: f337c6f7049094132085b332604f24c974d8de1a
   disable:
   - systemctl --user disable --now newapi-token-watch.timer
   rollback:
@@ -389,7 +389,7 @@ jobs:
   source_of_truth:
     repo: AutomaticAI-io/client-portal
     path: gateway/ops/systemd/aai-free-scout.timer
-    commit: null
+    commit: f337c6f7049094132085b332604f24c974d8de1a
   disable:
   - systemctl --user disable --now aai-free-scout.timer
   rollback:
