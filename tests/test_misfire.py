@@ -140,6 +140,23 @@ def test_fires_between_is_half_open():
         list(fires_between("* * * * *", at(10, 0) + timedelta(seconds=1), at(10, 5)))
 
 
+def test_never_firing_schedule_has_no_fires():
+    # Valid syntax (registration accepts it), but February 30th never comes.
+    assert previous_fire("0 0 30 2 *", at(10, 0)) is None
+    assert list(fires_between("0 0 30 2 *", at(10, 0), at(11, 0))) == []
+
+
+def test_never_firing_candybar_cannot_wedge_the_gap_tick():
+    never = entry("0 0 30 2 *", "never")
+    job = entry("*/5 * * * *", "job")
+    fake = FakeCursor(CURSOR)
+    h = Harness([never, job], fake)
+    msg = h.tick(T)
+    assert (msg.acks, msg.naks) == (1, 0)  # not a nak loop on every later tick
+    assert [c.data.name for c in h.commands("misfire")] == ["job"]
+    assert fake.minute == T
+
+
 def test_ceil_minute():
     assert ceil_minute(at(10, 12)) == at(10, 12)
     assert ceil_minute(at(10, 12) + timedelta(seconds=30)) == at(10, 13)

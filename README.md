@@ -127,6 +127,23 @@ minute boundary (`tick_id = tick:<unix_epoch_minute>`, JetStream `Nats-Msg-Id`
 Live-bus tests: `CANDYBAR_TEST_NATS=1 uv run pytest tests/test_heartbeat_integration.py`
 (add `CANDYBAR_TICK_E2E=1` for the literal 5-minute subscriber window).
 
+**Misfires (AD-6).** The dispatcher keeps its last fully dispatched tick
+minute in the registry (`dispatch_cursor`). When the next tick it consumes
+lands more than one minute past that cursor, it coalesces the gap. This
+happens after daemon downtime, a bus outage or a dropped tick. For each
+candybar:
+
+- Only the latest missed fire runs, with `trigger=misfire` and the missed
+  minute's `tick_id`. Its idempotency key matches the scheduled one, so a fire
+  time runs at most once whatever its trigger.
+- Each earlier missed fire inside the 24h window before the tick is recorded
+  as `bloodbank.cron.candybar.skipped` with `reason=misfire_coalesced`.
+- Fires from before a candybar was registered are never counted as missed.
+
+If only the dispatcher role was down while the heartbeat kept publishing,
+the queued ticks are acked without dispatch, and the newest one coalesces the
+whole backlog. A fresh install, which has no cursor yet, never misfires.
+
 ## Metrics (Prometheus, AD-9)
 
 The api role serves `GET /metrics` (same port as the API) for everything the

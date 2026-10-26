@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
-from croniter import croniter
+from croniter import CroniterBadDateError, croniter
 
 ONE_MINUTE = timedelta(minutes=1)
 
@@ -40,11 +40,20 @@ def ceil_minute(instant: datetime) -> datetime:
     return floor if floor == instant else floor + ONE_MINUTE
 
 
-def previous_fire(schedule: str, before: datetime) -> datetime:
-    """The latest fire time strictly before the UTC minute `before`."""
+def previous_fire(schedule: str, before: datetime) -> datetime | None:
+    """The latest fire time strictly before the UTC minute `before`.
+
+    None when the schedule never fires: a syntactically valid expression such
+    as `0 0 30 2 *` (Feb 30) passes registration, and croniter raises
+    CroniterBadDateError searching for it — that must read as "nothing
+    missed", never as a dispatch failure that wedges the tick.
+    """
     _require_utc_minute(before)
     _require_five_fields(schedule)
-    fire = croniter(schedule, before.astimezone(UTC)).get_prev(datetime)
+    try:
+        fire = croniter(schedule, before.astimezone(UTC)).get_prev(datetime)
+    except CroniterBadDateError:
+        return None
     return fire.astimezone(UTC)
 
 
@@ -58,7 +67,10 @@ def fires_between(schedule: str, start: datetime, end: datetime) -> Iterator[dat
     # get_next is strict, so seed one minute before `start` to include it.
     it = croniter(schedule, (start - ONE_MINUTE).astimezone(UTC))
     while True:
-        fire = it.get_next(datetime).astimezone(UTC)
+        try:
+            fire = it.get_next(datetime).astimezone(UTC)
+        except CroniterBadDateError:  # never fires again
+            return
         if fire >= end:
             return
         yield fire

@@ -135,8 +135,8 @@ def plan_misfires(
         if entry.created_at is not None:
             floor = max(floor, ceil_minute(entry.created_at))
         latest = previous_fire(entry.schedule, minute)
-        if latest < floor:
-            continue  # no missed fire for this candybar
+        if latest is None or latest < floor:
+            continue  # no missed fire for this candybar (or it never fires)
         earlier = list(fires_between(entry.schedule, max(floor, window_start), latest))
         plans.append(MisfirePlan(entry=entry, latest=latest, skipped=earlier))
     return plans
