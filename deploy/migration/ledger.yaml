@@ -3576,9 +3576,9 @@ jobs:
   - systemctl --user disable --now mobile-deploy-hub-catchup.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/mobile-deploy-hub-catchup.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17954-67f1-75f3-8f29-19df110d8a9c
+  cutover_at: '2026-10-26T17:48:57.778763Z'
   verification:
     invocation_id: null
     result: null
@@ -3589,6 +3589,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:48:57.778763Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17954-67f1-75f3-8f29-19df110d8a9c enabled; first fire 2026-10-26T17:50:00Z
 - id: systemd:mobile-deploy-hub-macwatch.timer
   wave: '7.11'
   candybar:
