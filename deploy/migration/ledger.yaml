@@ -3246,13 +3246,13 @@ jobs:
   - systemctl --user disable --now sync-jim-dropbox.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/sync-jim-dropbox.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794f-e281-7276-ba6a-cd58a1050dd5
   cutover_at: '2026-10-26T17:44:01.452943Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 358acc4f-86d9-5432-9978-7af68e3fadd6
+    result: fail
+    at: '2026-10-26T17:50:34.567890Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:42:06.271736Z'
@@ -3263,6 +3263,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794f-e281-7276-ba6a-cd58a1050dd5 enabled; first fire 2026-10-26T17:50:00Z
+  - at: '2026-10-26T17:50:39.582545Z'
+    action: verify
+    outcome: ok
+    detail: 'invocation 358acc4f-86d9-5432-9978-7af68e3fadd6 (scheduled) fail exit=2 runtime=34298ms memory=21659648B cpu=0.0088 (result parity: the job already failed natively)'
 - id: systemd:activity-report@james-brennan.timer
   wave: '7.14'
   candybar:
