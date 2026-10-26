@@ -31,6 +31,7 @@ from ..registry.store import (
     record_terminal_invocation,
     session_scope,
 )
+from .gpu import GPU_SAMPLER
 from .runner import ProcessRegistry
 from .worker import Executor
 
@@ -110,6 +111,9 @@ async def run_executor(stop: asyncio.Event) -> None:
             await registry.terminate_all()
             # Children exit on SIGTERM; tasks then record failed + ack/term.
             await asyncio.gather(*tasks, return_exceptions=True)
+        # Reap the shared pmon sampler (normally already stopped with the last
+        # invocation) so no reader task outlives the loop.
+        await GPU_SAMPLER.aclose()
         await engine.dispose()
         # Detach the durable pull consumer BEFORE draining: nats-py otherwise
         # waits the full drain timeout (~30s) for the pull subscription, and

@@ -123,3 +123,37 @@ tests:
             value: 0.5
           - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000b"}'
             value: 2
+
+  # Story 3.2: GPU burners per candybar (nvidia-smi pmon SM load, busy GPUs).
+  - interval: 1m
+    input_series:
+      # A is a GPU job averaging 0.75 of one GPU; B runs on CPU only (observes 0).
+      - series: 'candybar_invocation_gpu_load_ratio_sum{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success"}'
+        values: '0+0.75x10'
+      - series: 'candybar_invocation_gpu_load_ratio_count{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success"}'
+        values: '0+1x10'
+      - series: 'candybar_invocation_gpu_load_ratio_sum{candybar_id="0199a1b2-0000-7000-8000-00000000000b",result="success"}'
+        values: '0x10'
+      - series: 'candybar_invocation_gpu_load_ratio_count{candybar_id="0199a1b2-0000-7000-8000-00000000000b",result="success"}'
+        values: '0+1x10'
+
+    promql_expr_test:
+      # Average GPU load (busy GPUs) per candybar; a GPU-less job reads 0, not no data.
+      - expr: |
+          sum by (candybar_id) (rate(candybar_invocation_gpu_load_ratio_sum[10m]))
+            / sum by (candybar_id) (rate(candybar_invocation_gpu_load_ratio_count[10m]))
+        eval_time: 10m
+        exp_samples:
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a"}'
+            value: 0.75
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000b"}'
+            value: 0
+
+      # Candybars that actually use the GPU (> 5% of one GPU on average).
+      - expr: |
+          sum by (candybar_id) (rate(candybar_invocation_gpu_load_ratio_sum[10m]))
+            / sum by (candybar_id) (rate(candybar_invocation_gpu_load_ratio_count[10m])) > 0.05
+        eval_time: 10m
+        exp_samples:
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a"}'
+            value: 0.75

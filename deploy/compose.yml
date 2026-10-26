@@ -48,11 +48,21 @@ services:
       # memory.peak / cpu.stat from (AD-9, Story 3.1). The entrypoint
       # delegates /sys/fs/cgroup/candybar as root, then drops to uid 10001.
       # Set CANDYBAR_CGROUP_ROOT: "" here to run invocations unscoped.
+      # compute: CUDA candybars can use the GPU; utility: nvidia-smi for
+      # the GPU sampler. CANDYBAR_NVIDIA_SMI: "" turns GPU metering off.
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     # A writable, private cgroupfs is what lets the entrypoint delegate the
     # scope tree; Docker only mounts cgroupfs read-write for privileged
     # containers. Single-tenant homelab: accepted.
     privileged: true
     cgroup: private
+    # GPU load per invocation (AD-9, Story 3.2): the executor samples
+    # `nvidia-smi pmon`, which the NVIDIA runtime injects with the GPU. pmon
+    # reports HOST pids, so the container shares the host pid namespace;
+    # otherwise no invocation's process could be matched and GPU load would
+    # always meter 0. On a GPU-less host, drop `gpus` and GPU load reads 0.
+    gpus: all
+    pid: host
     extra_hosts:
       # Registry: host system Postgres (the `candybar` database).
       - "host.docker.internal:host-gateway"

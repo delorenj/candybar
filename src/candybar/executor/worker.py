@@ -102,6 +102,7 @@ def terminal_event_for(cmd: CandybarInvokeCommand, rec: TerminalInvocation) -> E
         cost_usd=float(rec.cost_usd) if rec.cost_usd is not None else None,
         memory_peak_bytes=rec.memory_peak_bytes,
         cpu_load=rec.cpu_load,
+        gpu_load=rec.gpu_load,
     )
     common = {
         "candybar_id": rec.candybar_id,
@@ -149,6 +150,7 @@ def record_from_row(row: Invocation) -> TerminalInvocation:
         finished_at=row.finished_at or row.created_at,
         memory_peak_bytes=row.memory_peak_bytes or 0,
         cpu_load=row.cpu_load or 0.0,
+        gpu_load=row.gpu_load or 0.0,
     )
 
 
@@ -185,6 +187,7 @@ class Executor:
                 runtime_ms=rec.runtime_ms or 0,
                 memory_peak_bytes=rec.memory_peak_bytes,
                 cpu_load=rec.cpu_load,
+                gpu_load=rec.gpu_load,
             )
         except Exception:
             log.exception("metric recording failed for invocation %s", rec.invocation_id)
@@ -288,6 +291,7 @@ class Executor:
             finished_at=outcome.finished_at,
             memory_peak_bytes=outcome.memory_peak_bytes,
             cpu_load=outcome.cpu_load,
+            gpu_load=outcome.gpu_load,
         )
         try:
             inserted = await self._record(rec)

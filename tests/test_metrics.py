@@ -28,6 +28,7 @@ from candybar.executor import EXECUTOR_METRICS, ExecutorMetrics
 from candybar.executor.metrics import (
     CPU_LOAD_METRIC,
     EXEMPLAR_LABEL,
+    GPU_LOAD_METRIC,
     INVOCATIONS_METRIC,
     MEMORY_METRIC,
     MEMORY_PEAK_METRIC,
@@ -143,6 +144,7 @@ def test_cardinality_guard_label_sets_are_exactly_candybar_id_and_result() -> No
         MEMORY_PEAK_METRIC,
         MEMORY_METRIC,
         CPU_LOAD_METRIC,
+        GPU_LOAD_METRIC,
     }
     samples = [s for f in families for s in f.samples]
     assert samples

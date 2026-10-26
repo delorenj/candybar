@@ -112,6 +112,11 @@
               "type": "number",
               "minimum": 0,
               "description": "Executor-measured average CPU load: cgroup cpu.stat usage_usec delta / wall runtime (1.0 = one busy core); 0 when unmeasured."
+            },
+            "gpu_load": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Executor-measured average GPU load: nvidia-smi pmon per-pid SM utilization of the invocation's process tree, averaged over samples (1.0 = one busy GPU); 0 on GPU-less hosts or when unmeasured."
             }
           },
           "required": ["token_spend", "cost_usd"]

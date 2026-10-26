@@ -63,6 +63,8 @@ class Invocation(Base):
     # Executor-measured from the cgroup scope (Story 3.1, migration 0002).
     memory_peak_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     cpu_load: Mapped[float] = mapped_column(Double, nullable=False, default=0.0)
+    # Executor-measured via nvidia-smi pmon (Story 3.2, migration 0004).
+    gpu_load: Mapped[float] = mapped_column(Double, nullable=False, default=0.0)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

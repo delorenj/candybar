@@ -162,11 +162,13 @@ class SelfReportedMetrics(BaseModel):
 class InvocationMetrics(SelfReportedMetrics):
     """The per-invocation record on completed/failed events (AD-9).
 
-    Adds the executor-measured cgroup values (Story 3.1); 0 when unmeasured.
+    Adds the executor-measured values: cgroup memory/CPU (Story 3.1) and
+    nvidia-smi pmon GPU load (Story 3.2); 0 when unmeasured.
     """
 
     memory_peak_bytes: int = Field(default=0, ge=0)
     cpu_load: float = Field(default=0.0, ge=0)
+    gpu_load: float = Field(default=0.0, ge=0)
 
 
 class CandybarCompletedData(InvocationIdentity):

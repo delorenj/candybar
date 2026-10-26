@@ -19,6 +19,11 @@ memory and CPU-load families on the same label set:
   invocation (cpu.stat usage delta / wall runtime). This is the spine's "CPU
   load summary": the client's Summary exposes only `_sum`/`_count` and cannot
   carry exemplars; a histogram is a strict superset that can.
+
+Story 3.2 adds `candybar_invocation_gpu_load_ratio` (histogram), the GPU twin
+of the CPU-load family: average busy GPUs per invocation (nvidia-smi pmon
+per-pid SM% of the process tree / 100; 1.0 = one GPU saturated). It is the
+spine's "GPU load summary"; GPU-less hosts observe 0.
 """
 
 from __future__ import annotations
@@ -61,12 +66,15 @@ MEMORY_BUCKETS_BYTES: tuple[float, ...] = tuple(
 CPU_LOAD_BUCKETS: tuple[float, ...] = (
     0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0, 8.0, 16.0, 32.0
 )
+# Average busy GPUs, idle .. 8 GPUs (+Inf); 1.0 = one GPU's SMs saturated.
+GPU_LOAD_BUCKETS: tuple[float, ...] = (0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0, 8.0)
 
 INVOCATIONS_METRIC = "candybar_invocations"  # exposed as candybar_invocations_total
 RUNTIME_METRIC = "candybar_invocation_runtime_milliseconds"
 MEMORY_PEAK_METRIC = "candybar_invocation_memory_peak_bytes"
 MEMORY_METRIC = "candybar_invocation_memory_bytes"
 CPU_LOAD_METRIC = "candybar_invocation_cpu_load_ratio"
+GPU_LOAD_METRIC = "candybar_invocation_gpu_load_ratio"
 
 
 class ExecutorMetrics:
@@ -107,6 +115,13 @@ class ExecutorMetrics:
             buckets=CPU_LOAD_BUCKETS,
             registry=registry,
         )
+        self.gpu_load = Histogram(
+            GPU_LOAD_METRIC,
+            "Per-invocation average GPU load: nvidia-smi pmon SM utilization of the process tree (1.0 = one GPU).",
+            labelnames=SERIES_LABELS,
+            buckets=GPU_LOAD_BUCKETS,
+            registry=registry,
+        )
 
     def observe(
         self,
@@ -117,10 +132,11 @@ class ExecutorMetrics:
         runtime_ms: int,
         memory_peak_bytes: int = 0,
         cpu_load: float = 0.0,
+        gpu_load: float = 0.0,
     ) -> None:
         """Record one terminal invocation; called once per execution.
 
-        Unmeasured memory/CPU arrive as 0 and are observed as 0 (spine rule).
+        Unmeasured memory/CPU/GPU arrive as 0 and are observed as 0 (spine rule).
         """
         if result not in RESULTS:
             raise ValueError(f"result must be one of {RESULTS}, got {result!r}")
@@ -140,9 +156,17 @@ class ExecutorMetrics:
         self.memory_peak.labels(**labels).set(memory)  # gauges cannot carry exemplars
         self.memory.labels(**labels).observe(memory, exemplar=exemplar)
         self.cpu_load.labels(**labels).observe(load, exemplar=exemplar)
+        self.gpu_load.labels(**labels).observe(max(gpu_load, 0.0), exemplar=exemplar)
 
     def _families(self) -> tuple[Counter | Gauge | Histogram, ...]:
-        return (self.invocations, self.runtime_ms, self.memory_peak, self.memory, self.cpu_load)
+        return (
+            self.invocations,
+            self.runtime_ms,
+            self.memory_peak,
+            self.memory,
+            self.cpu_load,
+            self.gpu_load,
+        )
 
 
 # Process-default instance: the api role's /metrics serves REGISTRY, so what
@@ -154,6 +178,8 @@ __all__ = [
     "CPU_LOAD_METRIC",
     "EXECUTOR_METRICS",
     "EXEMPLAR_LABEL",
+    "GPU_LOAD_BUCKETS",
+    "GPU_LOAD_METRIC",
     "INVOCATIONS_METRIC",
     "MEMORY_BUCKETS_BYTES",
     "MEMORY_METRIC",

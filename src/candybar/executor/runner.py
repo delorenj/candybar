@@ -14,6 +14,10 @@ privilege. Set CANDYBAR_CGROUP_ROOT="" to disable scoping outright.
 Story 3.1 meters the scope (metering.py): the cpu.stat baseline is taken right
 after the child joins it, memory.peak and the cpu.stat delta right after the
 child exits and before the scope is removed. Unscoped runs meter as zero.
+
+Story 3.2 adds GPU load (gpu.py): the child's process tree is tracked on the
+shared pmon sampler from spawn to exit. That runs on GPU-less hosts too,
+where tracking is a no-op that reads 0.
 """
 
 from __future__ import annotations
@@ -38,6 +42,7 @@ from pydantic import BaseModel, ValidationError
 from ..events.builders import STDERR_TAIL_MAX
 from ..events.envelope import SelfReportedMetrics
 from . import metering
+from .gpu import GPU_SAMPLER, GpuSampler
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +80,8 @@ class RunOutcome:
     # Executor-measured from the cgroup scope (Story 3.1); 0 when unmeasured.
     memory_peak_bytes: int = 0
     cpu_load: float = 0.0
+    # Executor-measured via nvidia-smi pmon (Story 3.2); 0 when GPU-less.
+    gpu_load: float = 0.0
 
 
 @dataclass
@@ -192,6 +199,7 @@ async def run_invocation(
     registry: ProcessRegistry | None = None,
     on_wait: Callable[[], Awaitable[None]] | None = None,
     root: str | None = None,
+    gpu: GpuSampler | None = None,
 ) -> RunOutcome:
     """Spawn the entrypoint, wait for exit, and gather the AD-8 outcome."""
     scope_root = cgroup_root() if root is None else root
@@ -231,16 +239,22 @@ async def run_invocation(
 
         scope = _enter_scope(scope_root, invocation_id, proc.pid)
         cpu_baseline = metering.read_cpu_usage_usec(scope)
+        gpu_session = (GPU_SAMPLER if gpu is None else gpu).track(proc.pid, scope)
         if registry is not None:
             registry.procs.add(proc)
         try:
-            communicate = asyncio.create_task(proc.communicate())
-            while not communicate.done():
-                # Bounded wait on the pipes — never a sleep-until (AD-1).
-                await asyncio.wait({communicate}, timeout=WAIT_SLICE_SECONDS)
-                if not communicate.done() and on_wait is not None:
-                    await on_wait()
-            stdout, stderr = communicate.result()
+            try:
+                communicate = asyncio.create_task(proc.communicate())
+                while not communicate.done():
+                    # Bounded wait on the pipes — never a sleep-until (AD-1).
+                    await asyncio.wait({communicate}, timeout=WAIT_SLICE_SECONDS)
+                    if not communicate.done() and on_wait is not None:
+                        await on_wait()
+                stdout, stderr = communicate.result()
+            finally:
+                # Always end the GPU session (even on cancellation), so the
+                # shared pmon stops once nothing is in flight.
+                gpu_load = gpu_session.finish()
             # The child has exited; the scope (still present) holds its totals.
             memory_peak = metering.read_memory_peak(scope)
             cpu_used = metering.read_cpu_usage_usec(scope) - cpu_baseline
@@ -265,6 +279,7 @@ async def run_invocation(
             finished_at=datetime.now(UTC),
             memory_peak_bytes=memory_peak,
             cpu_load=metering.cpu_load(cpu_used, runtime_ms),
+            gpu_load=gpu_load,
         )
     finally:
         _leave_scope(scope)

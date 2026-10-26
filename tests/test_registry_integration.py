@@ -223,6 +223,7 @@ def test_invocations_and_skips_shape(migrated_db: str) -> None:
             "token_spend",
             "memory_peak_bytes",
             "cpu_load",
+            "gpu_load",
             "started_at",
             "finished_at",
         } <= inv_cols
@@ -302,6 +303,63 @@ def test_resource_metering_round_trip_and_constraints(migrated_db: str) -> None:
         pytest.raises(Exception, match="invocations_metering_nonnegative"),
     ):
         conn.execute(text("UPDATE invocations SET cpu_load = -1"))
+
+
+def test_gpu_load_round_trip_default_and_constraint(migrated_db: str) -> None:
+    """Story 3.2: gpu_load persists (migration 0004); omitted -> 0; negative rejected."""
+    import asyncio
+    from datetime import UTC, datetime
+
+    from candybar.registry import TerminalInvocation, record_terminal_invocation
+    from candybar.registry.models import Invocation
+
+    async def scenario() -> tuple[float, float]:
+        engine = create_registry_engine(migrated_db)
+        try:
+            async with session_scope(engine) as session:
+                row = await insert_candybar(
+                    session,
+                    CandybarManifest(
+                        name="gpu-metered", description="", tags=[], schedule="* * * * *",
+                        entrypoint="/bin/true",
+                    ),
+                )
+            now = datetime.now(UTC)
+            measured, legacy = uuid7(), uuid7()
+            common = {
+                "candybar_id": row.id, "trigger": "manual", "tick_id": None, "result": "success",
+                "exit_code": 0, "runtime_ms": 4000, "error_message": None, "stderr_tail": None,
+                "token_spend": 0, "cost_usd": None, "started_at": now, "finished_at": now,
+            }
+            async with session_scope(engine) as session:
+                await record_terminal_invocation(
+                    session,
+                    TerminalInvocation(
+                        invocation_id=measured, idempotency_key=f"candybar:{row.id}:manual:g",
+                        gpu_load=0.9612, **common,
+                    ),
+                )
+                await record_terminal_invocation(  # pre-3.2 caller: default 0
+                    session,
+                    TerminalInvocation(
+                        invocation_id=legacy, idempotency_key=f"candybar:{row.id}:manual:n",
+                        **common,
+                    ),
+                )
+            async with session_scope(engine) as session:
+                m = await session.get(Invocation, measured)
+                lg = await session.get(Invocation, legacy)
+                assert m is not None and lg is not None
+                return m.gpu_load, lg.gpu_load
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(scenario()) == (0.9612, 0.0)
+    with (
+        create_engine(migrated_db).connect() as conn,
+        pytest.raises(Exception, match="invocations_gpu_load_nonnegative"),
+    ):
+        conn.execute(text("UPDATE invocations SET gpu_load = -0.5"))
 
 
 def test_dispatch_cursor_is_owner_only_monotonic_and_utc(migrated_db: str) -> None:

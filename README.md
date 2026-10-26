@@ -159,6 +159,7 @@ series per candybar.
 | `candybar_invocation_memory_peak_bytes` | gauge (latest invocation's peak) | bytes |
 | `candybar_invocation_memory_bytes` | histogram (1 MiB–32 GiB buckets) | bytes |
 | `candybar_invocation_cpu_load_ratio` | histogram (0.01–32 buckets) | busy cores |
+| `candybar_invocation_gpu_load_ratio` | histogram (0.01–8 buckets) | busy GPUs |
 
 Memory and CPU are measured by the executor from each invocation's cgroup v2
 scope (Story 3.1): memory is `memory.peak`, and CPU load is the `cpu.stat`
@@ -168,10 +169,19 @@ reports 0. The same values are stored on the `invocations` row
 (`memory_peak_bytes`, `cpu_load`) and carried in the `completed`/`failed` event
 `data.metrics`.
 
+GPU load (Story 3.2) comes from `nvidia-smi pmon`:
+- While at least one invocation runs, one shared `pmon -d 1 -s u` process samples per-PID SM utilization. It stops when the last invocation finishes.
+- A PID counts toward an invocation when its session id is the child's pid (every child starts its own session) or when it is in the invocation's cgroup scope.
+- `gpu_load` is the per-sample sum of the member PIDs' SM% divided by 100, averaged over the samples taken during the run (1.0 = one GPU saturated).
+- A host without `nvidia-smi` reads 0 silently. A failing `nvidia-smi` (no driver, unsupported device) reads 0 and logs one warning. `CANDYBAR_NVIDIA_SMI=""` turns GPU metering off, or names another binary.
+- The value is stored in the row's `gpu_load` column and in `data.metrics.gpu_load`.
+
+The container sees the GPU and the host PIDs that pmon reports through `gpus: all` and `pid: host` in `deploy/compose.yml`. `scripts/gpu-burn-candybar.py` is a dependency-free CUDA load job (driver API through ctypes) for proving GPU attribution end to end.
+
 OpenMetrics allows exemplars only on counters and histogram buckets. The
 memory gauge therefore carries no exemplar; its histogram twin does. The CPU
-load family is a histogram for the same reason: it gives the same `_sum`/`_count`
-a summary would, and can also carry the exemplar.
+and GPU load families are histograms for the same reason: they give the same
+`_sum`/`_count` a summary would, and can also carry the exemplar.
 
 Exemplars are only emitted in the OpenMetrics format, which the endpoint
 negotiates from the `Accept` header. Prometheus 3.x asks for it by default, but
@@ -190,6 +200,9 @@ topk(5, max by (candybar_id) (max_over_time(candybar_invocation_memory_peak_byte
 # CPU burners: average busy cores per candybar
 sum by (candybar_id) (rate(candybar_invocation_cpu_load_ratio_sum[1h]))
   / sum by (candybar_id) (rate(candybar_invocation_cpu_load_ratio_count[1h]))
+# GPU burners: average busy GPUs per candybar
+sum by (candybar_id) (rate(candybar_invocation_gpu_load_ratio_sum[1h]))
+  / sum by (candybar_id) (rate(candybar_invocation_gpu_load_ratio_count[1h]))
 ```
 
 These queries are unit-tested by promtool in CI

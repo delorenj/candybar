@@ -389,6 +389,7 @@ def test_terminal_payloads_fit_draft_schemas(result: str, schema: str) -> None:
         "cost_usd": None,
         "memory_peak_bytes": MIB,
         "cpu_load": 0.2,
+        "gpu_load": 0.0,  # Story 3.2 field: GPU-less row
     }
 
 
