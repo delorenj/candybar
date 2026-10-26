@@ -416,6 +416,24 @@ class Executor:
                 await self._skip(envelope, key, msg, SKIP_DISABLED)
                 return
 
+        # Judge backlog BEFORE occupying the overlap slot. An older command
+        # that will be coalesced must not briefly block the current fire while
+        # it waits on the schedule/skip reads.
+        trigger = envelope.data.trigger
+        if trigger == "scheduled":
+            try:
+                decision = await self._backlog_decision(envelope)
+            except Exception:
+                log.exception("backlog check failed for %s; requesting redelivery", key)
+                await msg.nak(delay=1)  # type: ignore[attr-defined]
+                return
+            if decision == "misfire":
+                log.info("%s survived backlog coalescing; running %s as misfire", envelope.data.name, key)
+                trigger = "misfire"
+            elif decision is not None:
+                await self._skip(envelope, key, msg, decision)
+                return
+
         # AD-20 overlap: at most one live run per candybar. The check-then-add
         # is await-free, so two concurrent deliveries of one candybar cannot
         # both pass. The slot covers everything below and is always released.
@@ -426,7 +444,8 @@ class Executor:
         self._live.add(candybar_id)
         try:
             await self._execute_live(
-                envelope, key, msg, entrypoint=entrypoint, invocation_id=invocation_id, claimed=claimed
+                envelope, key, msg, entrypoint=entrypoint, invocation_id=invocation_id,
+                claimed=claimed, trigger=trigger,
             )
         finally:
             self._live.discard(candybar_id)
@@ -440,6 +459,7 @@ class Executor:
         entrypoint: str | dict,
         invocation_id: UUID,
         claimed: bool,
+        trigger: str,
     ) -> None:
         """The rest of `_execute`, holding the candybar's AD-20 overlap slot."""
         # A systemd unit may be busy with a run this process did not start (a
@@ -463,28 +483,6 @@ class Executor:
                 return
             if busy:
                 await self._skip(envelope, key, msg, SKIP_OVERLAP)
-                return
-
-        # AD-20 executor backlog: a scheduled command from an earlier minute
-        # runs only if it is the latest non-skipped fire. This check matters
-        # even before the 2m stale threshold: a just-delayed 17:40 command
-        # arriving at 17:41 must not run first and overlap-skip the 17:41 fire.
-        # A survivor older than 2m is relabeled `misfire`; a superseded one
-        # is skipped, never burst-replayed.
-        trigger = envelope.data.trigger
-        if trigger == "scheduled":
-            try:
-                decision = await self._backlog_decision(envelope)
-            except Exception:
-                # A failed read must not skip (wrongly) nor run (stale): retry.
-                log.exception("backlog check failed for %s; requesting redelivery", key)
-                await msg.nak(delay=1)  # type: ignore[attr-defined]
-                return
-            if decision == "misfire":
-                log.info("%s survived backlog coalescing; running %s as misfire", envelope.data.name, key)
-                trigger = "misfire"
-            elif decision is not None:
-                await self._skip(envelope, key, msg, decision)
                 return
 
         if self.registry.stopping:

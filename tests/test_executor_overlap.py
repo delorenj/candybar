@@ -276,6 +276,50 @@ def test_a_previous_minute_command_does_not_steal_the_current_minutes_run() -> N
     assert fact.data.reason == SKIP_BACKLOG and msg.acked == 1
 
 
+def test_a_stalled_backlog_read_does_not_claim_the_overlap_slot() -> None:
+    # Post-outage DB latency must not let the older command reserve the slot
+    # before deciding it will be coalesced; the current fire gets to run.
+    store, bus = FakeStore(), FakeBus()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    runs: list[dict[str, Any]] = []
+
+    async def slow_fire_context(_id: UUID) -> tuple[str, str]:
+        started.set()
+        await release.wait()
+        return "* * * * *", "UTC"
+
+    async def skip_set(_id: UUID, _tz: Any, _start: datetime, _end: datetime) -> SkipSet:
+        return NO_SKIPS
+
+    async def fake_run(**kw: Any):
+        runs.append(kw)
+        return make_outcome()
+
+    executor = Executor(
+        by_key=store.by_key, entrypoint=store.get_entrypoint,
+        record=store.record, publish=bus.publish, run=fake_run,
+        fire_context=slow_fire_context, skip_set=skip_set,
+    )
+
+    async def scenario() -> tuple[FakeMsg, FakeMsg]:
+        now = minute_floor(datetime.now(UTC))
+        old = FakeMsg(make_command(tick_id=tick_id_of(now - ONE_MINUTE)).model_dump_json().encode())
+        current = FakeMsg(make_command(tick_id=tick_id_of(now)).model_dump_json().encode())
+        old_task = asyncio.create_task(executor.handle_message(old))
+        await started.wait()
+        await executor.handle_message(current)
+        release.set()
+        await old_task
+        return old, current
+
+    old, current = asyncio.run(scenario())
+    assert len(runs) == 1 and runs[0]["tick_id"] == tick_id_of(minute_floor(datetime.now(UTC)))
+    assert old.acked == current.acked == 1
+    skipped = [e for e in bus.events if isinstance(e, CandybarSkippedEvent)]
+    assert len(skipped) == 1 and skipped[0].data.reason == SKIP_BACKLOG
+
+
 def test_a_fresh_fire_runs_without_the_backlog_check() -> None:
     executor, store, _bus, runs, skip_reads = backlog_ports()
     fire = minute_floor(datetime.now(UTC))
