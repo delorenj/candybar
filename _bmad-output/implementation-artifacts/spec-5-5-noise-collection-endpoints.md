@@ -63,18 +63,52 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/candybar/registry/store.py` + `__init__.py` -- `lock_noise_batch` -- the batch's lock set: one ordered locker, no deadlock between batches.
-- [ ] `src/candybar/api/app.py` -- `PUT`/`DELETE /candybars/{id}/noise` and `PUT /noise/batch` per the frozen rules.
-- [ ] `tests/contract_shapes.py` -- `noise_routes()` and `noise_batch_keys()` parsed from the contract.
-- [ ] `tests/test_api_noise.py` -- every matrix row except the live-only one. Also: a contract test (the app serves exactly the contract's noise routes, the batch model's fields equal the contract keys, responses match `SINGLE_KEYS`), publish-before-write order, no auto-noise, and `/schedule` reflection.
-- [ ] `tests/test_noise_integration.py` + CI -- on real Postgres through the real routes: single add/remove, batch replace and clear, unknown-id rollback, a mid-batch write failure rolling back, `/schedule` rows reflecting `noise`, and `lock_noise_batch` making a second locker wait.
-- [ ] `README.md` -- a "Noise collection (Story 5.5)" section.
+- [x] `src/candybar/registry/store.py` + `__init__.py` -- `lock_noise_batch` -- the batch's lock set: one ordered locker, no deadlock between batches.
+- [x] `src/candybar/api/app.py` -- `PUT`/`DELETE /candybars/{id}/noise` and `PUT /noise/batch` per the frozen rules.
+- [x] `tests/contract_shapes.py` -- `noise_routes()` and `noise_batch_keys()` parsed from the contract.
+- [x] `tests/test_api_noise.py` -- every matrix row except the live-only one. Also: a contract test (the app serves exactly the contract's noise routes, the batch model's fields equal the contract keys, responses match `SINGLE_KEYS`), publish-before-write order, no auto-noise, and `/schedule` reflection.
+- [x] `tests/test_noise_integration.py` + CI -- on real Postgres through the real routes: single add/remove, batch replace and clear, unknown-id rollback, a mid-batch write failure rolling back, `/schedule` rows reflecting `noise`, and `lock_noise_batch` making a second locker wait.
+- [x] `README.md` -- a "Noise collection (Story 5.5)" section.
 
 **Acceptance Criteria:**
 - Given registered candybars, when a consumer calls any of the three noise routes, then the registry `noise` flag changes, the next `/schedule` and `GET /candybars` responses show it, and one `updated` fact goes out per candybar that changed.
 - Given a batch with any unknown id, or any failure before commit, when it is processed, then no candybar's `noise` changes and the response is problem+json.
 
 ## Implementation Notes
+
+- This was an unattended run under the workflow harness's no-questions directive.
+  - Checkpoint 1 was auto-approved ("Approve and continue") with no Open Questions. The one choice the contract leaves open is the batch's meaning, and the frozen block decides it as replace semantics (Design Notes).
+  - The spec is about 1,900 tokens, over the 1,600 target. It has one goal, so it was kept whole.
+  - This session has no subagent tool, so implementation and review ran inline, the same deviation recorded for 1.1 to 5.4.
+- g33 preflight passed. The ecosystem route returned event naming (Bloodbank) and UI (Holocene). No Bloodbank type or schema was added: the `updated` schema already lists `noise` as a change. Holocene is not touched.
+- `epic-5-context.md` was valid, so it was loaded in place of the raw planning docs. Continuity came from the done 5.4 spec.
+- What was built:
+  - `registry/store.py`: `lock_noise_batch`. It runs one `SELECT ... WHERE noise OR id = ANY(:ids::uuid[]) ORDER BY id FOR UPDATE`, with the ids as one array parameter, as in `fire_results`. It is exported from `registry/__init__.py`.
+  - `api/app.py`: `set_noise`, the PATCH flow for the one field, behind `PUT` and `DELETE /candybars/{id}/noise`. Also `PUT /noise/batch` with `NoiseBatchRequest` (extra=forbid, `ids: list[UUID]`, at most `NOISE_BATCH_MAX` = 10,000).
+  - The batch sends every fact first, in id order, and then every write. Writing nothing until all facts are out makes it atomic even without the transaction, and the transaction covers a failing write.
+  - `/schedule`, `GET /candybars` and the stream needed no change.
+- Decisions the frozen block leaves to the code:
+  - An unknown id in the batch body is a 422 titled "Unknown candybar ids", not a 404. The route exists; the body names things that do not.
+  - The 422 detail lists the unknown ids, truncated to 500 characters.
+  - The batch answers with the resulting collection, ordered by `(created_at, id)`, the same order as `GET /candybars`.
+  - The single routes take no body.
+  - The Tasks line names `noise_batch_keys()`; it shipped as `noise_batch_fields()`, which also returns each field's kind (`ids` → list).
+- Tests:
+  - `tests/test_api_noise.py` has 33 tests:
+    - every non-live matrix row;
+    - the contract parse: the app serves exactly the contract's three noise routes, the batch body fields match the contract, and responses match `SINGLE_KEYS`;
+    - bad bodies, plus the 10,000-id limit and one over it;
+    - publish-before-write order for the single and batch routes, and 500s when the database is down;
+    - `/schedule` and `GET /candybars` reflection, and no auto-noise for a minutely job;
+    - a route-to-stream test. The real routes' facts are handed to a live `ScheduleStream` hub during the request, before the row write, and `definition.changed` still reports the new flag.
+  - `tests/test_noise_integration.py` (live Postgres) has 2 tests. The first runs single add/remove, batch replace and clear, and the unknown-id refusal on the real routes, plus a second write failing mid-batch, which rolls the first back. The second checks the exact rows `lock_noise_batch` holds, and that a single-row locker waits for it. It is in the CI live-Postgres step.
+- Mutation checks, each of which fails its tests:
+  - no `FOR UPDATE` (live: the single-row lock did not wait);
+  - a lock set without the current noise rows (live: the batch replace left `a` noise);
+  - no definition overlay in the stream (unit: the route-to-stream test).
+- Verification:
+  - 697 unit tests pass and ruff is clean.
+  - On a throwaway postgres:17-alpine container, every file in the CI live-Postgres step gave 17 passed and 2 skipped. The 2 skips are tests that need the bus.
 
 ## Spec Change Log
 

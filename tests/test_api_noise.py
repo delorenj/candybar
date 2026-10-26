@@ -195,10 +195,10 @@ def test_single_database_failure_is_500_problem(noise: Rig, monkeypatch: Any) ->
 
 
 def test_batch_replaces_the_collection(noise: Rig) -> None:
-    a = noise.add("a", noise=True)
+    noise.add("a", noise=True)
     b = noise.add("b", noise=True)
     c = noise.add("c")
-    d = noise.add("d")
+    noise.add("d")
     resp = client(noise).put("/noise/batch", json={"ids": [str(c.id), str(b.id), str(c.id)]})
     assert resp.status_code == 200
     # The resulting collection, oldest candybar first (b registered before c).
@@ -207,9 +207,9 @@ def test_batch_replaces_the_collection(noise: Rig) -> None:
     assert changes_of(noise) == {"a": {"noise": False}, "c": {"noise": True}}
     assert noise_of(noise) == {"a": False, "b": True, "c": True, "d": False}
     assert noise.writes == 2
-    # The lock set is the ids plus the current noise rows (a, b), deduplicated.
+    # The locker gets the deduplicated ids once; it adds today's noise rows itself
+    # (the live test pins that set on Postgres).
     assert noise.locked == [{b.id, c.id}]  # type: ignore[attr-defined]
-    assert {d.id, a.id}.isdisjoint(noise.locked[0])  # type: ignore[attr-defined]
 
 
 def test_batch_empty_list_clears_the_collection(noise: Rig) -> None:
