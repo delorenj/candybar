@@ -17,6 +17,12 @@ pip install ./sdks/python          # or: uv pip install ./sdks/python
 The candybar container image ships the SDK in its venv, so jobs under the
 jobs mount can `import candybar_sdk` with `#!/usr/bin/env python3`.
 
+Outside the image, the `python3` that a job's shebang finds on the daemon's
+`PATH` must have the SDK installed. `uv run candybar daemon` puts the repo
+venv (which has it) first; running `.venv/bin/candybar daemon` directly does
+not, and the job then fails with `ModuleNotFoundError: candybar_sdk` in its
+stderr tail. Alternatively, point the shebang at a specific interpreter.
+
 ## Write a candybar
 
 ```python

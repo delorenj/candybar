@@ -273,6 +273,18 @@ def test_non_ascii_message_round_trips_utf8(tmp_path):
     assert doc["message"] == "café ✓"
 
 
+def test_unstorable_characters_are_replaced(tmp_path):
+    """A lone surrogate (non-UTF-8 filename in an OSError) would make the file
+    unwritable; NUL would break the executor's Postgres write. Both -> U+FFFD."""
+
+    def handler(ctx):
+        raise FileNotFoundError(f"no such file: {os.fsdecode(b'bad-\xff')}\x00tail")
+
+    code, doc, _ = _run(handler, tmp_path)
+    assert code == 1
+    assert doc["message"] == "FileNotFoundError: no such file: bad-��tail"
+
+
 def test_result_rejects_bad_status_and_message():
     with pytest.raises(ValueError):
         Result("ok")  # type: ignore[arg-type]
@@ -339,8 +351,12 @@ def test_sdk_import_loads_no_nats_client():
         env={**os.environ, "PYTHONPATH": str(SDK_ROOT / "src")},
     )
     assert out.stdout.strip() == ""
-    # Sanity: the probe would see nats if it were imported.
-    assert __import__("importlib.util").util.find_spec("nats") is not None
+    # Counter-probe: the same detector does see nats once it is imported.
+    seen = subprocess.run(
+        [sys.executable, "-c", "import nats\n" + probe], capture_output=True, text=True, check=True,
+        env={**os.environ, "PYTHONPATH": str(SDK_ROOT / "src")},
+    )
+    assert "nats" in seen.stdout.split(",")[0]
 
 
 def test_sdk_source_imports_only_stdlib():

@@ -2,7 +2,7 @@
 title: 'Story 4.1: Python SDK (sdks/python)'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'done'
 baseline_commit: 'c56b127e7313095b2c1705da3d62a7fc6365fc7c'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -58,13 +58,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `sdks/python/pyproject.toml` -- hatchling package `candybar-sdk` 0.1.0, `requires-python >=3.13`, `dependencies = []`.
-- [ ] `sdks/python/src/candybar_sdk/__init__.py`, `_protocol.py` -- `Context.from_env`, `Result`, `candybar` decorator returning a `Candybar` with `invoke(environ=None) -> int` and `run()`; `ProtocolError`; `py.typed`.
-- [ ] `sdks/python/examples/hello/{hello.py,candybar.toml}` -- executable example reporting tokens.
-- [ ] `sdks/python/README.md` -- author guide.
-- [ ] `tests/test_sdk_python.py` -- every matrix row via `invoke(environ=...)`; output validated by the daemon `ResultFile`; subprocess import test asserting no `nats` module loaded and zero declared deps plus an AST scan; example manifest loads.
-- [ ] `tests/test_sdk_python_integration.py` -- env-gated NATS+PG: register the example → `Dispatcher.dispatch` a matching tick → real `Executor` spawns the example → row success with `token_spend` recorded, counters and `candybar_invocations_total` +1, completed event carries the metrics.
-- [ ] `pyproject.toml`, `uv.lock`, `Dockerfile`, `.github/workflows/ci.yml`, `README.md` -- wiring.
+- [x] `sdks/python/pyproject.toml` -- hatchling package `candybar-sdk` 0.1.0, `requires-python >=3.13`, `dependencies = []`.
+- [x] `sdks/python/src/candybar_sdk/__init__.py`, `_protocol.py` -- `Context.from_env`, `Result`, `candybar` decorator returning a `Candybar` with `invoke(environ=None) -> int` and `run()`; `ProtocolError`; `py.typed`.
+- [x] `sdks/python/examples/hello/{hello.py,candybar.toml}` -- executable example reporting tokens.
+- [x] `sdks/python/README.md` -- author guide.
+- [x] `tests/test_sdk_python.py` -- every matrix row via `invoke(environ=...)`; output validated by the daemon `ResultFile`; subprocess import test asserting no `nats` module loaded and zero declared deps plus an AST scan; example manifest loads.
+- [x] `tests/test_sdk_python_integration.py` -- env-gated NATS+PG: register the example → `Dispatcher.dispatch` a matching tick → real `Executor` spawns the example → row success with `token_spend` recorded, counters and `candybar_invocations_total` +1, completed event carries the metrics.
+- [x] `pyproject.toml`, `uv.lock`, `Dockerfile`, `.github/workflows/ci.yml`, `README.md` -- wiring.
 
 **Acceptance Criteria:**
 - Given the example registered via its `candybar.toml`, when a tick matching its schedule is dispatched, then the executor runs it through the SDK and the invocation row, counters, metrics and completed event record success with the SDK-reported token spend.
@@ -72,9 +72,51 @@ context:
 
 ## Implementation Notes
 
+Implemented inline: this session has no subagent-spawn tool (same as 1.1-1.9). g33 preflight PASS; ecosystem-route returned only the analysis route plus the Bloodbank naming contract. No new event types.
+
+Decisions where the spine is silent:
+- Import name is `candybar_sdk` (the daemon already owns `candybar`); dist name `candybar-sdk` per the epic.
+- Metrics live on the `Context` (`add_tokens`/`add_cost`), not on the return value, so tokens spent before an exception are still reported.
+- Exit codes 0/1/2 (success/fail/protocol error). The executor is exit-code primary but honors the result file's message and metrics on nonzero exit, so fail keeps its detail.
+- Unknown `CANDYBAR_TRIGGER` values pass through; `CANDYBAR_TICK_ID` empty or absent means `None`.
+- `token_spend` totals are capped at BIGINT max in the SDK, because a larger value would fail the executor's row write on every redelivery.
+- The root project takes the SDK as an editable dev-group path dependency (`[tool.uv.sources]`). Daemon runtime deps are unchanged. The image installs `sdks/python` into `/app/.venv` with `--no-deps`, so jobs under the jobs mount can import it.
+- No shared cross-SDK conformance fixture: every SDK-written file is validated by the daemon's own `ResultFile` reader. 4.2 and 4.3 can check against the same reader.
+
+Verification:
+- On a clean `git archive` of HEAD plus the review patch: 318 unit tests pass and ruff is clean. The shared working tree carried other agents' in-flight edits (Epic 3 metering, node/rust SDKs), so verification ran on the clean export.
+- Live integration tests (SDK e2e, executor, manual invoke) passed on throwaway postgres:17-alpine and nats:2.10.29 containers.
+- The image built; the example ran inside it under Python 3.13 and imported `candybar_sdk` from the venv.
+- Real-daemon smoke, all four roles from the clean export:
+  - `candybar register` of a `* * * * *` copy of the example.
+  - The real heartbeat published tick:29883249, the dispatcher dispatched it, and the executor ran hello.py (success, 40ms).
+  - Rows recorded scheduled and manual success with token_spend 142 and cost_usd 0.0007. Both completed events carried `{token_spend: 142, cost_usd: 0.0007}`, and `/metrics` counted them on the success series.
+- The first smoke attempt launched `.venv/bin/candybar daemon` directly, without the venv on PATH. `#!/usr/bin/env python3` then found the host python, so the job failed with `ModuleNotFoundError` in its stderr tail. That proved the failure path end to end and became the README note.
+- Everything was torn down afterwards.
+
+Process note: a broad `pkill -f "candybar daemon"` was attempted to stop the smoke daemon. It only reached this session's daemon; the live container (uid 10001) was untouched. Later stops targeted PIDs.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+The three layers (blind-hunter floor N = min(floor(sqrt(44.4)+1),10) = 7, edge-case-hunter, verification-gap) ran inline because no subagent-spawn capability exists in this session, the same deviation as 1.1-1.9.
+
+| # | Layer | Finding | Verdict | Route / evidence |
+|---|-------|---------|---------|------------------|
+| 1 | blind | A lone surrogate in a message (e.g. an OSError naming a non-UTF-8 filename) makes `.encode("utf-8")` raise, so the run exits 2 with no result file and message and metrics are lost | medium | patch: `_clean_message` replaces surrogates with U+FFFD; `test_unstorable_characters_are_replaced` |
+| 2 | blind | NUL in a fail message reaches the executor's Postgres text column, the row write fails, and the invoke is nak'd and re-executed | medium | patch (SDK side): NUL becomes U+FFFD in the same scrub; executor-side twin deferred (#11) |
+| 3 | blind | The example's `/usr/bin/env python3` depends on the daemon's PATH having the SDK; `.venv/bin/candybar daemon` fails | low | patch (docs): reproduced in smoke; README Install section explains it and the fix |
+| 4 | verification-gap | The no-NATS probe's sanity check only asserted `find_spec("nats")`, not that the detector fires | low | patch: counter-probe imports nats first and asserts the detector sees it |
+| 5 | blind | `invoke()` called from inside a running event loop makes `asyncio.run` raise | low | reject: the process entry never runs inside a loop, and the failure is loud (fail result naming RuntimeError) |
+| 6 | blind | The sum of finite costs can overflow to inf, so `allow_nan=False` raises and exits 2 | low | reject: needs more than 1e308 USD; the failure is loud |
+| 7 | blind | `dataclasses.replace(ctx)` shares the meter | low | reject: not a documented API and nothing calls it |
+| 8 | blind | `sys.exit(True)` reports "exit True" | low | reject: cosmetic, still a correct fail |
+| 9 | edge | `mkstemp` makes the result file 0600 | false | the child inherits the daemon's uid; the executor read it in the container and host smokes |
+| 10 | edge | A missing result-file directory leaves no file | false | handled: exit 2 plus a stderr message, pinned by `test_unwritable_result_file_is_protocol_error` |
+| 11 | edge | A bare executable's stderr NUL hits the same Postgres write-fail and re-execute loop | medium | defer: pre-existing in 1.6; deferred-work.md entry |
+| 12 | verification-gap | The CI e2e drives `Dispatcher.dispatch` with a built tick, not a real heartbeat | low | reject: the real-daemon smoke closed it (tick:29883249), and the heartbeat is CI-proven since 1.3 |
+| 13 | edge (claims) | Spec claims about exit codes, the ResultFile contract and image shipping | false | every claim verified by tests and the smoke; nothing falsified |
 
 ## Verification
 

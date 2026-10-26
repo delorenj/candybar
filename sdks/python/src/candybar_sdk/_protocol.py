@@ -160,12 +160,24 @@ def result_document(
     """The AD-8 result JSON object, in canonical key order."""
     doc: dict[str, Any] = {"status": status}
     if message is not None:
-        doc["message"] = message[:MESSAGE_MAX]
+        doc["message"] = _clean_message(message)
     metrics: dict[str, Any] = {"token_spend": token_spend}
     if cost_usd is not None:
         metrics["cost_usd"] = cost_usd
     doc["metrics"] = metrics
     return doc
+
+
+def _clean_message(message: str) -> str:
+    """Cap at MESSAGE_MAX and make the text storable end to end.
+
+    Lone surrogates (e.g. an OSError naming a non-UTF-8 filename) cannot be
+    encoded as UTF-8, and NUL cannot be stored in a Postgres text column — the
+    executor's terminal write would fail and the job would be redelivered.
+    Both become U+FFFD.
+    """
+    capped = message[:MESSAGE_MAX]
+    return "".join("�" if c == "\x00" or "\ud800" <= c <= "\udfff" else c for c in capped)
 
 
 def write_result(path: Path, doc: Mapping[str, Any]) -> None:
