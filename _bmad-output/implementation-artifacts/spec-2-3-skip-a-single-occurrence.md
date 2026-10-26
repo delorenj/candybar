@@ -172,3 +172,12 @@ Skipped fires newer than `latest` and inside the window are always enumerated. A
 - `uv run pytest -q` -- expected: all unit tests pass.
 - `uv run ruff check .` -- expected: clean.
 - `CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 CANDYBAR_TEST_FAULT=1 uv run pytest tests/test_skip_occurrence_integration.py tests/test_misfire_integration.py tests/test_dispatch_fault_injection_integration.py -q` -- on throwaway nats:2.10.29 + postgres:17-alpine. Expected: pass.
+
+## Independent Review (fresh context, 2026-10-26)
+
+Fresh-context review by a non-implementing agent. It covered ee04dc5, 8c45a74 and 96c6145 and the current skip store, `SkipSet`/`group_skips`, the skip-aware helpers and the dispatcher tick and gap paths. The layers ran inline because no subagent-spawn tool was available. On throwaway nats:2.10.29 and postgres:17-alpine (`cbr2-*`), both the store idempotence/window read and the live-roles test passed (`test_stored_skip_suppresses_exactly_that_fire_live`). Both ACs hold. No patches.
+
+### Review Findings
+
+Rejected:
+- false: "a schedule that registration accepts can make the dispatch helpers raise, so every tick naks forever and the dispatcher wedges for all candybars". Fuzzing 20k random 5-field expressions found that every one the manifest validator accepts (130) runs `matches_tick`, `previous_fire`, `fires_between` and `next_fire` without raising. A hand list of L, W, # and range forms behaved the same.

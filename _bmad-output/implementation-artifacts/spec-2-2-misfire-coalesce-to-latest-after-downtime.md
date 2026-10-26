@@ -182,3 +182,14 @@ publish skipped (oldest first) -> misfire commands -> scheduled(T) -> cursor.adv
 - `uv run ruff check .` -- expected: clean.
 - `CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 CANDYBAR_TEST_FAULT=1 uv run pytest tests/test_misfire_integration.py tests/test_dispatch_fault_injection_integration.py -q` -- on throwaway nats:2.10.29 + postgres:17-alpine. Expected: pass.
 - `CANDYBAR_TEST_PG=1 uv run pytest tests/test_registry_integration.py -q` -- on the throwaway Postgres. Expected: pass.
+
+## Independent Review (fresh context, 2026-10-26)
+
+Fresh-context review by a non-implementing agent. It covered a1463e2, 7f48817 and 04e33e9 and the current `dispatcher/worker.py`, `schedule.py`, `role.py` and `registry/store.py` cursor code. The layers ran inline because no subagent-spawn tool was available. The live misfire suite passed on throwaway nats:2.10.29 and postgres:17-alpine (`cbr2-*`), covering the daemon gap, a real tick backlog and the 24h cap. The cursor registry tests passed too. All three ACs hold. No patches.
+
+### Review Findings
+
+Rejected:
+- low: backlog deferral keys on `num_pending > 0`, meaning any queued tick, not only a newer one. If someone republishes an older tick behind the current one, the current tick is deferred and its fires run one minute later as `misfire` under the same idempotency key, so there is no double run. The heartbeat never publishes a past minute (`heartbeat/publisher.py`), so only a manual replay can trigger this. A precise fix needs a stream peek.
+- low: replaying a tick that sits behind the cursor re-dispatches as `scheduled`. A fire that a gap recorded as `misfire_coalesced` has no row, so it would execute on such a replay. This is the frozen "tick <= cursor behaves exactly as Story 2.1" constraint. Changing it means editing the spec, so it is rejected. Only a manual replay of old ticks can reach it.
+- low: a gap tick publishes up to 1,439 `skipped` facts per minutely candybar, one at a time. If that runs past the 120s ack_wait, the redelivery is fetched only after the first copy finishes (the role fetches one at a time). By then the cursor is at the tick, so the redelivery takes the normal path and every command dedupes. Correctness is unaffected.

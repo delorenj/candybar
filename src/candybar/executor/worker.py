@@ -312,7 +312,14 @@ class Executor:
             return
         if not inserted:
             # Lost a same-key race: the winner's row is the truth; republish it.
-            winner = await self._by_key(key)
+            try:
+                winner = await self._by_key(key)
+            except Exception:
+                # Uncaught, the task dies with the command unacked until the
+                # 1h ack_wait; the redelivery dedupes on the winner's row.
+                log.exception("winner read failed for %s; requesting redelivery", key)
+                await msg.nak(delay=1)  # type: ignore[attr-defined]
+                return
             if winner is not None:
                 await self._republish_terminal(winner, envelope, msg)
             else:  # pragma: no cover - winner rolled back too; retry cleanly

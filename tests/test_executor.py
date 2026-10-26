@@ -572,6 +572,36 @@ def test_duplicate_record_race_republishes_winner() -> None:
     assert msg.acked == 1
 
 
+def test_lost_race_winner_read_failure_naks_instead_of_crashing() -> None:
+    """Epic 2 review: after losing the record race, a failed winner read must
+    nak (prompt redelivery dedupes on the row), not escape the task and leave
+    the command unacked until the 1h ack_wait."""
+    store, bus = FakeStore(), FakeBus()
+    cmd = make_command()
+    store.record_result = False
+
+    async def by_key_then_db_down(key: str) -> Invocation | None:
+        if store.records:
+            raise OSError("db down")
+        return None
+
+    executor = Executor(
+        by_key=by_key_then_db_down,
+        entrypoint=store.get_entrypoint,
+        record=store.record,
+        publish=bus.publish,
+        run=lambda **kwargs: _completed_outcome(),
+    )
+    msg = FakeMsg(cmd.model_dump_json().encode())
+    run(executor.handle_message(msg))  # must not raise
+    assert msg.naks == [1] and msg.acked == 0 and msg.termed == 0
+    assert executor._inflight == set()
+
+
+async def _completed_outcome() -> RunOutcome:
+    return make_outcome()
+
+
 def test_unknown_candybar_fails_and_terms() -> None:
     store, bus = FakeStore(entrypoint=None), FakeBus()
     executor, runs = make_executor(store, bus)

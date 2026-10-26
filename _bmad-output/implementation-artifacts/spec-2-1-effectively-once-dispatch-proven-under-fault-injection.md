@@ -110,3 +110,15 @@ Out of scope, recorded as deferred: a hard kill of the executor while a child is
 - `uv run ruff check .` -- expected: clean.
 - `CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 CANDYBAR_TEST_FAULT=1 uv run pytest tests/test_dispatch_fault_injection_integration.py -q` -- on throwaway nats:2.10.29 + postgres:17-alpine, expected: pass.
 - Full integration set (heartbeat, dispatcher, executor, manual, fast-stop) on the same throwaway pair -- expected: pass.
+
+## Independent Review (fresh context, 2026-10-26)
+
+Fresh-context review by a non-implementing agent. It covered the story's commits (758fe79, 6a3fe2f, d30fd6e) and the current `dispatcher/`, `executor/worker.py` and `events/` code. The blind, edge-case, verification-gap and acceptance layers ran inline because no subagent-spawn tool was available. Live proof: on throwaway nats:2.10.29 and postgres:17-alpine (`cbr2-*`), the fault suite passed 2/2, the executor and manual live suites passed 3/3, and the unit suite passed 748 with ruff clean. All three ACs hold.
+
+### Review Findings
+
+- [x] [Review][Patch] Lost record race: the winner read was unguarded [src/candybar/executor/worker.py:316]. When `record` reports a duplicate and the follow-up `_by_key` raises (a DB blip), the exception escaped the task and left the command unacked until the 1h ack_wait. It now naks with delay=1 like every other await in `_handle_claimed`. Pinned by `test_lost_race_winner_read_failure_naks_instead_of_crashing`, which fails with `OSError: db down` without the fix.
+
+Rejected:
+- low: dispatcher `ACK_WAIT_SECONDS` (120s) equals the live `BLOODBANK_*` `duplicate_window` (120s, checked on the live stream config). A command republished after a mid-tick crash can therefore land just outside broker dedupe, and the matrix's "first command deduped by msg id" is not guaranteed in production. Executor key dedupe (the row, or the in-flight nak) still yields one execution. The only extra cost is a possible duplicate `skipped` fact under the same event id. The fix means changing a live durable's ack_wait, which the earlier triage already rejected.
+- false: "the api SSE feed is a second tick consumer, which breaks AC 3". It is an ephemeral, ordered, non-durable tap that dedupes on tick_id, which AD-5 explicitly allows. `test_no_other_module_subscribes_to_ticks` pins the allow-list, and the fault suite asserts the single tick durable.

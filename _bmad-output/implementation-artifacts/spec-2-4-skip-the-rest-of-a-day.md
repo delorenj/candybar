@@ -167,3 +167,12 @@ Window read, exact intersection in date terms: fires in `[start, end)` have date
 - `uv run ruff check .` -- expected: clean.
 - `CANDYBAR_TEST_PG=1 uv run pytest tests/test_skip_rest_of_day_integration.py -q` -- on throwaway postgres:17-alpine. Expected: store tests pass.
 - `CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 CANDYBAR_TEST_FAULT=1 uv run pytest tests/test_skip_rest_of_day_integration.py tests/test_skip_occurrence_integration.py tests/test_misfire_integration.py tests/test_dispatch_fault_injection_integration.py -q` -- on throwaway nats:2.10.29 + postgres:17-alpine. Expected: pass (2.1–2.3 suites unaffected).
+
+## Independent Review (fresh context, 2026-10-26)
+
+Fresh-context review by a non-implementing agent. It covered bb7f0e2, 2776031 and bff8f2f and the current rest-of-day store path, the `list_skips` day window, `SkipSet.rest_of_day`, and the tick and gap handling. The layers ran inline because no subagent-spawn tool was available. On throwaway nats:2.10.29 and postgres:17-alpine (`cbr2-*`), both the store test and the live midnight-boundary test passed (`test_stored_day_skip_suppresses_until_utc_midnight_live`), as did the gap-over-a-skipped-day unit rows. All three ACs hold. No patches.
+
+### Review Findings
+
+Rejected:
+- low: unlike `next_fire`, which Story 5.3 bounded with a midnight jump, `previous_fire` walks back across rest-of-day dates one fire at a time. Measured: a minutely schedule with 8 consecutive skipped days resolves in 80ms. The dispatcher loads overrides only within [cursor+1m, tick], so the walk is bounded by the gap.
