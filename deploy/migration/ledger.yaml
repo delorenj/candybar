@@ -1632,13 +1632,13 @@ jobs:
   - systemctl --user disable --now gnome-shell-restart.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/gnome-shell-restart.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17941-6796-736f-a679-79b1fd5fdfca
   cutover_at: '2026-10-26T17:28:12.411348Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: c6484dba-fa13-57ca-a00b-0f6666f2dbe2
+    result: success
+    at: '2026-10-26T18:00:00.462712Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:23:14.032768Z'
@@ -1649,6 +1649,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17941-6796-736f-a679-79b1fd5fdfca enabled; first fire 2026-10-26T18:00:00Z
+  - at: '2026-10-26T18:00:07.180341Z'
+    action: verify
+    outcome: ok
+    detail: invocation c6484dba-fa13-57ca-a00b-0f6666f2dbe2 (scheduled) success exit=0 runtime=185ms memory=4337664B cpu=1.0022
 - id: systemd:srvls-metrics
   wave: '7.7'
   candybar:
@@ -2927,13 +2931,13 @@ jobs:
   - systemctl --user disable --now dev-journal-reconcile.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/dev-journal-reconcile.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794f-1662-7820-9977-fa78c32e699e
   cutover_at: '2026-10-26T17:43:09.180822Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 0c588ae0-c2c8-50b5-a3b6-e7f8ebad22cb
+    result: fail
+    at: '2026-10-26T18:00:00.597510Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:40:26.828883Z'
@@ -2944,6 +2948,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794f-1662-7820-9977-fa78c32e699e enabled; first fire 2026-10-26T18:00:00Z
+  - at: '2026-10-26T18:00:13.056006Z'
+    action: verify
+    outcome: ok
+    detail: 'invocation 0c588ae0-c2c8-50b5-a3b6-e7f8ebad22cb (scheduled) fail exit=3 runtime=173ms memory=19779584B cpu=0.7717 (result parity: the job already failed natively)'
 - id: systemd:sync-daily-reports-to-s3
   wave: '7.15'
   candybar:
