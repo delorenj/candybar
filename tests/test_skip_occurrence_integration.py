@@ -29,7 +29,7 @@ from uuid import uuid4
 import nats
 import pytest
 from nats.js.errors import NotFoundError
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 
 from candybar.dispatcher import role as dispatcher_role
 from candybar.dispatcher.schedule import fires_between, group_skips, next_fire
@@ -139,6 +139,17 @@ def test_occurrence_skip_store_is_idempotent_and_window_read() -> None:
             assert all(s.fire_time.tzinfo is not None for s in wide)
 
             # Unknown candybar: nothing stored, typed error (no sqlalchemy leak).
+            # The FK-race mapping in add_occurrence_skip keys on this name.
+            async with session_scope(engine) as session:
+                fk_names = (
+                    await session.execute(
+                        text(
+                            "select conname from pg_constraint "
+                            "where conrelid = 'skips'::regclass and contype = 'f'"
+                        )
+                    )
+                ).scalars().all()
+            assert fk_names == ["skips_candybar_id_fkey"]
             ghost = uuid4()
             with pytest.raises(UnknownCandybarError):
                 async with session_scope(engine) as session:

@@ -239,6 +239,9 @@ class Dispatcher:
         ahead of the cursor with newer ticks queued behind it (`pending`) is a
         backlog tick and dispatches nothing — the newest tick coalesces the
         whole gap; the cursor advances only after every publish succeeded.
+        With a skips port wired, the tick's overrides (back to the cursor on a
+        gap) are read before anything is published, and an operator-skipped
+        fire publishes its `skipped` fact instead of a command (not counted).
         """
         minute = tick.data.minute
         if minute.utcoffset() is None or minute.utcoffset().total_seconds() != 0:
@@ -295,7 +298,8 @@ class Dispatcher:
         if minute - last > self._window:
             log.warning(
                 "dispatcher gap %s..%s exceeds the %s catch-up window: missed fires before %s "
-                "are not individually recorded; each candybar's latest missed fire still runs",
+                "are not individually recorded; each candybar's latest non-skipped missed fire "
+                "still runs",
                 last.isoformat(),
                 minute.isoformat(),
                 self._window,

@@ -107,11 +107,11 @@ async def list_schedules(session: AsyncSession) -> list[ScheduleEntry]:
     ]
 
 
-def _require_tick_minute(minute: datetime) -> None:
+def _require_tick_minute(minute: datetime, what: str = "cursor minute") -> None:
     if minute.tzinfo is None or minute.utcoffset() is None or minute.utcoffset().total_seconds():
-        raise ValueError("cursor minute must be timezone-aware UTC")
+        raise ValueError(f"{what} must be timezone-aware UTC")
     if minute.second or minute.microsecond:
-        raise ValueError("cursor minute must be on a minute boundary")
+        raise ValueError(f"{what} must be on a minute boundary")
 
 
 async def get_dispatch_cursor(session: AsyncSession, name: str) -> datetime | None:
@@ -167,20 +167,9 @@ def _skip_entry(row: Skip) -> SkipEntry:
     )
 
 
-def _require_fire_minute(fire_time: datetime) -> None:
-    if (
-        fire_time.tzinfo is None
-        or fire_time.utcoffset() is None
-        or fire_time.utcoffset().total_seconds()
-    ):
-        raise ValueError("fire_time must be timezone-aware UTC")
-    if fire_time.second or fire_time.microsecond:
-        raise ValueError("fire_time must be on a minute boundary")
-
-
 def occurrence_skip_id(candybar_id: UUID, fire_time: datetime) -> UUID:
     """The deterministic row id of the occurrence skip `{candybar_id, fire_time}`."""
-    _require_fire_minute(fire_time)
+    _require_tick_minute(fire_time, "fire_time")
     epoch_minute = int(fire_time.timestamp()) // 60
     return uuid5(SKIP_NAMESPACE, f"{SKIP_OCCURRENCE}:{candybar_id}:{epoch_minute}")
 
@@ -196,7 +185,7 @@ async def add_occurrence_skip(
     caller's check (the API's 404, Story 5.6): a skip that matches no fire is
     inert. Raises UnknownCandybarError and ValueError (naive/off-minute time).
     """
-    _require_fire_minute(fire_time)
+    _require_tick_minute(fire_time, "fire_time")
     if await session.get(Candybar, candybar_id) is None:
         raise UnknownCandybarError(str(candybar_id))
     skip_id = occurrence_skip_id(candybar_id, fire_time)
@@ -226,8 +215,8 @@ async def add_occurrence_skip(
 
 async def list_skips(session: AsyncSession, start: datetime, end: datetime) -> list[SkipEntry]:
     """Occurrence skips with `start <= fire_time < end`, oldest fire first."""
-    _require_fire_minute(start)
-    _require_fire_minute(end)
+    _require_tick_minute(start, "window start")
+    _require_tick_minute(end, "window end")
     result = await session.scalars(
         select(Skip)
         .where(
