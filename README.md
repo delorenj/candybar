@@ -178,6 +178,7 @@ series per candybar.
 | `candybar_invocation_memory_bytes` | histogram (1 MiB–32 GiB buckets) | bytes |
 | `candybar_invocation_cpu_load_ratio` | histogram (0.01–32 buckets) | busy cores |
 | `candybar_invocation_gpu_load_ratio` | histogram (0.01–8 buckets) | busy GPUs |
+| `candybar_token_spend_total` | counter | self-reported LLM tokens (input + output) |
 
 Memory and CPU are measured by the executor from each invocation's cgroup v2
 scope (Story 3.1): memory is `memory.peak`, and CPU load is the `cpu.stat`
@@ -196,8 +197,17 @@ GPU load (Story 3.2) comes from `nvidia-smi pmon`:
 
 The container sees the GPU and the host PIDs that pmon reports through `gpus: all` and `pid: host` in `deploy/compose.yml`. `scripts/gpu-burn-candybar.py` is a dependency-free CUDA load job (driver API through ctypes) for proving GPU attribution end to end.
 
-OpenMetrics allows exemplars only on counters and histogram buckets. The
-memory gauge therefore carries no exemplar; its histogram twin does. The CPU
+Token spend (Story 3.3) is self-reported: the result file's
+`metrics.token_spend` (the SDKs' `ctx.add_tokens(...)`). The counter rises by
+that amount once per execution, on the invocation's own `result` series, so
+tokens a failed run reports still count, on `result="fail"`. Bare
+executables, non-LLM jobs and unparsable result files add 0. `cost_usd` is
+stored and returned by the API, but it has no Prometheus series.
+
+Every observation carries the `invocation_id` exemplar on every family,
+including a token increment of 0. OpenMetrics allows exemplars only on
+counters and histogram buckets. The memory gauge therefore carries no
+exemplar; its histogram twin does. The CPU
 and GPU load families are histograms for the same reason: they give the same
 `_sum`/`_count` a summary would, and can also carry the exemplar.
 
@@ -221,10 +231,30 @@ sum by (candybar_id) (rate(candybar_invocation_cpu_load_ratio_sum[1h]))
 # GPU burners: average busy GPUs per candybar
 sum by (candybar_id) (rate(candybar_invocation_gpu_load_ratio_sum[1h]))
   / sum by (candybar_id) (rate(candybar_invocation_gpu_load_ratio_count[1h]))
+# token burn: tokens per hour per candybar, and the top 5 burners over a day
+sum by (candybar_id) (increase(candybar_token_spend_total[1h]))
+topk(5, sum by (candybar_id) (increase(candybar_token_spend_total[1d])))
 ```
 
 These queries are unit-tested by promtool in CI
 (`deploy/prometheus/candybar-queries.test.yml`).
+
+**From an exemplar to the full record.** An exemplar gives you an
+`invocation_id`. The api role returns the stored `invocations` row for it:
+
+```bash
+curl https://candybar.delo.sh/invocations/<invocation_id>
+curl 'https://candybar.delo.sh/candybars/<candybar_id>/invocations?limit=20'   # newest first, 1..500, default 50
+```
+
+Each record has `runtimeMs`, `memoryPeakBytes`, `cpuLoad`, `gpuLoad`,
+`tokenSpend` and `costUsd` (null when not reported). It also has the
+identity, trigger and outcome fields: `id`, `candybarId`, `trigger`,
+`tickId`, `idempotencyKey`, `result`, `exitCode`, `errorMessage`,
+`stderrTail`, `startedAt` and `finishedAt`. A row is written only when the
+invocation finishes, so an invocation still running returns 404, as does an
+unknown id. An unknown candybar returns 404, and a malformed id or a `limit`
+out of range returns 422, all as problem+json.
 
 ## Deploy (AD-15)
 

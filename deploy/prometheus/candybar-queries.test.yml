@@ -157,3 +157,34 @@ tests:
         exp_samples:
           - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a"}'
             value: 0.75
+
+  # Story 3.3: token burn per candybar (self-reported LLM tokens).
+  - interval: 1m
+    input_series:
+      # A is an LLM job spending 1200 tokens per success; its one failure spent 500.
+      - series: 'candybar_token_spend_total{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success"}'
+        values: '0+1200x60'
+      - series: 'candybar_token_spend_total{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="fail"}'
+        values: '0x30 500x30'
+      # B is a bare executable: both series exist at 0.
+      - series: 'candybar_token_spend_total{candybar_id="0199a1b2-0000-7000-8000-00000000000b",result="success"}'
+        values: '0x60'
+      - series: 'candybar_token_spend_total{candybar_id="0199a1b2-0000-7000-8000-00000000000b",result="fail"}'
+        values: '0x60'
+
+    promql_expr_test:
+      # Tokens per hour per candybar (fail-side spend still counts).
+      - expr: sum by (candybar_id) (increase(candybar_token_spend_total[1h]))
+        eval_time: 60m
+        exp_samples:
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a"}'
+            value: 72500
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000b"}'
+            value: 0
+
+      # The top token burner.
+      - expr: topk(1, sum by (candybar_id) (increase(candybar_token_spend_total[1h])))
+        eval_time: 60m
+        exp_samples:
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a"}'
+            value: 72500

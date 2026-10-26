@@ -9,7 +9,13 @@ failure means no row (503), a unique-violation race maps to 409.
 Story 1.8 adds `POST /candybars/{id}/invoke` (AD-12): the api publishes one
 `bloodbank.cmd.cron.candybar.invoke` command with `trigger=manual` and answers
 202 — the executor runs it down the same path as a scheduled fire.
-All errors are RFC 7807 problem+json. Epic 5 adds the CAP-8 read surface.
+Story 3.3 adds the per-invocation record read (AD-9: "the full per-invoke
+record ... stored in the `invocations` table, queryable via the API"):
+`GET /invocations/{id}` resolves an `invocation_id` exemplar to its stored
+row, and `GET /candybars/{id}/invocations?limit=N` lists a candybar's
+recorded invocations newest first. Rows exist only once terminal, so an
+in-flight invocation is a 404.
+All errors are RFC 7807 problem+json. Epic 5 adds the rest of the CAP-8 read surface.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import nats.errors
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import REGISTRY, CollectorRegistry
@@ -32,10 +38,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from candybar.events.builders import build_candybar_created, build_candybar_invoke
 from candybar.registry import (
+    INVOCATION_LIST_MAX,
     CandybarManifest,
     DuplicateNameError,
     get_candybar,
+    get_invocation,
     insert_candybar,
+    list_invocations,
     name_taken,
     uuid7,
 )
@@ -92,6 +101,29 @@ def candybar_row_json(row: Any) -> dict[str, Any]:
         "entrypoint": row.entrypoint,
         "noise": row.noise,
         "createdAt": row.created_at.isoformat(),
+    }
+
+
+def invocation_row_json(row: Any) -> dict[str, Any]:
+    """The full per-invoke record (AD-9): identity, outcome, all five measures, token fields."""
+    return {
+        "id": str(row.id),
+        "candybarId": str(row.candybar_id),
+        "trigger": row.trigger,
+        "tickId": row.tick_id,
+        "idempotencyKey": row.idempotency_key,
+        "result": row.result,
+        "exitCode": row.exit_code,
+        "errorMessage": row.error_message,
+        "stderrTail": row.stderr_tail,
+        "runtimeMs": row.runtime_ms,
+        "memoryPeakBytes": row.memory_peak_bytes or 0,
+        "cpuLoad": row.cpu_load or 0.0,
+        "gpuLoad": row.gpu_load or 0.0,
+        "tokenSpend": row.token_spend or 0,
+        "costUsd": float(row.cost_usd) if row.cost_usd is not None else None,
+        "startedAt": row.started_at.isoformat(),
+        "finishedAt": row.finished_at.isoformat() if row.finished_at is not None else None,
     }
 
 
@@ -235,5 +267,31 @@ def create_app(
                 "trigger": command.data.trigger,
             },
         )
+
+    @app.get("/invocations/{invocation_id}")
+    async def invocation(invocation_id: UUID) -> JSONResponse:
+        """The stored record behind an `invocation_id` exemplar."""
+        async with session_factory() as session:
+            row = await get_invocation(session, invocation_id)
+            body = invocation_row_json(row) if row is not None else None
+        if body is None:
+            return problem(
+                404, "Invocation not found", f"no recorded invocation with id {invocation_id}"
+            )
+        return JSONResponse(content=body)
+
+    @app.get("/candybars/{candybar_id}/invocations")
+    async def candybar_invocations(
+        candybar_id: UUID, limit: int = Query(50, ge=1, le=INVOCATION_LIST_MAX)
+    ) -> JSONResponse:
+        """A candybar's recorded invocations, newest first."""
+        async with session_factory() as session:
+            if await get_candybar(session, candybar_id) is None:
+                return problem(
+                    404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                )
+            rows = await list_invocations(session, candybar_id, limit)
+            body = [invocation_row_json(r) for r in rows]
+        return JSONResponse(content={"candybarId": str(candybar_id), "invocations": body})
 
     return app

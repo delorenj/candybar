@@ -280,6 +280,34 @@ async def invocation_by_key(session: AsyncSession, idempotency_key: str) -> Invo
     return result.scalar_one_or_none()
 
 
+# Upper bound for one page of invocation history (the API enforces it too).
+INVOCATION_LIST_MAX = 500
+
+
+async def get_invocation(session: AsyncSession, invocation_id: UUID) -> Invocation | None:
+    """The recorded invocation row for an invocation id, or None (unknown or in flight).
+
+    Rows are written only at the terminal state (Story 1.6), so an invocation
+    still running has no row yet.
+    """
+    return await session.get(Invocation, invocation_id)
+
+
+async def list_invocations(
+    session: AsyncSession, candybar_id: UUID, limit: int = 50
+) -> list[Invocation]:
+    """A candybar's recorded invocations, newest first (index invocations_candybar_started)."""
+    if not 1 <= limit <= INVOCATION_LIST_MAX:
+        raise ValueError(f"limit must be within 1..{INVOCATION_LIST_MAX}, got {limit}")
+    result = await session.execute(
+        select(Invocation)
+        .where(Invocation.candybar_id == candybar_id)
+        .order_by(Invocation.started_at.desc(), Invocation.id.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 @dataclass(frozen=True)
 class TerminalInvocation:
     """Everything the executor learned about a finished (or unstartable) run."""

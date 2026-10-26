@@ -188,6 +188,7 @@ class Executor:
                 memory_peak_bytes=rec.memory_peak_bytes,
                 cpu_load=rec.cpu_load,
                 gpu_load=rec.gpu_load,
+                token_spend=rec.token_spend,
             )
         except Exception:
             log.exception("metric recording failed for invocation %s", rec.invocation_id)

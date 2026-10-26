@@ -23,6 +23,7 @@ from .models import (
     Skip,
 )
 from .store import (
+    INVOCATION_LIST_MAX,
     DuplicateInvocationError,
     DuplicateNameError,
     SkipEntry,
@@ -35,8 +36,10 @@ from .store import (
     get_candybar,
     get_dispatch_cursor,
     get_entrypoint,
+    get_invocation,
     insert_candybar,
     invocation_by_key,
+    list_invocations,
     list_skips,
     name_taken,
     normalize_dsn,
@@ -46,6 +49,7 @@ from .store import (
 )
 
 __all__ = [
+    "INVOCATION_LIST_MAX",
     "MANIFEST_FILENAME",
     "SKIP_KINDS",
     "SKIP_OCCURRENCE",
@@ -69,8 +73,10 @@ __all__ = [
     "get_candybar",
     "get_dispatch_cursor",
     "get_entrypoint",
+    "get_invocation",
     "insert_candybar",
     "invocation_by_key",
+    "list_invocations",
     "list_skips",
     "load_manifest",
     "name_taken",

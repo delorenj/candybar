@@ -415,3 +415,111 @@ def test_dispatch_cursor_is_owner_only_monotonic_and_utc(migrated_db: str) -> No
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_invocation_reads_round_trip_through_the_api(migrated_db: str) -> None:
+    """Story 3.3: the full per-invoke record is retrievable via the API.
+
+    Real rows in real Postgres -> get_invocation/list_invocations -> the real
+    FastAPI routes: every CAP-3 measure + both token fields match the row,
+    lists are newest-first, limit-bounded and per-candybar.
+    """
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+    from decimal import Decimal
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from candybar.api.app import create_app
+    from candybar.registry import (
+        TerminalInvocation,
+        get_invocation,
+        list_invocations,
+        record_terminal_invocation,
+    )
+
+    t0 = datetime(2026, 10, 26, 3, 0, tzinfo=UTC)
+
+    async def seed() -> tuple[object, object, list[object]]:
+        engine = create_registry_engine(migrated_db)
+        try:
+            async with session_scope(engine) as session:
+                mine = await insert_candybar(
+                    session,
+                    CandybarManifest(
+                        name="llm-digest", description="", tags=[], schedule="* * * * *",
+                        entrypoint="/bin/true",
+                    ),
+                )
+                other = await insert_candybar(
+                    session,
+                    CandybarManifest(
+                        name="other-job", description="", tags=[], schedule="* * * * *",
+                        entrypoint="/bin/true",
+                    ),
+                )
+            ids = [uuid7() for _ in range(3)]
+            async with session_scope(engine) as session:
+                for i, inv in enumerate(ids):
+                    await record_terminal_invocation(
+                        session,
+                        TerminalInvocation(
+                            invocation_id=inv, candybar_id=mine.id, trigger="scheduled",
+                            tick_id=f"tick:{29883000 + i}",
+                            idempotency_key=f"candybar:{mine.id}:tick:tick:{29883000 + i}",
+                            result="success" if i != 1 else "fail",
+                            exit_code=0 if i != 1 else 1, runtime_ms=1000 + i,
+                            error_message=None if i != 1 else "exit code 1",
+                            stderr_tail=None, token_spend=1200 + i,
+                            cost_usd=Decimal("0.03") if i != 2 else None,
+                            started_at=t0 + timedelta(minutes=i),
+                            finished_at=t0 + timedelta(minutes=i, seconds=2),
+                            memory_peak_bytes=64 * 1024 * 1024 + i, cpu_load=0.5 + i,
+                            gpu_load=0.25 * i,
+                        ),
+                    )
+                await record_terminal_invocation(
+                    session,
+                    TerminalInvocation(
+                        invocation_id=uuid7(), candybar_id=other.id, trigger="manual",
+                        tick_id=None, idempotency_key=f"candybar:{other.id}:manual:x",
+                        result="success", exit_code=0, runtime_ms=5, error_message=None,
+                        stderr_tail=None, token_spend=0, cost_usd=None,
+                        started_at=t0 + timedelta(hours=1), finished_at=t0 + timedelta(hours=1),
+                    ),
+                )
+            async with session_scope(engine) as session:
+                assert await get_invocation(session, uuid7()) is None
+                assert (await get_invocation(session, ids[0])).token_spend == 1200
+                newest_two = await list_invocations(session, mine.id, 2)
+                assert [r.id for r in newest_two] == [ids[2], ids[1]]
+                with pytest.raises(ValueError):
+                    await list_invocations(session, mine.id, 0)
+            return mine.id, other.id, ids
+        finally:
+            await engine.dispose()
+
+    mine_id, other_id, ids = asyncio.run(seed())
+
+    # The TestClient runs its own loop: a NullPool engine never shares a
+    # connection across loops.
+    api_engine = create_async_engine(migrated_db, poolclass=NullPool)
+    client = TestClient(create_app(session_factory=lambda: session_scope(api_engine), sink=None))
+
+    body = client.get(f"/invocations/{ids[1]}").json()
+    assert body["candybarId"] == str(mine_id) and body["result"] == "fail"
+    assert body["runtimeMs"] == 1001
+    assert body["memoryPeakBytes"] == 64 * 1024 * 1024 + 1
+    assert body["cpuLoad"] == 1.5 and body["gpuLoad"] == 0.25
+    assert body["tokenSpend"] == 1201 and body["costUsd"] == 0.03
+    assert body["errorMessage"] == "exit code 1" and body["exitCode"] == 1
+    assert body["startedAt"] == (t0 + timedelta(minutes=1)).isoformat()
+    assert client.get(f"/invocations/{ids[2]}").json()["costUsd"] is None
+    assert client.get(f"/invocations/{uuid7()}").status_code == 404
+
+    listed = client.get(f"/candybars/{mine_id}/invocations").json()["invocations"]
+    assert [i["id"] for i in listed] == [str(x) for x in reversed(ids)]
+    assert len(client.get(f"/candybars/{other_id}/invocations").json()["invocations"]) == 1
+    assert client.get(f"/candybars/{uuid7()}/invocations").status_code == 404

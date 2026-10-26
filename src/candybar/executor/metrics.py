@@ -24,6 +24,15 @@ Story 3.2 adds `candybar_invocation_gpu_load_ratio` (histogram), the GPU twin
 of the CPU-load family: average busy GPUs per invocation (nvidia-smi pmon
 per-pid SM% of the process tree / 100; 1.0 = one GPU saturated). It is the
 spine's "GPU load summary"; GPU-less hosts observe 0.
+
+Story 3.3 adds `candybar_token_spend_total` (counter): self-reported LLM tokens
+(input + output, the result file's `metrics.token_spend`), incremented once per
+execution by the reported amount — 0 for bare executables, non-LLM jobs and
+unparsable result files. It is incremented even by 0 so EVERY observation
+carries the `invocation_id` exemplar. Every family above that OpenMetrics
+lets carry an exemplar (counters, histograms) does so on every observation;
+the memory gauge is the only exemplar-less family and its histogram twin
+covers it (`EXEMPLAR_LESS_FAMILIES`).
 """
 
 from __future__ import annotations
@@ -75,6 +84,11 @@ MEMORY_PEAK_METRIC = "candybar_invocation_memory_peak_bytes"
 MEMORY_METRIC = "candybar_invocation_memory_bytes"
 CPU_LOAD_METRIC = "candybar_invocation_cpu_load_ratio"
 GPU_LOAD_METRIC = "candybar_invocation_gpu_load_ratio"
+TOKEN_SPEND_METRIC = "candybar_token_spend"  # exposed as candybar_token_spend_total
+
+# Gauges cannot carry exemplars (OpenMetrics); each one has a histogram twin
+# that does. The coverage guard test asserts every other family carries one.
+EXEMPLAR_LESS_FAMILIES: dict[str, str] = {MEMORY_PEAK_METRIC: MEMORY_METRIC}
 
 
 class ExecutorMetrics:
@@ -122,6 +136,12 @@ class ExecutorMetrics:
             buckets=GPU_LOAD_BUCKETS,
             registry=registry,
         )
+        self.token_spend = Counter(
+            TOKEN_SPEND_METRIC,
+            "Self-reported LLM tokens (input + output) spent by candybar invocations.",
+            labelnames=SERIES_LABELS,
+            registry=registry,
+        )
 
     def observe(
         self,
@@ -133,10 +153,12 @@ class ExecutorMetrics:
         memory_peak_bytes: int = 0,
         cpu_load: float = 0.0,
         gpu_load: float = 0.0,
+        token_spend: int = 0,
     ) -> None:
         """Record one terminal invocation; called once per execution.
 
-        Unmeasured memory/CPU/GPU arrive as 0 and are observed as 0 (spine rule).
+        Unmeasured memory/CPU/GPU and unreported token spend arrive as 0 and
+        are observed as 0 (spine rule).
         """
         if result not in RESULTS:
             raise ValueError(f"result must be one of {RESULTS}, got {result!r}")
@@ -157,6 +179,8 @@ class ExecutorMetrics:
         self.memory.labels(**labels).observe(memory, exemplar=exemplar)
         self.cpu_load.labels(**labels).observe(load, exemplar=exemplar)
         self.gpu_load.labels(**labels).observe(max(gpu_load, 0.0), exemplar=exemplar)
+        # inc(0) still stamps the exemplar: every observation is traceable.
+        self.token_spend.labels(**labels).inc(max(token_spend, 0), exemplar=exemplar)
 
     def _families(self) -> tuple[Counter | Gauge | Histogram, ...]:
         return (
@@ -166,6 +190,7 @@ class ExecutorMetrics:
             self.memory,
             self.cpu_load,
             self.gpu_load,
+            self.token_spend,
         )
 
 
@@ -178,6 +203,7 @@ __all__ = [
     "CPU_LOAD_METRIC",
     "EXECUTOR_METRICS",
     "EXEMPLAR_LABEL",
+    "EXEMPLAR_LESS_FAMILIES",
     "GPU_LOAD_BUCKETS",
     "GPU_LOAD_METRIC",
     "INVOCATIONS_METRIC",
@@ -188,5 +214,6 @@ __all__ = [
     "RUNTIME_BUCKETS_MS",
     "RUNTIME_METRIC",
     "SERIES_LABELS",
+    "TOKEN_SPEND_METRIC",
     "ExecutorMetrics",
 ]
