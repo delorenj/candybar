@@ -122,11 +122,13 @@ def _fault_sink(role_name: str) -> type[NatsEventSink]:
 
 
 async def _refuse_live_bus(js: JetStreamContext) -> None:
-    """Skip unless every stream and stored subject is candybar test traffic."""
+    """Fail — loudly, touching nothing — unless every stream and stored
+    subject is candybar traffic. CANDYBAR_TEST_FAULT=1 asserts a throwaway
+    bus; a skip here would let CI go green with the suite silently unrun."""
     for info in await js.streams_info():
         name = info.config.name
         if name not in {s for s, _, _ in STREAMS} and not name.startswith("CANDYBAR_TEST_"):
-            pytest.skip(f"refusing to reset streams: foreign stream {name!r} — not a throwaway bus")
+            pytest.fail(f"refusing to reset streams: foreign stream {name!r} — not a throwaway bus")
     for name, _, _ in STREAMS:
         try:
             info = await js.stream_info(name, subjects_filter=">")
@@ -134,7 +136,7 @@ async def _refuse_live_bus(js: JetStreamContext) -> None:
             continue
         foreign = [s for s in (info.state.subjects or {}) if not s.startswith(CANDYBAR_SUBJECT_PREFIXES)]
         if foreign:
-            pytest.skip(f"refusing to reset {name}: carries non-candybar traffic ({foreign[:3]})")
+            pytest.fail(f"refusing to reset {name}: carries non-candybar traffic ({foreign[:3]})")
 
 
 async def _reset_streams(js: JetStreamContext) -> None:
@@ -265,8 +267,12 @@ def test_effectively_once_under_fault_injection(tmp_path: Path, monkeypatch) -> 
 
             # --- Fault 2: dispatcher dies mid-tick ---------------------------
             t2 = build_tick_fired(T2)
+            # Scoped to this test's candybars: a stray `* * * * *` row left in a
+            # shared throwaway registry must not be the one that takes the crash.
             FAULTS["dispatcher"] = lambda e: (
-                isinstance(e, CandybarInvokeCommand) and e.data.tick_id == t2.data.tick_id
+                isinstance(e, CandybarInvokeCommand)
+                and e.data.tick_id == t2.data.tick_id
+                and e.data.candybar_id in (ids["a"], ids["b"])
             )
             dispatcher_task = running["dispatcher"][0]
             await ticks.publish_tick(t2)
@@ -298,6 +304,18 @@ def test_effectively_once_under_fault_injection(tmp_path: Path, monkeypatch) -> 
             )
             await ticks.publish_tick(t3)
             await _until(lambda: FAULTS["executor"] is None, "executor crash after completed")
+            # B's T3 runs alongside; stopping the role while it is in flight
+            # would SIGTERM it into a `failed` row. Let it record first.
+            b_t3_key = f"candybar:{ids['b']}:tick:{t3.data.tick_id}"
+
+            async def b_t3_recorded() -> bool:
+                async with session_scope(engine) as session:
+                    row = await session.scalar(
+                        select(Invocation).where(Invocation.idempotency_key == b_t3_key)
+                    )
+                    return row is not None
+
+            await _until(b_t3_recorded, "B's T3 row before the executor restart")
             await stop_role("executor")
             start("executor")  # restart: redelivery finds the row, never re-runs
             await _until(lambda: _bus_idle(js), "T3 settle")
@@ -421,7 +439,15 @@ def test_restarted_and_concurrent_dispatchers_share_one_durable(monkeypatch) -> 
                 await asyncio.wait_for(task, timeout=15)
             stops = [asyncio.Event(), asyncio.Event()]  # two roles at once
             tasks = [asyncio.create_task(dispatcher_role.run_dispatcher(s)) for s in stops]
-            await asyncio.sleep(2)
+
+            async def both_pulling() -> bool:
+                try:
+                    info = await js.consumer_info("BLOODBANK_EVENTS", dispatcher_role.DURABLE)
+                except NotFoundError:
+                    return False
+                return info.num_waiting >= 2  # a pull request from each role
+
+            await _until(both_pulling, "both dispatcher roles pulling the one durable")
             consumers = await js.consumers_info("BLOODBANK_EVENTS")
             assert [c.name for c in consumers] == [dispatcher_role.DURABLE]
             assert consumers[0].config.filter_subject == dispatcher_role.TICK_FILTER

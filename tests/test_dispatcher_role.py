@@ -178,10 +178,13 @@ def test_no_other_module_subscribes_to_ticks():
                 first = node.args[0] if node.args else None
                 label = ast.unparse(first) if first is not None else "<none>"
                 found.add((path.relative_to(src).as_posix(), label))
+    # A new subscriber (e.g. an SSE feed of candybar facts) must be added here
+    # deliberately — and must never filter raw ticks (AD-5: only the
+    # dispatcher's durable evaluates schedules; others dedupe on tick_id).
     assert found == {
         ("dispatcher/role.py", "TICK_FILTER"),
         ("executor/role.py", "INVOKE_FILTER"),
-    }
+    }, f"unexpected NATS subscription sites: {sorted(found)}"
     from candybar.executor import role as executor_role
 
     assert "tick" not in executor_role.INVOKE_FILTER
