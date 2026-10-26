@@ -101,6 +101,26 @@ def test_manifest_rejects_six_field_cron() -> None:
         _manifest(schedule="0 * * * * *")
 
 
+@pytest.mark.parametrize(
+    "schedule",
+    ["R * * * *", "0 r * * *", "R(0-30) * * * *", "0 R/2 * * *", "0 0 * * r"],
+)
+def test_manifest_rejects_random_cron_fields(schedule: str) -> None:
+    # croniter accepts its non-standard `R` token and re-rolls it on every
+    # parse; the dispatcher parses per tick, so the job would fire at random.
+    import croniter
+
+    croniter.croniter(schedule)  # precondition: croniter itself accepts it
+    with pytest.raises(ValueError, match="hashed/random"):
+        _manifest(schedule=schedule)
+
+
+@pytest.mark.parametrize("schedule", ["0 0 * mar fri", "0 0 * * 5#3", "0 0 L * *"])
+def test_manifest_keeps_named_and_extended_fields(schedule: str) -> None:
+    # Month/day names contain `r` (mar, apr, fri): only whole R/H tokens are refused.
+    assert _manifest(schedule=schedule).schedule == schedule
+
+
 def test_manifest_rejects_unknown_keys() -> None:
     with pytest.raises(ValueError):
         _manifest(schedul="* * * * *")  # typo must not silently pass

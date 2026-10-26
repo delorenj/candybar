@@ -18,6 +18,12 @@ MANIFEST_FILENAME = "candybar.toml"
 # Spine naming convention: unique lowercase slugs.
 SLUG_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
 
+# croniter's non-standard hashed/random field tokens (`H`, `R`, `R(0-30)`,
+# `R/2`, any case). `R` re-rolls a random value every time an expression is
+# parsed, and the dispatcher parses per tick: such a schedule fires at
+# random minutes and the read API's fire times never match the real ones.
+_HASHED_FIELD_RE = re.compile(r"^[hr](\(\d+-\d+\))?(/\d+)?$", re.IGNORECASE)
+
 
 class ManifestError(ValueError):
     """Raised when a candybar.toml is missing, unparseable, or invalid."""
@@ -66,6 +72,11 @@ class CandybarManifest(BaseModel):
         if len(fields) != 5:
             raise ValueError(
                 f"schedule must be a standard 5-field cron expression, got {len(fields)} fields: {value!r}"
+            )
+        if any(_HASHED_FIELD_RE.match(field) for field in fields):
+            raise ValueError(
+                f"invalid cron schedule {value!r}: hashed/random fields (H, R) are not "
+                "standard cron and do not fire deterministically"
             )
         try:
             croniter.croniter(value)
