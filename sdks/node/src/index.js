@@ -79,7 +79,8 @@ function capMessage(message) {
   // executor counts). A UTF-16 slice can split a surrogate pair; the lone
   // surrogate survives JSON into the registry write, which Postgres rejects —
   // the executor then naks and re-executes the invocation forever.
-  const points = Array.from(String(message).toWellFormed());
+  // NUL is stripped for the same reason: Postgres text rejects 0x00.
+  const points = Array.from(String(message).toWellFormed().replaceAll("\0", ""));
   return points.length > MESSAGE_MAX ? points.slice(0, MESSAGE_MAX).join("") : points.join("");
 }
 

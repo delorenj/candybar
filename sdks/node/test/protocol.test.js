@@ -205,6 +205,15 @@ test("the cap counts code points and never splits a surrogate pair", async () =>
   assert.ok((await h.read()).message.isWellFormed());
 });
 
+test("NUL bytes are stripped from messages (Postgres text rejects 0x00)", async () => {
+  const h = await harness();
+  const res = await candybar(async () => {
+    throw new Error("nul\0in\0message");
+  }, h.opts);
+  assert.equal(res.message, "nulinmessage");
+  assert.ok(!JSON.stringify(await h.read()).includes("\\u0000"));
+});
+
 test("lone surrogates in an author message are replaced, not written", async () => {
   const h = await harness();
   const res = await candybar(async () => ({ status: "fail", message: "bad \uD83D data" }), h.opts);
