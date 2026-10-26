@@ -35,3 +35,6 @@ now completes in ~1s, pinned by tests/test_fast_stop_integration.py).
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-2-average-gpu-load-per-invocation-nvidia-smi-or-zero.md`
   summary: Run the real-nvidia-smi attribution tests (CANDYBAR_TEST_GPU=1) in CI.
   evidence: CI is hosted ubuntu-latest (public repo) with no GPU, so a driver update that changes pmon output would ship green. The parser tests use captured real shapes, and a manual or self-hosted GPU job on big-chungus would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-2-schedule-window-endpoint-with-exact-skip-aware-fire-times.md`
+  summary: The API's shared RequestValidationError handler (Story 1.4) titles every validation problem "Invalid request body", so a bad query parameter (`GET /schedule?from=...`, `?limit=` on invocations) or path id gets a misleading title.
+  evidence: The handler is at src/candybar/api/app.py `_validation_problem`, and it predates this story. `tests/test_cli_run.py:77` pins the current title for a path-id error. A neutral title ("Invalid request"), or one chosen from `exc.errors()[0]["loc"][0]`, would fix it, but changing the title touches the CLI's problem rendering test.

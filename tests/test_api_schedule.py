@@ -392,6 +392,10 @@ def test_rows_equal_what_the_dispatcher_publishes_for_each_tick(rig: Rig) -> Non
     bravo = rig.add("bravo", "*/15 * * * *")
     charlie = rig.add("charlie", "7,22 10-11 * * *")
     delta = rig.add("delta", "0 0 30 2 *")  # valid but never fires
+    # Day-of-month OR day-of-week (standard cron): the 26th, though not a
+    # Saturday. Pins that croniter's match (dispatcher) and its iteration
+    # (rows) agree on the DOM/DOW semantics.
+    echo = rig.add("echo", "45 11 26 * 6")
     rig.skip(alpha, at(10, 15))
     rig.skip(bravo, at(10, 45))
     rig.skip_day(charlie, date(2026, 10, 26))
@@ -438,6 +442,7 @@ def test_rows_equal_what_the_dispatcher_publishes_for_each_tick(rig: Rig) -> Non
     assert skipped == {(r["candybarId"], r["fireTime"]) for r in rows if r["skipped"]}
     assert len(skipped) == 6  # alpha 10:15, bravo 10:45, charlie 10:07 + 10:22 + 11:07 + 11:22
     assert not any(r["candybarId"] == str(delta.id) for r in rows)
+    assert (str(echo.id), at(11, 45).isoformat()) in commands  # Monday the 26th fires
     for r in rows:
         schedule = r["schedule"]
         assert matches_tick(schedule, datetime.fromisoformat(r["fireTime"]))
@@ -496,3 +501,40 @@ def test_group_skips_feed_matches_the_dispatcher_fold() -> None:
         [alpha], at(10), at(10, 10), now=at(9), skips=group_skips([entry])
     )
     assert [r.skipped for r in rows] == [False, True]
+
+
+def test_default_clock_is_the_utc_wall_clock(rig: Rig) -> None:
+    # No `now` injected: the production path. A minutely candybar's current
+    # row must be the first minute after the real wall clock.
+    rig.add("alpha", "* * * * *")
+
+    @asynccontextmanager
+    async def session_factory() -> AsyncIterator[Any]:
+        yield object()
+
+    client = TestClient(create_app(session_factory=session_factory, sink=None))
+    before = datetime.now(UTC)
+    response = client.get(
+        "/schedule",
+        params={"from": z(before - timedelta(minutes=3)), "to": z(before + timedelta(minutes=3))},
+    )
+    after = datetime.now(UTC)
+    assert response.status_code == 200, response.text
+    current = [r["fireTime"] for r in response.json() if r["state"] == "current"]
+    assert current in (
+        [first_tick_after(before).isoformat()],
+        [first_tick_after(after).isoformat()],  # the request straddled a minute
+    )
+
+
+def test_scheduled_key_rejects_a_malformed_tick_id() -> None:
+    # The tick-id guard moved out of build_candybar_invoke into the shared helper.
+    from candybar.events.builders import build_candybar_invoke
+
+    cid = uuid4()
+    assert scheduled_idempotency_key(cid, "tick:42") == f"candybar:{cid}:tick:tick:42"
+    for bad in ("42", "tick:", "tick:abc", "tick:-1"):
+        with pytest.raises(ValueError, match="invalid tick_id"):
+            scheduled_idempotency_key(cid, bad)
+        with pytest.raises(ValueError, match="invalid tick_id"):
+            build_candybar_invoke(candybar_id=cid, name="alpha", trigger="scheduled", tick_id=bad)
