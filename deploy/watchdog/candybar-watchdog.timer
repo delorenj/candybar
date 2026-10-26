@@ -1,0 +1,15 @@
+# Off-candybar self-watchdog timer (AD-22, Story 7.6).
+#
+# Every 2 minutes, persistent across downtime (a missed run after a suspend
+# fires once on wake). Never registered as a candybar.
+
+[Unit]
+Description=Candybar watchdog timer (every 2 min, off-candybar)
+Documentation=file://%h/code/33GOD/candybar/deploy/watchdog/README.md
+
+[Timer]
+OnCalendar=*:0/2
+Persistent=true
+
+[Install]
+WantedBy=timers.target

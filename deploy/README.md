@@ -98,6 +98,17 @@ pinned `scheduler: external`, and that pin only takes effect in the gateway afte
 the batched `hermes-gateway-restart` of wave 7.17, so no Hermes job is cut over
 before then. `deploy/smoke/hermes/` is the live canary (README there).
 
+## Off-candybar watchdog (Story 7.6, AD-22)
+
+`watchdog/` is a `systemd --user` timer (every 2 min) that watches candybar
+from OUTSIDE candybar — never registered as a candybar (CI gate:
+`scripts/check-watchdog-not-a-candybar.sh`). It checks `/healthz`, that the
+every-minute `watchdog-canary` candybar (`deploy/smoke/watchdog-canary/`)
+finished within 3 minutes, and that `candybar-executor.service` is active;
+pages ntfy once per outage and once on recovery; touches an ok-stamp that
+infra-doctor's `candybar-watchdog-alive` file_age probe watches. Install with
+`deploy/watchdog/install.sh`; details in `deploy/watchdog/README.md`.
+
 ### Deploying (a pair)
 
 Any change that touches the daemon redeploys both halves, container first, so

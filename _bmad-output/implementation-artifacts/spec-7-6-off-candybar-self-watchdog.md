@@ -2,7 +2,7 @@
 title: 'Story 7.6: Off-candybar self-watchdog'
 type: 'feature'
 created: '2026-10-26'
-status: 'draft'
+status: 'in-progress'
 route: 'dispatch'
 review_loop_iteration: 0
 baseline_commit: 'bc49f81'

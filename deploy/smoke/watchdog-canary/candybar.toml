@@ -1,0 +1,16 @@
+# Canary for the off-candybar watchdog (Story 7.6, AD-22): fires every minute,
+# no side effects, so candybar-watchdog.timer can prove the whole
+# heartbeat -> dispatcher -> NATS -> executor -> registry path is alive by
+# reading this candybar's latest invocation. `noise = true` keeps it out of
+# the schedule view's foreground.
+[candybar]
+name = "watchdog-canary"
+description = "Every-minute liveness canary read by candybar-watchdog (AD-22); no side effects"
+tags = ["canary", "watchdog"]
+schedule = "* * * * *"
+noise = true
+
+[candybar.runner]
+kind = "exec"
+argv = ["/bin/sh", "-c", "true"]
+timeout_s = 30

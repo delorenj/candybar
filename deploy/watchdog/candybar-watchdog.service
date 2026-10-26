@@ -1,0 +1,19 @@
+# Off-candybar self-watchdog (AD-22, Story 7.6).
+#
+# candybar must never be its own watchdog: if the heartbeat, dispatcher, API
+# or host executor dies silently, nothing inside candybar could tell you.
+# This oneshot runs candybar-watchdog.sh every 2 minutes from
+# candybar-watchdog.timer. It is never registered as a candybar (CI gate:
+# scripts/check-watchdog-not-a-candybar.sh).
+#
+# Linked (not copied) into ~/.config/systemd/user by deploy/watchdog/install.sh.
+
+[Unit]
+Description=Candybar off-scheduler watchdog (healthz + canary freshness + executor unit)
+Documentation=file://%h/code/33GOD/candybar/deploy/watchdog/README.md
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=%h/code/33GOD/candybar/deploy/watchdog/candybar-watchdog.sh
+# Page-only: it never restarts anything it watches.

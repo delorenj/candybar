@@ -111,6 +111,14 @@ jobs:
           fi
           bash scripts/check-deploy-hygiene.sh
 
+      # Story 7.6: AD-22 gate — candybar-watchdog is never a candybar.
+      - name: Watchdog-is-not-a-candybar gate (AD-22)
+        run: |
+          if ! command -v rg >/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+          fi
+          bash scripts/check-watchdog-not-a-candybar.sh
+
       # Story 1.9: the deployment envelope must build on every push. The
       # image entrypoint migrates the registry first, so the CLI smoke
       # bypasses it with --entrypoint (no database in this job).
