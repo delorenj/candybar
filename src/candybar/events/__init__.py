@@ -40,6 +40,7 @@ from .vocabulary import (
     TYPE_CANDYBAR_SKIPPED,
     TYPE_CANDYBAR_UPDATED,
     TYPE_TICK_FIRED,
+    tick_event_id,
 )
 
 __all__ = [
@@ -72,4 +73,5 @@ __all__ = [
     "build_candybar_updated",
     "build_tick_fired",
     "parse_envelope",
+    "tick_event_id",
 ]

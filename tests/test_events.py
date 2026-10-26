@@ -419,3 +419,18 @@ class TestDraftSchemas:
         error_props = doc["properties"]["data"]["properties"]["error"]["properties"]
         assert error_props["stderr_tail"]["maxLength"] == STDERR_TAIL_MAX
         assert error_props["redacted"]["const"] is True
+
+
+def test_tick_event_id_is_a_pure_function_of_tick_id():
+    """Story 2.1: the tick's CloudEvent id — and so its Nats-Msg-Id — derives
+    from tick_id alone, so the broker dedupes a re-published minute."""
+    a = build_tick_fired(MINUTE)
+    b = build_tick_fired(MINUTE)
+    assert a.id == b.id == voc.tick_event_id(a.data.tick_id)
+    assert a.correlationid == a.id  # root lineage still self-correlates
+    later = build_tick_fired(MINUTE + timedelta(minutes=1))
+    assert later.id != a.id
+    explicit = uuid4()
+    assert build_tick_fired(MINUTE, event_id=explicit).id == explicit
+    with pytest.raises(ValueError, match="tick_id"):
+        voc.tick_event_id("29883066")

@@ -192,10 +192,20 @@ class Executor:
 
         key = envelope.idempotency_key
         if key in self._inflight:
-            # Same key already running in this process: retry after it records.
+            # Same key already claimed in this process: retry after it records.
             await msg.nak(delay=5)  # type: ignore[attr-defined]
             return
+        # Claim synchronously — before the first await. Claiming later (it
+        # used to happen just before spawn) let two concurrent deliveries of
+        # one key both pass the dedupe read and both execute (Story 2.1).
+        self._inflight.add(key)
+        try:
+            await self._handle_claimed(envelope, key, msg)
+        finally:
+            self._inflight.discard(key)
 
+    async def _handle_claimed(self, envelope: CandybarInvokeCommand, key: str, msg: object) -> None:
+        """Dedupe, execute, record, publish, ack — with `key` claimed in-process."""
         try:
             existing = await self._by_key(key)
         except Exception:
@@ -235,7 +245,6 @@ class Executor:
             await msg.nak(delay=1)  # type: ignore[attr-defined]
             return
 
-        self._inflight.add(key)
         try:
             outcome = await self._run(
                 entrypoint=entrypoint,
@@ -250,8 +259,6 @@ class Executor:
             log.exception("execution crashed for %s; requesting redelivery", key)
             await msg.nak(delay=1)  # type: ignore[attr-defined]
             return
-        finally:
-            self._inflight.discard(key)
 
         resolved = resolve_outcome(outcome, stopped=self.registry.stopping)
         rec = TerminalInvocation(

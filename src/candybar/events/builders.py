@@ -49,7 +49,10 @@ def build_tick_fired(
     """Build the minute-heartbeat fact (AD-4).
 
     `minute` must be UTC and exactly on a minute boundary; the tick_id is
-    derived from it, never from receipt time.
+    derived from it, never from receipt time. The event id defaults to
+    `tick_event_id(tick_id)` so broker dedupe keys on tick_id (AD-5); an
+    explicit `event_id` still wins (tests that must not collide with the
+    live heartbeat's minute).
     """
     if minute.tzinfo is None or minute.utcoffset() != UTC.utcoffset(None):
         raise ValueError("minute must be timezone-aware UTC")
@@ -57,7 +60,7 @@ def build_tick_fired(
         raise ValueError(f"minute must be on a minute boundary, got {minute.isoformat()}")
     epoch_minute = int(minute.timestamp()) // 60
     tick_id = voc.tick_id_for_minute(epoch_minute)
-    eid = event_id or uuid4()
+    eid = event_id or voc.tick_event_id(tick_id)
     corr, cause = _root_lineage(eid, correlationid)
     return TickFiredEvent(
         id=eid,

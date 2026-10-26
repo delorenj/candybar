@@ -22,6 +22,9 @@ log = logging.getLogger(__name__)
 EVENT_STREAM = "BLOODBANK_EVENTS"
 TICK_FILTER = "bloodbank.evt.cron.tick.>"
 DURABLE = "candybar-dispatcher-ticks"
+# Crash horizon for an unacked tick: a dispatcher that dies mid-tick has its
+# tick redelivered (to the same durable) after this many seconds.
+ACK_WAIT_SECONDS = 120
 
 
 async def run_dispatcher(stop: asyncio.Event) -> None:
@@ -38,7 +41,7 @@ async def run_dispatcher(stop: asyncio.Event) -> None:
             filter_subject=TICK_FILTER,
             deliver_policy=DeliverPolicy.NEW,
             ack_policy=AckPolicy.EXPLICIT,
-            ack_wait=120,
+            ack_wait=ACK_WAIT_SECONDS,
         )
         # Bind to a named stream: no ambiguity if another stream also covers ticks.
         sub = await js.pull_subscribe(TICK_FILTER, durable=DURABLE, stream=EVENT_STREAM, config=config)

@@ -109,6 +109,10 @@ def test_virtual_minute_ticks_flow_over_real_jetstream() -> None:
 
             class WatchSink(NatsTickSink):
                 async def publish_tick(self, event: TickFiredEvent):  # type: ignore[override]
+                    # Tick ids are a pure function of the minute (Story 2.1):
+                    # re-id these upcoming-minute ticks so they never dedupe
+                    # against a rerun or the live heartbeat's own tick.
+                    event = build_tick_fired(event.data.minute, event_id=uuid4())
                     ack = await super().publish_tick(event)
                     published.append(event)
                     return ack
@@ -151,7 +155,8 @@ def test_duplicate_publish_is_deduped_by_msg_id() -> None:
             js = nc.jetstream()
             await _ensure_events_stream(js)
             sink = NatsTickSink(js)
-            event = build_tick_fired(next_minute_boundary(datetime.now(UTC)))
+            # Unique id: a deterministic tick id could already be stored (rerun / live heartbeat).
+            event = build_tick_fired(next_minute_boundary(datetime.now(UTC)), event_id=uuid4())
             ack1 = await sink.publish_tick(event)
             ack2 = await sink.publish_tick(event)
             assert not ack1.duplicate  # server omits the flag (None) when not a duplicate
@@ -178,7 +183,7 @@ def test_redelivered_tick_carries_same_tick_id() -> None:
                 config=ConsumerConfig(ack_wait=1.5, deliver_policy=DeliverPolicy.NEW),
             )
             try:
-                event = build_tick_fired(next_minute_boundary(datetime.now(UTC)))
+                event = build_tick_fired(next_minute_boundary(datetime.now(UTC)), event_id=uuid4())
                 await NatsTickSink(js).publish_tick(event)
 
                 first = (await sub.fetch(1, timeout=10))[0]

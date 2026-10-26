@@ -706,3 +706,95 @@ def test_terminal_event_id_is_deterministic() -> None:
     assert first.id == second.id
     fail_rec = record_from_row(make_row(cmd.idempotency_key, result="fail", exit_code=1))
     assert terminal_event_for(cmd, fail_rec).id != first.id
+
+
+# ---------------------------------------------------------------------------
+# Story 2.1: the in-process claim is taken before the first await
+# ---------------------------------------------------------------------------
+
+
+class YieldingStore(FakeStore):
+    """A registry whose reads yield to the loop, like a real DB round-trip.
+
+    `record` lands the row so a later redelivery sees it — the same shape as
+    the live registry.
+    """
+
+    async def by_key(self, key: str) -> Invocation | None:
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        return self.rows.get(key)
+
+    async def get_entrypoint(self, candybar_id: UUID) -> str | None:
+        await asyncio.sleep(0)
+        return self.entrypoint
+
+    async def record(self, rec: Any) -> bool:
+        self.records.append(rec)
+        self.rows[rec.idempotency_key] = make_row(rec.idempotency_key)
+        return True
+
+
+def test_concurrent_same_key_deliveries_execute_once() -> None:
+    """Two deliveries of one key in flight together: one spawn, the other naks.
+
+    Before the fix the claim was taken just before spawn, after three awaits;
+    both deliveries passed the dedupe read and the job ran twice.
+    """
+    store, bus = YieldingStore(), FakeBus()
+    executor, runs = make_executor(store, bus)
+    cmd = make_command()
+    first = FakeMsg(cmd.model_dump_json().encode())
+    second = FakeMsg(cmd.model_dump_json().encode())
+
+    async def both() -> None:
+        await asyncio.gather(executor.handle_message(first), executor.handle_message(second))
+
+    run(both())
+    assert len(runs) == 1
+    assert len(store.records) == 1
+    assert first.acked == 1 and second.naks == [5] and second.acked == 0
+    assert executor._inflight == set()
+
+    # The nak'd delivery comes back after the row landed: dedupe, never re-run.
+    again = FakeMsg(cmd.model_dump_json().encode())
+    run(executor.handle_message(again))
+    assert len(runs) == 1 and again.acked == 1
+
+
+def test_claim_released_on_every_early_exit() -> None:
+    """Dedupe-read failure, unknown candybar, and the redelivery republish
+    path all return before spawn; none may leak the claim."""
+    cmd = make_command()
+
+    class BrokenRead(FakeStore):
+        async def by_key(self, key: str) -> Invocation | None:
+            raise OSError("db down")
+
+    for store in (BrokenRead(), FakeStore(entrypoint=None)):
+        executor, runs = make_executor(store, FakeBus())
+        run(executor.handle_message(FakeMsg(cmd.model_dump_json().encode())))
+        assert runs == [] and executor._inflight == set()
+
+    store = FakeStore()
+    store.rows[cmd.idempotency_key] = make_row(cmd.idempotency_key)
+    executor, runs = make_executor(store, FakeBus())
+    run(executor.handle_message(FakeMsg(cmd.model_dump_json().encode())))
+    assert runs == [] and executor._inflight == set()
+
+
+def test_distinct_manual_uuids_execute_separately() -> None:
+    """The manual dedupe key is per command UUID: two invokes, two runs."""
+    store, bus = YieldingStore(), FakeBus()
+    executor, runs = make_executor(store, bus)
+    for n in (1, 2):
+        cmd = make_command(
+            trigger="manual",
+            tick_id=None,
+            command_id=UUID(f"aaaaaaaa-bbbb-cccc-dddd-00000000000{n}"),
+            invocation_id=UUID(f"66666666-7777-8888-9999-00000000000{n}"),
+        )
+        assert cmd.idempotency_key == f"candybar:{CANDYBAR_ID}:manual:{cmd.command_id}"
+        run(executor.handle_message(FakeMsg(cmd.model_dump_json().encode())))
+    assert len(runs) == 2
+    assert len({rec.idempotency_key for rec in store.records}) == 2

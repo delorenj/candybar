@@ -9,6 +9,7 @@ repo's `schemas/cron/`.
 from __future__ import annotations
 
 import re
+from uuid import UUID, uuid5
 
 DOMAIN = "cron"
 
@@ -121,6 +122,19 @@ def tick_id_for_minute(epoch_minute: int) -> str:
     if epoch_minute < 0:
         raise ValueError("epoch_minute must be non-negative")
     return f"tick:{epoch_minute}"
+
+
+# Tick event ids are UUIDv5 of the tick_id (AD-4/AD-5): the CloudEvent id, and
+# so the JetStream `Nats-Msg-Id`, is a pure function of the minute. A re-built
+# or re-published tick for the same minute dedupes on the broker by tick_id.
+TICK_NAMESPACE = UUID("5f0c8c3e-9a51-4c43-b1d6-2e7a0f4b9d17")
+
+
+def tick_event_id(tick_id: str) -> UUID:
+    """Deterministic CloudEvent id for a tick fact, keyed on tick_id only."""
+    if not TICK_ID_RE.match(tick_id):
+        raise ValueError(f"invalid tick_id {tick_id!r}")
+    return uuid5(TICK_NAMESPACE, tick_id)
 
 
 def candybar_ordering_key(candybar_id: object) -> str:
