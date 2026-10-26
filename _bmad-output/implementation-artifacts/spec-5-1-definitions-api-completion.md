@@ -2,7 +2,7 @@
 title: 'Story 5.1: Definitions API completion'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'done'
 route: 'dispatch'
 baseline_commit: 'df3a77c168f69b99451526d81304c4aa60d456e8'
 review_loop_iteration: 0
@@ -70,13 +70,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/candybar/registry/manifest.py` -- non-blank tags validator -- closes the 500 for blank tags on POST and PATCH.
-- [ ] `src/candybar/registry/store.py`, `src/candybar/registry/__init__.py` -- `list_candybars`, `lock_candybar`, `update_candybar` -- the read and update primitives.
-- [ ] `src/candybar/api/app.py` -- list/single shape helpers, `GET /candybars`, `GET /candybars/{id}`, `PATCH /candybars/{id}`, POST answers single shape; docstring -- the story surface.
-- [ ] `tests/test_api_definitions.py` -- every matrix row with the fake-store rig, plus the contract test that parses `holocene-view-contract.md` for the two field lists and asserts list/single/POST/PATCH responses key-for-key and type-for-type -- AC conformance.
-- [ ] `tests/test_api_register.py` -- adjust the happy path to the single shape.
-- [ ] `tests/test_registry_integration.py` -- live round trip: register via the real API, list, get (with counters moved by a recorded invocation), patch (row + `updated` event captured by a fake sink), rename-conflict 409, and the contract key check on real rows.
-- [ ] `README.md` -- definitions API section.
+- [x] `src/candybar/registry/manifest.py` -- non-blank tags validator -- closes the 500 for blank tags on POST and PATCH.
+- [x] `src/candybar/registry/store.py`, `src/candybar/registry/__init__.py` -- `list_candybars`, `lock_candybar`, `update_candybar` -- the read and update primitives.
+- [x] `src/candybar/api/app.py` -- list/single shape helpers, `GET /candybars`, `GET /candybars/{id}`, `PATCH /candybars/{id}`, POST answers single shape; docstring -- the story surface.
+- [x] `tests/test_api_definitions.py` -- every matrix row with the fake-store rig, plus the contract test that parses `holocene-view-contract.md` for the two field lists and asserts list/single/POST/PATCH responses key-for-key and type-for-type -- AC conformance.
+- [x] `tests/test_api_register.py` -- adjust the happy path to the single shape.
+- [x] `tests/test_registry_integration.py` -- live round trip: register via the real API, list, get (with counters moved by a recorded invocation), patch (row + `updated` event captured by a fake sink), rename-conflict 409, and the contract key check on real rows.
+- [x] `README.md` -- definitions API section.
 
 **Acceptance Criteria:**
 - Given registered candybars, when the consumer calls `GET /candybars`, `GET /candybars/{id}` and `POST /candybars`, then the bodies match the contract field lists parsed from `holocene-view-contract.md` exactly, with ISO 8601 UTC `createdAt`.
@@ -85,9 +85,40 @@ context:
 
 ## Implementation Notes
 
+- Run under the workflow harness's no-questions directive: Checkpoint 1 was auto-approved ("Approve and continue"). The spec ran to about 1200 words, which is over the 1600-token target, and was kept whole because it has one goal. Subagents are unavailable in this session, so implementation and all three review layers ran inline, the same deviation recorded for 1.1–2.4.
+- g33 preflight PASS. The route was execution/story breakdown, both owned elsewhere (Momo, Pilot), and no board writes were made. No event types or schema revisions were added: `updated.data.changes` is already an open map.
+- Epic 5 had no cached context, so `epic-5-context.md` was compiled inline. No earlier Epic 5 spec exists, so there was no continuity to load.
+- Implementation commit `0813916`:
+  - Store: `list_candybars`, `lock_candybar` (FOR UPDATE + populate_existing), `update_candybar`, and `UPDATABLE_FIELDS`.
+  - API: `GET /candybars`, `GET /candybars/{id}` and `PATCH /candybars/{id}`; POST now answers the single shape.
+  - `CandybarManifest` gained a non-blank-tags validator.
+  - Tests: `tests/contract_shapes.py` parses the two field lists out of the contract file. It is shared by `tests/test_api_definitions.py` (37 unit tests) and the live round trip in `tests/test_registry_integration.py`.
+  - README section.
+- Behaviour change for earlier stories: `POST /candybars` no longer echoes `entrypoint`, and now returns `totalInvoked`/`totalSuccessful`. The only consumer is the CLI's `register`, which reads only `name` and `id`. 1.4's happy-path test was updated to match.
+- Review patch commit `b006fe3` fixes a real bug that only the live test could show. On a rename clash, `update_candybar` built its error with `changes.get("name", row.name)`, which evaluates `row.name` eagerly. The failed flush had already expired the row, so that load raised `PendingRollbackError`, and a PATCH rename race answered 500 instead of 409. It now never touches the row after a failed flush.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+Layers ran inline: blind-hunter (diff 54.97 kB, floor N = min(floor(sqrt(54.97)+1), 10) = 8), edge-case-hunter (with the claims check), and verification-gap.
+
+| # | Layer | Finding | Verdict | Evidence / route |
+|---|-------|---------|---------|------------------|
+| 1 | verification-gap | Nothing proves `lock_candybar` serializes concurrent PATCHes. Dropping `with_for_update` fails no test, so two PATCHes could diff against a stale row and both publish. | medium | Pre-verified gap; patched with a live test where a second locker must still be waiting after 0.5s and then reads the committed schedule (`b006fe3`). |
+| 2 | verification-gap | `update_candybar`'s mapping of the real unique violation to `DuplicateNameError` is never exercised on Postgres; the unit rig fakes the raise. | high | Patched with a live test. It exposed #3. |
+| 3 | other (found by #2) | On a rename clash, `update_candybar` evaluates `row.name` on the expired row, raising `PendingRollbackError` and returning 500 instead of 409. | high | Reproduced live (`PendingRollbackError` at store.py:389). Patched: the error no longer touches the row. The live test now passes and failed before the fix. |
+| 4 | verification-gap | `UPDATABLE_FIELDS`/`update_candybar` refusing registry-owned fields (`id`, counters, `created_at`) has no test. | low | Patched with a unit test (no DB needed; it raises before touching the session). |
+| 5 | blind-hunter | The PATCH holds the candybar row lock across the bus publish (up to JetStream's 5s timeout), so a concurrent executor terminal write for that candybar waits. | low | Real but bounded. The spine requires the event first, then the row, in one flow. The wait only delays a counter write and does not lose one: there is no cycle, because the executor takes the same row lock first and only then the FK key-share lock. Rejected: rare, and a fix would add complexity. |
+| 6 | blind-hunter | `updated.changes` carries `entrypoint` (a host path) onto the bus, while the API no longer echoes it. | false | No harm: the bus is the internal audit trail, the spine does not forbid it, and without it an entrypoint-only PATCH would emit no `updated` fact, breaking the AC. Recorded as a decision. |
+| 7 | blind-hunter | PATCH accepts a relative `entrypoint`, checked with `is_file()` against the daemon's cwd. | false | The API and executor roles run in one process with one cwd (AD-2), so the check and the spawn resolve the same path. Register behaves the same since 1.4. |
+| 8 | blind-hunter | `GET /candybars` is unbounded (no pagination). | false | The intent excludes pagination (the contract asks for none; homelab scale). |
+| 9 | blind-hunter | `noise: "yes"` is coerced to `true` (pydantic lax bool). | low | Same as `POST /candybars` since 1.4. Rejected: rare, and strict mode would diverge from register. |
+| 10 | blind-hunter | `contract_shapes` is imported as a top-level module, which relies on pytest's default `prepend` import mode. | low | That mode is what CI and the local runs use. Rejected: no one runs this suite in importlib mode. |
+| 11 | edge-case-hunter | If the row write fails after a successful publish (a non-name IntegrityError, or a commit failure), the `updated` fact is out but the row is unchanged, and the response is a 500. | false | This is the spine's accepted event-first rule, identical to register's documented behaviour. Candystore is the durable audit. Not a new path. |
+| 12 | edge-case-hunter | A PATCH that renames to its own current name could 409 against itself via `name_taken`. | false | The change detection drops fields equal to the stored row before `name_taken` runs, so the self-name is never checked (`test_patch_with_stored_values_is_a_no_op`). |
+| 13 | edge-case-hunter | Explicit `null` on a PATCH field could clear a NOT NULL column. | false | `UpdateRequest` fields are non-Optional with unvalidated defaults, so an explicit `null` fails validation with a 422 (`test_patch_bad_body_is_422_no_event`, `description`/`noise` null). |
+| 14 | edge-case-hunter (claims) | Claims checked: the contract file is parsed rather than hardcoded; changed fields only; publish before write; no event when rejected or unchanged; POST returns the single shape; list order is `createdAt, id`; no CLI change; blank tag gives 422. | — | None falsified. |
 
 ## Verification
 
