@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-25-2026 21:37
-last_updated: 10-26-2026 11:15
+last_updated: 10-26-2026 12:42
 project: candybar
 project_key: NOKEY
 tracking_system: file-system
@@ -83,7 +83,7 @@ development_status:
   7-2-host-executor: review
   7-3-runner-kinds-exec-and-systemd: review
   7-4-hermes-runner: review
-  7-5-migration-ledger-rollback-and-the-migrate-cli: backlog
+  7-5-migration-ledger-rollback-and-the-migrate-cli: review
   7-6-off-candybar-self-watchdog: backlog
   7-7-wave-1-infra-housekeeping: backlog
   7-8-wave-2-33god-platform-sweeps: backlog
