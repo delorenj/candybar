@@ -3025,7 +3025,7 @@ jobs:
   rollback:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 9b5dadbd1e4d --scheduler internal'
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron resume 9b5dadbd1e4d'
-  status: cutover
+  status: rolled-back
   candybar_id: 01a17950-506c-7218-bff4-c102e75c2c7e
   cutover_at: '2026-10-26T17:44:35.652779Z'
   verification:
@@ -3046,6 +3046,14 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17950-506c-7218-bff4-c102e75c2c7e enabled; first fire 2026-10-26T17:50:00Z
+  - at: '2026-10-26T17:46:41.987550Z'
+    action: rollback
+    outcome: ok
+    detail: 'native scheduler restored: first manual run failed: source script lacks executable bit (spawn PermissionError); restoring Hermes before fixing runner argv'
+  - at: '2026-10-26T17:46:42.131847Z'
+    action: rollback
+    outcome: ok
+    detail: candybar 01a17950-506c-7218-bff4-c102e75c2c7e disabled
 - id: systemd:ipm-metrics.timer
   wave: '7.14'
   candybar:
@@ -3460,9 +3468,9 @@ jobs:
   - systemctl --user disable --now telnyx-s3-intake.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/telnyx-s3-intake.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17952-2ab7-78f1-a008-f994a0aaf1c7
+  cutover_at: '2026-10-26T17:46:31.040278Z'
   verification:
     invocation_id: null
     result: null
@@ -3473,6 +3481,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:46:31.040278Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17952-2ab7-78f1-a008-f994a0aaf1c7 enabled; first fire 2026-10-26T17:47:00Z
 - id: systemd:gruvato-acoustid-check.timer
   wave: '7.11'
   candybar:
