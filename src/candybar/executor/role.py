@@ -24,7 +24,10 @@ from ..bus import NatsEventSink, connect_nats, nats_url
 from ..registry.models import Invocation
 from ..registry.store import (
     DuplicateInvocationError,
+    InvocationClaim,
     TerminalInvocation,
+    candybar_tags,
+    claim_invocation,
     create_registry_engine,
     get_entrypoint,
     invocation_by_key,
@@ -33,7 +36,7 @@ from ..registry.store import (
 )
 from .gpu import GPU_SAMPLER
 from .runner import ProcessRegistry
-from .worker import Executor
+from .worker import RETRY_ON_ABANDON_TAG, Executor
 
 log = logging.getLogger(__name__)
 COMMAND_STREAM = "BLOODBANK_COMMANDS"
@@ -86,12 +89,27 @@ async def run_executor(stop: asyncio.Event) -> None:
             except DuplicateInvocationError:
                 return False
 
+        async def claim(row: InvocationClaim) -> bool:
+            try:
+                async with session_scope(engine) as session:
+                    await claim_invocation(session, row)
+                return True
+            except DuplicateInvocationError:
+                return False
+
+        async def retry_abandoned(candybar_id) -> bool:
+            async with session_scope(engine) as session:
+                tags = await candybar_tags(session, candybar_id)
+            return tags is not None and RETRY_ON_ABANDON_TAG in tags
+
         executor = Executor(
             by_key=by_key,
             entrypoint=entrypoint,
             record=record,
             publish=sink.publish,
             registry=registry,
+            claim=claim,
+            retry_abandoned=retry_abandoned,
         )
         while not stop.is_set():
             try:

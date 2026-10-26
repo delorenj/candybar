@@ -19,6 +19,7 @@ terminal record, the event, and the gauge.
 from __future__ import annotations
 
 import os
+import re
 import stat
 import sys
 from pathlib import Path
@@ -133,3 +134,34 @@ def test_canary_values_reach_record_event_and_gauge(
         MEMORY_PEAK_METRIC, {"candybar_id": str(CANDYBAR_ID), "result": "success"}
     )
     assert gauge == rec.memory_peak_bytes
+
+
+def test_sub_millisecond_job_is_metered_from_its_first_instruction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression (deferred pre-exec join): a job that exits at once still
+    meters, every time. The old post-spawn join lost the race whenever the
+    cgroup.procs write blocked (~20 ms, about 1 run in 7 live): the child was
+    already exiting, the kernel skipped it, and the run read 0/0."""
+    entrypoint = tmp_path / "instant.sh"
+    entrypoint.write_text("#!/bin/sh\nexit 0\n")
+    entrypoint.chmod(0o755)
+    peaks = [_run(tmp_path, monkeypatch, str(entrypoint)).memory_peak_bytes for _ in range(40)]
+    assert all(peak > 0 for peak in peaks), peaks
+
+
+def test_child_sees_itself_in_its_scope_at_exec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """/proc/self/cgroup read by the job's first instruction names its scope."""
+    seen = tmp_path / "cgroup"
+    monkeypatch.setenv("SEEN", str(seen))
+    entrypoint = tmp_path / "where.sh"
+    entrypoint.write_text('#!/bin/sh\ncat /proc/self/cgroup > "$SEEN"\n')
+    entrypoint.chmod(0o755)
+    outcome = _run(tmp_path, monkeypatch, str(entrypoint))
+    assert outcome.exit_code == 0
+    # `cat` is a child of the shell, so it inherits the shell's cgroup: the
+    # scope `<ROOT>/<invocation_id>`, not the executor's own cgroup.
+    line = seen.read_text().strip()
+    assert re.search(rf"/{re.escape(Path(ROOT).name)}/[0-9a-f-]{{36}}$", line), line

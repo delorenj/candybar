@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -134,8 +135,8 @@ def test_enable_controllers_fails_soft(tmp_path: Path, caplog: pytest.LogCapture
 # runner: scope measured after exit (plain-fs double stands in for the kernel)
 # ---------------------------------------------------------------------------
 
-# The child writes its own scope's stat files. It sleeps first so the runner's
-# post-spawn scope entry + cpu baseline read happen before the "kernel" counts.
+# The child writes its own scope's stat files, standing in for the kernel's
+# counters. (The runner reads the cpu baseline before spawn, from the empty scope.)
 SCOPE_WRITER = """sleep 0.3
 scope="$CG_ROOT/$CANDYBAR_INVOCATION_ID"
 printf '%s\\n' "$PEAK" > "$scope/memory.peak"
@@ -413,23 +414,54 @@ def test_failed_event_round_trips_and_legacy_payload_parses() -> None:
     assert legacy.data.metrics == InvocationMetrics()
 
 
-def test_child_exiting_before_join_is_debug_not_warning(
-    tmp_path: Path, monkeypatch: Any, caplog: pytest.LogCaptureFixture
-) -> None:
-    """A sub-ms job exits before the post-spawn join (ESRCH): unscoped, no WARNING."""
+def test_child_joins_its_scope_before_exec(tmp_path: Path, monkeypatch: Any) -> None:
+    """Regression (deferred pre-exec cgroup join): the child moves ITSELF into
+    the scope before exec, so its first instruction already runs metered.
+
+    The old post-spawn join had the parent write the child's pid after spawn
+    returned; a ~20 ms job was gone by then and metered 0. On the plain-fs
+    double, the forked child's own write leaves "0" (meaning "the writer") in
+    cgroup.procs, and the entrypoint's very first command sees it. A parent
+    write would leave the pid there instead, and only after spawn returned.
+    """
+    root = tmp_path / "cg"
+    seen = tmp_path / "seen-procs"
+    monkeypatch.setenv("CANDYBAR_WORK_ROOT", str(tmp_path / "work"))
+    monkeypatch.setenv("CG_ROOT", str(root))
+    monkeypatch.setenv("SEEN", str(seen))
+    body = 'cat "$CG_ROOT/$CANDYBAR_INVOCATION_ID/cgroup.procs" > "$SEEN"\n'
+    entrypoint = make_script(tmp_path, "first-instruction.sh", body)
+    outcome = run(run_invocation(**invoke_kwargs(entrypoint=entrypoint, root=str(root))))
+    assert outcome.scoped and outcome.exit_code == 0
+    assert seen.read_text() == "0"
+
+
+def test_scope_fd_never_leaks_into_the_job(tmp_path: Path, monkeypatch: Any) -> None:
+    """The cgroup.procs fd is close-on-exec: the job cannot move other pids."""
+    root = tmp_path / "cg"
+    seen = tmp_path / "fds"
+    monkeypatch.setenv("CANDYBAR_WORK_ROOT", str(tmp_path / "work"))
+    monkeypatch.setenv("SEEN", str(seen))
+    body = 'ls -l /proc/$$/fd > "$SEEN"\n'
+    entrypoint = make_script(tmp_path, "fds.sh", body)
+    outcome = run(run_invocation(**invoke_kwargs(entrypoint=entrypoint, root=str(root))))
+    assert outcome.exit_code == 0
+    assert "cgroup.procs" not in seen.read_text()
+
+
+def test_failed_preexec_join_runs_unscoped_not_failed(tmp_path: Path, monkeypatch: Any) -> None:
+    """A refused cgroup.procs write in the child never fails the spawn."""
     from candybar.executor import runner
 
-    real_write = Path.write_text
+    monkeypatch.setenv("CANDYBAR_WORK_ROOT", str(tmp_path / "work"))
+    root = tmp_path / "cg"
 
-    def write_text(self: Path, data: str, *args: Any, **kwargs: Any) -> int:
-        if self.name == "cgroup.procs":
-            raise ProcessLookupError(3, "No such process")
-        return real_write(self, data, *args, **kwargs)
+    def refusing_prepare(root_: str, invocation_id: Any) -> tuple[Path, int]:
+        scope = Path(root_) / str(invocation_id)
+        scope.mkdir(parents=True)
+        return scope, os.open(os.devnull, os.O_RDONLY | os.O_CLOEXEC)  # write -> EBADF
 
-    monkeypatch.setattr(Path, "write_text", write_text)
-    with caplog.at_level(logging.DEBUG, logger=runner.__name__):
-        scope = runner._enter_scope(str(tmp_path / "cg"), INVOCATION_ID, 999_999)
-    assert scope is None
-    assert not (tmp_path / "cg" / str(INVOCATION_ID)).exists()
-    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any("before joining" in r.getMessage() for r in caplog.records)
+    monkeypatch.setattr(runner, "_prepare_scope", refusing_prepare)
+    entrypoint = make_script(tmp_path, "still-runs.sh", "exit 0")
+    outcome = run(run_invocation(**invoke_kwargs(entrypoint=entrypoint, root=str(root))))
+    assert outcome.spawn_error is None and outcome.exit_code == 0

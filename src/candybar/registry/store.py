@@ -31,6 +31,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
+from ..text import scrub_optional
 from .ids import uuid7
 from .manifest import CandybarManifest
 from .models import (
@@ -473,10 +474,11 @@ INVOCATION_LIST_MAX = 500
 
 
 async def get_invocation(session: AsyncSession, invocation_id: UUID) -> Invocation | None:
-    """The recorded invocation row for an invocation id, or None (unknown or in flight).
+    """The recorded invocation row for an invocation id, or None (unknown).
 
-    Rows are written only at the terminal state (Story 1.6), so an invocation
-    still running has no row yet.
+    The executor claims the row (`result` NULL) just before it spawns the
+    child, so an invocation still running reads with `result` None and no
+    `finished_at`; the terminal write fills both.
     """
     return await session.get(Invocation, invocation_id)
 
@@ -520,52 +522,155 @@ class TerminalInvocation:
     gpu_load: float = 0.0
 
 
-async def record_terminal_invocation(session: AsyncSession, record: TerminalInvocation) -> None:
-    """Insert the terminal row AND bump counters in the caller's transaction (AD-10).
+@dataclass(frozen=True)
+class InvocationClaim:
+    """The pre-spawn claim: an invocations row with `result` NULL (hard-kill safety)."""
 
-    Raises DuplicateInvocationError when the idempotency key is already
-    recorded: the caller's session_scope rolls back, and the redelivery path
-    republishes from the recorded row instead of executing twice.
+    invocation_id: UUID
+    candybar_id: UUID
+    trigger: str
+    tick_id: str | None
+    idempotency_key: str
+    started_at: datetime
+
+
+async def _bump_counters(
+    session: AsyncSession, candybar_id: UUID, *, invoked: int, successful: int, now: datetime
+) -> None:
+    """Atomic in-database increment (never an ORM read-modify-write).
+
+    Concurrent executions of one candybar run as parallel tasks, and `+= 1`
+    on a loaded row loses updates under READ COMMITTED. The UPDATE also
+    row-locks the candybar until commit; a rollback undoes it.
     """
-    now = datetime.now(UTC)
-    row = Invocation(
-        id=record.invocation_id,
-        candybar_id=record.candybar_id,
-        trigger=record.trigger,
-        tick_id=record.tick_id,
-        idempotency_key=record.idempotency_key,
-        result=record.result,
-        exit_code=record.exit_code,
-        runtime_ms=record.runtime_ms,
-        error_message=record.error_message,
-        stderr_tail=record.stderr_tail,
-        token_spend=record.token_spend,
-        cost_usd=record.cost_usd,
-        memory_peak_bytes=record.memory_peak_bytes,
-        cpu_load=record.cpu_load,
-        gpu_load=record.gpu_load,
-        started_at=record.started_at,
-        finished_at=record.finished_at,
-        created_at=now,
-    )
-    # Atomic in-database increment: concurrent executions of one candybar run
-    # as parallel tasks, and an ORM read-modify-write (`+= 1` on a loaded row)
-    # loses updates under READ COMMITTED. The UPDATE also row-locks the
-    # candybar until commit; a duplicate-key rollback below undoes it.
     bumped = await session.execute(
         update(Candybar)
-        .where(Candybar.id == record.candybar_id)
+        .where(Candybar.id == candybar_id)
         .values(
-            total_invoked=Candybar.total_invoked + 1,
-            total_successful=Candybar.total_successful
-            + (1 if record.result == "success" else 0),
+            total_invoked=Candybar.total_invoked + invoked,
+            total_successful=Candybar.total_successful + successful,
             updated_at=now,
         )
         .execution_options(synchronize_session=False)
     )
     if bumped.rowcount == 0:
-        raise KeyError(f"unknown candybar: {record.candybar_id}")
-    session.add(row)
+        raise KeyError(f"unknown candybar: {candybar_id}")
+
+
+async def claim_invocation(session: AsyncSession, claim: InvocationClaim) -> None:
+    """Insert the running row (`result` NULL) and count the invocation (Story 1.6).
+
+    Committed BEFORE the child spawns. If the executor is then SIGKILLed or
+    OOM-killed mid-run, the redelivered command finds this claim and does not
+    run the job a second time (deferred-work: hard-kill safety).
+    `total_invoked` counts here, once per idempotency key; `total_successful`
+    counts at the terminal write.
+
+    Raises DuplicateInvocationError when the key is already claimed or
+    recorded, and KeyError for an unknown candybar.
+    """
+    now = datetime.now(UTC)
+    await _bump_counters(session, claim.candybar_id, invoked=1, successful=0, now=now)
+    session.add(
+        Invocation(
+            id=claim.invocation_id,
+            candybar_id=claim.candybar_id,
+            trigger=claim.trigger,
+            tick_id=claim.tick_id,
+            idempotency_key=claim.idempotency_key,
+            result=None,
+            token_spend=0,
+            memory_peak_bytes=0,
+            cpu_load=0.0,
+            gpu_load=0.0,
+            started_at=claim.started_at,
+            created_at=now,
+        )
+    )
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        if "invocations_idempotency_key_key" in str(exc):
+            raise DuplicateInvocationError(claim.idempotency_key) from exc
+        raise
+
+
+async def candybar_tags(session: AsyncSession, candybar_id: UUID) -> list[str] | None:
+    """A candybar's tags, or None when it is not registered."""
+    result = await session.execute(select(Candybar.tags).where(Candybar.id == candybar_id))
+    tags = result.scalar_one_or_none()
+    return None if tags is None else [str(tag) for tag in tags]
+
+
+async def record_terminal_invocation(session: AsyncSession, record: TerminalInvocation) -> None:
+    """Write the terminal outcome AND bump counters in the caller's transaction (AD-10).
+
+    The normal path finalizes the executor's pre-spawn claim: one UPDATE
+    guarded by `result IS NULL`, so exactly one writer ever finalizes a key.
+    It counts `total_successful` only, because the claim already counted
+    `total_invoked`. With no claim row (a run that never claimed), it inserts
+    the terminal row and counts both, as Story 1.6 originally did.
+
+    Raises DuplicateInvocationError when the key already holds a terminal
+    result: the caller's session_scope rolls back, and the redelivery path
+    republishes from the recorded row instead of executing twice.
+    Free text is scrubbed of NUL/lone surrogates here too, so no caller can
+    make the write fail (scrub_text).
+    """
+    now = datetime.now(UTC)
+    error_message = scrub_optional(record.error_message)
+    stderr_tail = scrub_optional(record.stderr_tail)
+    successful = 1 if record.result == "success" else 0
+    finalized = await session.execute(
+        update(Invocation)
+        .where(Invocation.idempotency_key == record.idempotency_key, Invocation.result.is_(None))
+        .values(
+            result=record.result,
+            exit_code=record.exit_code,
+            runtime_ms=record.runtime_ms,
+            error_message=error_message,
+            stderr_tail=stderr_tail,
+            token_spend=record.token_spend,
+            cost_usd=record.cost_usd,
+            memory_peak_bytes=record.memory_peak_bytes,
+            cpu_load=record.cpu_load,
+            gpu_load=record.gpu_load,
+            started_at=record.started_at,
+            finished_at=record.finished_at,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if finalized.rowcount == 1:
+        await _bump_counters(
+            session, record.candybar_id, invoked=0, successful=successful, now=now
+        )
+        return
+    if await invocation_by_key(session, record.idempotency_key) is not None:
+        raise DuplicateInvocationError(record.idempotency_key)
+
+    await _bump_counters(session, record.candybar_id, invoked=1, successful=successful, now=now)
+    session.add(
+        Invocation(
+            id=record.invocation_id,
+            candybar_id=record.candybar_id,
+            trigger=record.trigger,
+            tick_id=record.tick_id,
+            idempotency_key=record.idempotency_key,
+            result=record.result,
+            exit_code=record.exit_code,
+            runtime_ms=record.runtime_ms,
+            error_message=error_message,
+            stderr_tail=stderr_tail,
+            token_spend=record.token_spend,
+            cost_usd=record.cost_usd,
+            memory_peak_bytes=record.memory_peak_bytes,
+            cpu_load=record.cpu_load,
+            gpu_load=record.gpu_load,
+            started_at=record.started_at,
+            finished_at=record.finished_at,
+            created_at=now,
+        )
+    )
     try:
         await session.flush()
     except IntegrityError as exc:

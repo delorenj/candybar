@@ -880,3 +880,227 @@ def test_distinct_manual_uuids_execute_separately() -> None:
         run(executor.handle_message(FakeMsg(cmd.model_dump_json().encode())))
     assert len(runs) == 2
     assert len({rec.idempotency_key for rec in store.records}) == 2
+
+
+# ---------------------------------------------------------------------------
+# Deferred-work fixes: NUL/surrogate scrub, hard-kill claim row
+# ---------------------------------------------------------------------------
+
+
+def test_runner_scrubs_nul_from_stderr_tail(tmp_path: Path, monkeypatch: Any) -> None:
+    """Regression: Postgres text rejects U+0000; errors="replace" keeps it.
+    Rust's default panic hook prints a NUL in the panic text verbatim."""
+    monkeypatch.setenv("CANDYBAR_WORK_ROOT", str(tmp_path / "work"))
+    body = "printf \"thread 'main' panicked at src/main.rs:2:5:\\nbad\\000byte\\n\" >&2; exit 101"
+    entrypoint = make_script(tmp_path, "nul.sh", body)
+    outcome = run(run_invocation(**invoke_kwargs(entrypoint=entrypoint)))
+    assert outcome.exit_code == 101
+    assert "\x00" not in outcome.stderr_tail
+    assert "bad�byte" in outcome.stderr_tail
+
+
+def test_worker_scrubs_child_text_before_record_and_event() -> None:
+    """NUL in stderr and a lone surrogate in the result message never reach
+    the terminal row or the bus (either one used to poison the write)."""
+    store, bus = FakeStore(), FakeBus()
+    outcome = make_outcome(
+        exit_code=1,
+        stderr_tail="boom\x00tail",
+        result=ResultFile(status="fail", message="bad \ud800 msg\x00"),
+    )
+    executor, _ = make_executor(store, bus, outcome=outcome)
+    msg = FakeMsg(make_command().model_dump_json().encode())
+    run(executor.handle_message(msg))
+    rec = store.records[0]
+    assert rec.stderr_tail == "boom�tail"
+    assert rec.error_message == "bad � msg�"
+    failed = bus.events[-1]
+    assert isinstance(failed, CandybarFailedEvent)
+    failed.model_dump_json().encode("utf-8")  # a lone surrogate would raise here
+    assert "\x00" not in failed.data.error.stderr_tail
+    assert msg.acked == 1
+
+
+class ClaimingStore(FakeStore):
+    """FakeStore plus the pre-spawn claim row (result None) and retry opt-in."""
+
+    def __init__(self, *, retry: bool = False) -> None:
+        super().__init__()
+        self.claims: list[Any] = []
+        self.retry = retry
+        self.events: list[str] = []
+
+    async def claim(self, claim: Any) -> bool:
+        self.events.append("claim")
+        if claim.idempotency_key in self.rows:
+            return False
+        self.claims.append(claim)
+        self.rows[claim.idempotency_key] = make_row(
+            claim.idempotency_key,
+            result=None,  # type: ignore[arg-type]
+            id=claim.invocation_id,
+            exit_code=None,
+            runtime_ms=None,
+            error_message=None,
+            finished_at=None,
+            started_at=claim.started_at,
+        )
+        return True
+
+    async def record(self, rec: Any) -> bool:
+        self.events.append("record")
+        row = self.rows.get(rec.idempotency_key)
+        if row is not None and row.result is not None:
+            return False
+        self.records.append(rec)
+        self.rows[rec.idempotency_key] = make_row(
+            rec.idempotency_key, result=rec.result, id=rec.invocation_id,
+            exit_code=rec.exit_code, error_message=rec.error_message,
+        )
+        return True
+
+    async def retry_abandoned(self, candybar_id: UUID) -> bool:
+        return self.retry
+
+
+def make_claiming_executor(store: ClaimingStore, bus: FakeBus):
+    runs: list[dict[str, Any]] = []
+
+    async def fake_run(**kwargs: Any) -> RunOutcome:
+        store.events.append("run")
+        runs.append(kwargs)
+        return make_outcome()
+
+    executor = Executor(
+        by_key=store.by_key,
+        entrypoint=store.get_entrypoint,
+        record=store.record,
+        publish=bus.publish,
+        run=fake_run,
+        claim=store.claim,
+        retry_abandoned=store.retry_abandoned,
+    )
+    return executor, runs
+
+
+class DeliveredMsg(FakeMsg):
+    def __init__(self, data: bytes, num_delivered: int) -> None:
+        super().__init__(data)
+        self.metadata = type("Meta", (), {"num_delivered": num_delivered})()
+
+
+def test_claim_row_commits_before_spawn() -> None:
+    store, bus = ClaimingStore(), FakeBus()
+    executor, runs = make_claiming_executor(store, bus)
+    msg = FakeMsg(make_command().model_dump_json().encode())
+    run(executor.handle_message(msg))
+    assert len(runs) == 1
+    assert store.events == ["claim", "run", "record"]
+    assert store.claims[0].invocation_id == INVOCATION_ID
+    assert store.rows[store.claims[0].idempotency_key].result == "success"
+    assert msg.acked == 1
+
+
+def test_hard_killed_run_is_abandoned_not_reexecuted() -> None:
+    """Regression (deferred hard-kill): the executor was SIGKILLed mid-run, so
+    the claim row is all that survived. Redelivery must NOT run the job again:
+    it records the run failed/abandoned, publishes failed, and acks."""
+    store, bus = ClaimingStore(), FakeBus()
+    cmd = make_command()
+    started = datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
+    run(store.claim(type("C", (), {
+        "idempotency_key": cmd.idempotency_key, "invocation_id": INVOCATION_ID,
+        "started_at": started,
+    })()))
+    store.events.clear()
+    executor, runs = make_claiming_executor(store, bus)
+    msg = DeliveredMsg(cmd.model_dump_json().encode(), num_delivered=2)
+    run(executor.handle_message(msg))
+
+    assert runs == []
+    rec = store.records[0]
+    assert rec.result == "fail" and rec.exit_code is None
+    assert rec.error_message.startswith("abandoned")
+    assert rec.started_at == started
+    (failed,) = bus.events
+    assert isinstance(failed, CandybarFailedEvent)
+    assert failed.id == lifecycle_event_id("fail", INVOCATION_ID)
+    assert msg.acked == 1 and not msg.naks
+
+    # A further redelivery dedupes on the now-terminal row: still no run.
+    again = FakeMsg(cmd.model_dump_json().encode())
+    run(executor.handle_message(again))
+    assert runs == [] and len(store.records) == 1 and again.acked == 1
+
+
+def test_abandoned_run_reexecutes_when_opted_in() -> None:
+    store, bus = ClaimingStore(retry=True), FakeBus()
+    cmd = make_command()
+    run(store.claim(type("C", (), {
+        "idempotency_key": cmd.idempotency_key, "invocation_id": INVOCATION_ID,
+        "started_at": datetime.now(UTC),
+    })()))
+    store.events.clear()
+    executor, runs = make_claiming_executor(store, bus)
+    msg = DeliveredMsg(cmd.model_dump_json().encode(), num_delivered=2)
+    run(executor.handle_message(msg))
+    assert len(runs) == 1
+    assert store.events == ["run", "record"]  # no second claim: the row exists
+    assert store.records[0].result == "success"
+    assert msg.acked == 1
+
+
+def test_opted_in_retry_is_bounded_by_delivery_count() -> None:
+    from candybar.executor.worker import ABANDON_RETRY_MAX_DELIVERIES
+
+    store, bus = ClaimingStore(retry=True), FakeBus()
+    cmd = make_command()
+    run(store.claim(type("C", (), {
+        "idempotency_key": cmd.idempotency_key, "invocation_id": INVOCATION_ID,
+        "started_at": datetime.now(UTC),
+    })()))
+    executor, runs = make_claiming_executor(store, bus)
+    msg = DeliveredMsg(cmd.model_dump_json().encode(), ABANDON_RETRY_MAX_DELIVERIES + 1)
+    run(executor.handle_message(msg))
+    assert runs == []
+    assert store.records[0].error_message.startswith("abandoned")
+
+
+def test_lost_claim_race_to_a_running_delivery_acks_without_running() -> None:
+    store, bus = ClaimingStore(), FakeBus()
+    cmd = make_command()
+    real_by_key = store.by_key
+    reads = 0
+
+    async def by_key_then_claimed(key: str) -> Invocation | None:
+        nonlocal reads
+        reads += 1
+        if reads == 1:
+            # Another executor claims between our dedupe read and our claim.
+            row = await real_by_key(key)
+            await store.claim(type("C", (), {
+                "idempotency_key": key, "invocation_id": INVOCATION_ID,
+                "started_at": datetime.now(UTC),
+            })())
+            return row
+        return await real_by_key(key)
+
+    store.by_key = by_key_then_claimed  # type: ignore[method-assign]
+    executor, runs = make_claiming_executor(store, bus)
+    msg = FakeMsg(cmd.model_dump_json().encode())
+    run(executor.handle_message(msg))
+    assert runs == [] and store.records == []
+    assert msg.acked == 1 and not msg.naks
+
+
+def test_claim_failure_naks_without_running() -> None:
+    store, bus = ClaimingStore(), FakeBus()
+
+    async def broken_claim(claim: Any) -> bool:
+        raise OSError("db down")
+
+    store.claim = broken_claim  # type: ignore[method-assign]
+    executor, runs = make_claiming_executor(store, bus)
+    msg = FakeMsg(make_command().model_dump_json().encode())
+    run(executor.handle_message(msg))
+    assert runs == [] and msg.naks == [1] and msg.acked == 0

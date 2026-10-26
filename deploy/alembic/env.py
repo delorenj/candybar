@@ -19,7 +19,9 @@ from candybar.registry.store import database_url
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep loggers created before the migration (the test suite migrates
+    # in-process; fileConfig's default silenced every candybar logger after).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

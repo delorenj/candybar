@@ -1,12 +1,23 @@
-"""Consume invoke commands: dedupe, spawn, record, emit, ack (AD-5, AD-7, AD-10).
+"""Consume invoke commands: dedupe, claim, spawn, record, emit, ack (AD-5, AD-7, AD-10).
 
-Effectively-once execution rests on the registry, not the bus: the terminal
-`invocations` row (unique `idempotency_key`) commits FIRST, then the terminal
-event publishes, then the command is acked. A redelivered command whose key
-is recorded never re-executes — it republishes the deterministic terminal
-event rebuilt from the row and acks. Terminal/invoked event ids are UUIDv5
-of `<phase>:<invocation_id>`, so JetStream `Nats-Msg-Id` dedupe makes every
-republication safe.
+Effectively-once execution rests on the registry, not the bus. Just before
+the child spawns, the executor commits a claim: the `invocations` row for the
+command's unique `idempotency_key`, with `result` NULL. When the child exits,
+the terminal outcome finalizes that row, then the terminal event publishes,
+then the command is acked. A redelivered command whose key is recorded never
+re-executes: it republishes the deterministic terminal event rebuilt from the
+row and acks.
+
+A redelivered command whose key is claimed but unfinished means the executor
+lost the run: it was SIGKILLed or OOM-killed mid-run, or the terminal write
+failed. Such a run is finalized `fail` as abandoned and is NOT executed again,
+unless the candybar carries the `retry-on-abandon` tag. Then it re-runs, at
+most until the command's delivery count passes ABANDON_RETRY_MAX_DELIVERIES.
+
+Terminal/invoked event ids are UUIDv5 of `<phase>:<invocation_id>`, so
+JetStream `Nats-Msg-Id` dedupe makes every republication safe. Every
+child-supplied string is scrubbed of NUL and lone surrogates before it is
+stored or published (`candybar.text.scrub_text`).
 """
 
 from __future__ import annotations
@@ -15,6 +26,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID, uuid5
 
 from pydantic import ValidationError
@@ -34,7 +46,8 @@ from ..events.envelope import (
     SelfReportedMetrics,
 )
 from ..registry.models import Invocation
-from ..registry.store import TerminalInvocation
+from ..registry.store import InvocationClaim, TerminalInvocation
+from ..text import scrub_optional, scrub_text
 from .metrics import EXECUTOR_METRICS, ExecutorMetrics
 from .runner import ProcessRegistry, RunOutcome, run_invocation
 
@@ -42,6 +55,16 @@ log = logging.getLogger(__name__)
 
 # Stable lifecycle-event ids survive redelivery and executor restarts.
 EXEC_NAMESPACE = UUID("f0a3b7e1-2c4d-4e5f-8a9b-0c1d2e3f4a5b")
+
+
+# Opt-in for re-running a run the executor lost (hard kill / OOM): a candybar tag.
+RETRY_ON_ABANDON_TAG = "retry-on-abandon"
+# Bounds that re-run, so a job that OOM-kills the executor cannot loop forever.
+ABANDON_RETRY_MAX_DELIVERIES = 3
+ABANDONED_MESSAGE = (
+    "abandoned: the executor lost this run before recording its result "
+    "(killed, OOM, or a failed terminal write); not re-executed"
+)
 
 
 def lifecycle_event_id(phase: str, invocation_id: UUID) -> UUID:
@@ -58,10 +81,11 @@ class Resolved:
 
 
 def _cap(message: str | None) -> str | None:
-    """FailureDetail.message is max_length=500 — never exceed it."""
+    """FailureDetail.message is max_length=500 — never exceed it. Child-supplied
+    text may carry NUL or lone surrogates, which Postgres and UTF-8 reject."""
     if message is None:
         return None
-    return message[:STDERR_TAIL_MAX]
+    return scrub_text(message[:STDERR_TAIL_MAX])
 
 
 def resolve_outcome(outcome: RunOutcome, *, stopped: bool = False) -> Resolved:
@@ -167,7 +191,14 @@ class Executor:
         run: Callable[..., Awaitable[RunOutcome]] = run_invocation,
         registry: ProcessRegistry | None = None,
         metrics: ExecutorMetrics | None = None,
+        claim: Callable[[InvocationClaim], Awaitable[bool]] | None = None,
+        retry_abandoned: Callable[[UUID], Awaitable[bool]] | None = None,
     ) -> None:
+        """`claim` commits the pre-spawn running row (True) or reports the key
+        already taken (False); without it no claim is written. `retry_abandoned`
+        says whether a candybar opted into re-running a lost run."""
+        self._claim = claim
+        self._retry_abandoned = retry_abandoned
         self._by_key = by_key
         self._entrypoint = entrypoint
         self._record = record
@@ -219,7 +250,7 @@ class Executor:
             self._inflight.discard(key)
 
     async def _handle_claimed(self, envelope: CandybarInvokeCommand, key: str, msg: object) -> None:
-        """Dedupe, execute, record, publish, ack — with `key` claimed in-process."""
+        """Dedupe, then execute — with `key` claimed in-process."""
         try:
             existing = await self._by_key(key)
         except Exception:
@@ -227,10 +258,71 @@ class Executor:
             log.exception("dedupe read failed for %s; requesting redelivery", key)
             await msg.nak(delay=1)  # type: ignore[attr-defined]
             return
-        if existing is not None:
+        if existing is None:
+            await self._execute(envelope, key, msg, invocation_id=envelope.data.invocation_id)
+        elif existing.result is None:
+            await self._handle_lost_run(existing, envelope, key, msg)
+        else:
             await self._republish_terminal(existing, envelope, msg)
-            return
 
+    async def _handle_lost_run(
+        self, row: Invocation, envelope: CandybarInvokeCommand, key: str, msg: object
+    ) -> None:
+        """A claimed-but-unfinished key on (re)delivery: the run was lost.
+
+        In-process duplicates never get here (`_inflight`), so the claim's
+        owner is gone: SIGKILL/OOM of the executor, or a terminal write that
+        failed. Finalize it `fail` as abandoned, never re-executing, unless the
+        candybar opted in with the `retry-on-abandon` tag.
+        """
+        try:
+            retry = await self._retry_allowed(row.candybar_id, msg)
+        except Exception:
+            log.exception("retry opt-in read failed for %s; requesting redelivery", key)
+            await msg.nak(delay=1)  # type: ignore[attr-defined]
+            return
+        if retry:
+            log.warning("re-running lost invocation %s (%s opted in)", row.id, RETRY_ON_ABANDON_TAG)
+            await self._execute(envelope, key, msg, invocation_id=row.id, claimed=True)
+            return
+        log.warning("invocation %s was lost mid-run; recording it abandoned", row.id)
+        rec = TerminalInvocation(
+            invocation_id=row.id,
+            candybar_id=row.candybar_id,
+            trigger=row.trigger,
+            tick_id=row.tick_id,
+            idempotency_key=key,
+            result="fail",
+            exit_code=None,
+            runtime_ms=None,
+            error_message=ABANDONED_MESSAGE,
+            stderr_tail=None,
+            token_spend=0,
+            cost_usd=None,
+            started_at=row.started_at,
+            finished_at=datetime.now(UTC),
+        )
+        await self._finalize(rec, envelope, key, msg)
+
+    async def _retry_allowed(self, candybar_id: UUID, msg: object) -> bool:
+        if self._retry_abandoned is None:
+            return False
+        metadata = getattr(msg, "metadata", None)
+        deliveries = getattr(metadata, "num_delivered", 1) or 1
+        if deliveries > ABANDON_RETRY_MAX_DELIVERIES:
+            return False
+        return await self._retry_abandoned(candybar_id)
+
+    async def _execute(
+        self,
+        envelope: CandybarInvokeCommand,
+        key: str,
+        msg: object,
+        *,
+        invocation_id: UUID,
+        claimed: bool = False,
+    ) -> None:
+        """Look up, claim, spawn, then finalize. `claimed`: the row already exists."""
         try:
             entrypoint = await self._entrypoint(envelope.data.candybar_id)
         except Exception:
@@ -255,12 +347,12 @@ class Executor:
                 build_candybar_invoked(
                     candybar_id=envelope.data.candybar_id,
                     name=envelope.data.name,
-                    invocation_id=envelope.data.invocation_id,
+                    invocation_id=invocation_id,
                     trigger=envelope.data.trigger,
                     tick_id=envelope.data.tick_id,
                     correlationid=envelope.correlationid,
                     causationid=envelope.command_id,
-                    event_id=lifecycle_event_id("invoked", envelope.data.invocation_id),
+                    event_id=lifecycle_event_id("invoked", invocation_id),
                 )
             )
         except Exception:
@@ -268,10 +360,33 @@ class Executor:
             await msg.nak(delay=1)  # type: ignore[attr-defined]
             return
 
+        if not claimed and self._claim is not None:
+            # Hard-kill safety: the running row commits BEFORE the spawn, so a
+            # redelivery after a SIGKILL/OOM finds it instead of re-running.
+            try:
+                won = await self._claim(
+                    InvocationClaim(
+                        invocation_id=invocation_id,
+                        candybar_id=envelope.data.candybar_id,
+                        trigger=envelope.data.trigger,
+                        tick_id=envelope.data.tick_id,
+                        idempotency_key=key,
+                        started_at=datetime.now(UTC),
+                    )
+                )
+            except Exception:
+                # e.g. the candybar was deleted after the lookup (KeyError).
+                log.exception("claim failed for %s; requesting redelivery", key)
+                await msg.nak(delay=1)  # type: ignore[attr-defined]
+                return
+            if not won:
+                await self._lost_claim_race(envelope, key, msg)
+                return
+
         try:
             outcome = await self._run(
                 entrypoint=entrypoint,
-                invocation_id=envelope.data.invocation_id,
+                invocation_id=invocation_id,
                 candybar_id=envelope.data.candybar_id,
                 trigger=envelope.data.trigger,
                 tick_id=envelope.data.tick_id,
@@ -279,13 +394,14 @@ class Executor:
                 on_wait=msg.in_progress,  # type: ignore[attr-defined]
             )
         except Exception:
+            # With a claim, the redelivery records the run abandoned.
             log.exception("execution crashed for %s; requesting redelivery", key)
             await msg.nak(delay=1)  # type: ignore[attr-defined]
             return
 
         resolved = resolve_outcome(outcome, stopped=self.registry.stopping)
         rec = TerminalInvocation(
-            invocation_id=envelope.data.invocation_id,
+            invocation_id=invocation_id,
             candybar_id=envelope.data.candybar_id,
             trigger=envelope.data.trigger,
             tick_id=envelope.data.tick_id,
@@ -294,7 +410,9 @@ class Executor:
             exit_code=outcome.exit_code,
             runtime_ms=outcome.runtime_ms,
             error_message=resolved.message,
-            stderr_tail=outcome.stderr_tail or None,
+            # A NUL in stderr would fail the terminal write and, before the
+            # claim row, re-execute the job on every redelivery.
+            stderr_tail=scrub_optional(outcome.stderr_tail or None),
             token_spend=resolved.metrics.token_spend,
             cost_usd=resolved.metrics.cost_usd,
             started_at=outcome.started_at,
@@ -303,6 +421,28 @@ class Executor:
             cpu_load=outcome.cpu_load,
             gpu_load=outcome.gpu_load,
         )
+        await self._finalize(rec, envelope, key, msg)
+
+    async def _lost_claim_race(self, envelope: CandybarInvokeCommand, key: str, msg: object) -> None:
+        """Another delivery claimed this key between our dedupe read and claim."""
+        try:
+            winner = await self._by_key(key)
+        except Exception:
+            log.exception("claim winner read failed for %s; requesting redelivery", key)
+            await msg.nak(delay=1)  # type: ignore[attr-defined]
+            return
+        if winner is not None and winner.result is not None:
+            await self._republish_terminal(winner, envelope, msg)
+            return
+        # The winner claimed milliseconds ago and is running it now: it owns
+        # the outcome. Running a second copy is exactly what the claim prevents.
+        log.info("%s claimed by a concurrent delivery; not executing twice", key)
+        await msg.ack()  # type: ignore[attr-defined]
+
+    async def _finalize(
+        self, rec: TerminalInvocation, envelope: CandybarInvokeCommand, key: str, msg: object
+    ) -> None:
+        """Record the terminal row, observe, publish the terminal fact, ack."""
         try:
             inserted = await self._record(rec)
         except Exception:
@@ -389,7 +529,10 @@ class Executor:
 
 
 __all__ = [
+    "ABANDONED_MESSAGE",
+    "ABANDON_RETRY_MAX_DELIVERIES",
     "EXEC_NAMESPACE",
+    "RETRY_ON_ABANDON_TAG",
     "Executor",
     "Resolved",
     "lifecycle_event_id",

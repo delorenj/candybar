@@ -11,9 +11,25 @@ read-only, or undelegated (dev boxes, CI, unprivileged containers), the run
 proceeds unscoped with a warning — execution must not fail on missing cgroup
 privilege. Set CANDYBAR_CGROUP_ROOT="" to disable scoping outright.
 
-Story 3.1 meters the scope (metering.py): the cpu.stat baseline is taken right
-after the child joins it, memory.peak and the cpu.stat delta right after the
-child exits and before the scope is removed. Unscoped runs meter as zero.
+Story 3.1 meters the scope (metering.py): memory.peak and the cpu.stat delta
+are read right after the child exits and before the scope is removed.
+Unscoped runs meter as zero.
+
+The child joins its scope BEFORE exec (deferred-work: pre-exec cgroup join).
+The parent opens the scope's cgroup.procs ahead of the spawn, and a
+`preexec_fn` in the forked child writes "0" (meaning "me") to that fd, so
+every page and CPU cycle of the exec'd image is charged to the scope from its
+first instruction. The old post-spawn join (the parent writing the pid after
+spawn returned) lost the race to any job shorter than the ~20 ms the
+migration can block on `cgroup_threadgroup_rwsem`: the child was already
+exiting, the kernel skipped it silently, and the run metered 0/0. The fork
+already pays that wait now, inside the child, before exec.
+
+`preexec_fn` is documented as unsafe in a threaded parent, because the forked
+child can deadlock on a lock another thread held. The function here takes
+no lock: it is a single `os.write` on an inherited fd with an `OSError`
+guard. It allocates nothing that needs the GIL beyond what the forking thread
+already holds, and it never logs or imports.
 
 Story 3.2 adds GPU load (gpu.py): the child's process tree is tracked on the
 shared pmon sampler from spawn to exit. That runs on GPU-less hosts too,
@@ -28,6 +44,7 @@ import logging
 import os
 import shutil
 import signal
+import subprocess
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
@@ -41,6 +58,7 @@ from pydantic import BaseModel, ValidationError
 
 from ..events.builders import STDERR_TAIL_MAX
 from ..events.envelope import SelfReportedMetrics
+from ..text import scrub_text
 from . import metering
 from .gpu import GPU_SAMPLER, GpuSampler
 
@@ -154,8 +172,12 @@ def child_env(
     return env
 
 
-def _enter_scope(root: str, invocation_id: UUID, pid: int) -> Path | None:
-    """Best-effort cgroup v2 scope: mkdir the scope, move the child in."""
+def _prepare_scope(root: str, invocation_id: UUID) -> tuple[Path, int] | None:
+    """Best-effort cgroup v2 scope: mkdir it and open its cgroup.procs for the child.
+
+    Returns the scope and a write fd on its cgroup.procs (close-on-exec, so it
+    never leaks into the job), or None to run unscoped.
+    """
     if not root:
         return None
     scope = Path(root) / str(invocation_id)
@@ -163,19 +185,30 @@ def _enter_scope(root: str, invocation_id: UUID, pid: int) -> Path | None:
         scope.parent.mkdir(parents=True, exist_ok=True)
         metering.enable_controllers(scope.parent)
         scope.mkdir(exist_ok=True)
-        (scope / "cgroup.procs").write_text(str(pid))
-    except ProcessLookupError:
-        # The child already exited before it could join (a sub-millisecond
-        # job). Expected and harmless: it runs unscoped and meters as 0. Not a
-        # warning — that is reserved for a scope tree that is actually broken.
-        log.debug("invocation %s exited before joining its cgroup scope", invocation_id)
-        shutil.rmtree(scope, ignore_errors=True)
-        return None
+        # O_CREAT only matters for the plain-fs test double; cgroupfs has the file.
+        fd = os.open(scope / "cgroup.procs", os.O_WRONLY | os.O_CREAT | os.O_CLOEXEC, 0o644)
     except OSError as exc:
         log.warning("cgroup scope %s unavailable (%s); running unscoped", scope, exc)
         shutil.rmtree(scope, ignore_errors=True)
         return None
-    return scope
+    return scope, fd
+
+
+def _join_scope_preexec(fd: int) -> Callable[[], None]:
+    """The forked child's last step before exec: move itself into the scope.
+
+    Writing "0" to cgroup.procs migrates the writing process. A failed write
+    leaves the child where it was (unscoped, metering 0) and never fails the
+    spawn: execution must not depend on cgroup privilege.
+    """
+
+    def join() -> None:
+        try:
+            os.write(fd, b"0")
+        except OSError:
+            pass
+
+    return join
 
 
 def _leave_scope(scope: Path | None) -> None:
@@ -203,7 +236,7 @@ def _read_result_file(path: Path) -> tuple[ResultFile | None, str | None]:
         raw = path.read_text(encoding="utf-8")
         return ResultFile.model_validate(json.loads(raw)), None
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValidationError) as exc:
-        return None, f"invalid result file: {exc}"[:STDERR_TAIL_MAX]
+        return None, scrub_text(f"invalid result file: {exc}"[:STDERR_TAIL_MAX])
 
 
 async def run_invocation(
@@ -225,7 +258,14 @@ async def run_invocation(
     started_at = datetime.now(UTC)
     t0 = time.monotonic()
     scope: Path | None = None
+    prepared = _prepare_scope(scope_root, invocation_id)
+    procs_fd: int | None = None
+    if prepared is not None:
+        scope, procs_fd = prepared
     try:
+        # The scope is fresh and empty: its usage before the child joins is
+        # the baseline (0 on a real cgroup).
+        cpu_baseline = metering.read_cpu_usage_usec(scope)
         try:
             proc = await asyncio.create_subprocess_exec(
                 entrypoint,
@@ -240,8 +280,9 @@ async def run_invocation(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,  # own process group: SIGTERM reaches the tree
+                preexec_fn=_join_scope_preexec(procs_fd) if procs_fd is not None else None,
             )
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
             return RunOutcome(
                 exit_code=None,
                 runtime_ms=int((time.monotonic() - t0) * 1000),
@@ -253,9 +294,11 @@ async def run_invocation(
                 started_at=started_at,
                 finished_at=datetime.now(UTC),
             )
-
-        scope = _enter_scope(scope_root, invocation_id, proc.pid)
-        cpu_baseline = metering.read_cpu_usage_usec(scope)
+        finally:
+            # The child holds its own copy until exec closes it (O_CLOEXEC).
+            if procs_fd is not None:
+                os.close(procs_fd)
+                procs_fd = None
         gpu_session = (GPU_SAMPLER if gpu is None else gpu).track(proc.pid, scope)
         if registry is not None:
             registry.add(proc)
@@ -282,7 +325,8 @@ async def run_invocation(
                 registry.procs.discard(proc)
 
         runtime_ms = int((time.monotonic() - t0) * 1000)
-        stderr_tail = stderr.decode("utf-8", errors="replace")[-STDERR_TAIL_MAX:]
+        # NUL survives errors="replace" and Postgres text rejects it (scrub_text).
+        stderr_tail = scrub_text(stderr.decode("utf-8", errors="replace")[-STDERR_TAIL_MAX:])
         result, result_error = _read_result_file(result_path)
         return RunOutcome(
             exit_code=proc.returncode,

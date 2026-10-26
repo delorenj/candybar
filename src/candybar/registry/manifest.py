@@ -11,7 +11,9 @@ import tomllib
 from pathlib import Path
 
 import croniter
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+from ..text import has_unsafe_text
 
 MANIFEST_FILENAME = "candybar.toml"
 
@@ -38,6 +40,17 @@ class CandybarManifest(BaseModel):
     schedule: str
     entrypoint: str
     noise: bool = False
+
+    @model_validator(mode="after")
+    def _text_is_storable(self) -> CandybarManifest:
+        # Postgres text rejects NUL and UTF-8 cannot encode a lone surrogate:
+        # refuse here (422) instead of a 500 out of the insert or the event.
+        for field in ("description", "schedule", "entrypoint"):
+            if has_unsafe_text(getattr(self, field)):
+                raise ValueError(f"{field} must not contain NUL or lone surrogate characters")
+        if any(has_unsafe_text(tag) for tag in self.tags):
+            raise ValueError("tags must not contain NUL or lone surrogate characters")
+        return self
 
     @field_validator("name")
     @classmethod

@@ -205,6 +205,21 @@ def test_manifest_rejects_empty_entrypoint() -> None:
         _manifest(entrypoint="")
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("description", "nul\x00here"),
+        ("description", "lone \ud800 surrogate"),
+        ("entrypoint", "/bin/tr\x00ue"),
+        ("tags", ["ok", "bad\x00tag"]),
+    ],
+)
+def test_manifest_rejects_text_postgres_cannot_store(field: str, value: object) -> None:
+    """NUL (and lone surrogates) would 500 out of the insert/event: refuse as 422."""
+    with pytest.raises(ValueError, match="NUL or lone surrogate"):
+        _manifest(**{field: value})
+
+
 # ---------------------------------------------------------------------------
 # DSN normalization
 # ---------------------------------------------------------------------------
