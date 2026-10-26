@@ -8,7 +8,8 @@
 #   1. https://candybar.delo.sh/healthz answers 200 (heartbeat/dispatcher/api
 #      container through the whole edge path).
 #   2. The every-minute canary candybar (default name: watchdog-canary) has a
-#      terminal invocation finished within the last 3 minutes.
+#      terminal invocation within the last 3 minutes, counted by START time
+#      (startedAt): a run wedged mid-execution is as dead as one never fired.
 #   3. candybar-executor.service is active (the host executor, AD-17).
 #
 # Paging: exactly one ntfy page on the OK->FAIL transition and one on
@@ -30,8 +31,15 @@ MAX_CANARY_AGE_S="${CANDYBAR_WATCHDOG_MAX_CANARY_AGE_S:-180}"
 STATE_DIR="${CANDYBAR_WATCHDOG_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/candybar-watchdog}"
 STAMP="$STATE_DIR/ok"
 STATE="$STATE_DIR/state"        # "ok" | "fail"
+STATE_TMP="$STATE_DIR/.state.tmp.$$"
 FAILS="$STATE_DIR/failing"      # newline-separated failing check names
+FAILS_TMP="$STATE_DIR/.failing.tmp.$$"
 NTFY_ALERT="${CANDYBAR_WATCHDOG_NTFY_ALERT:-$HOME/.local/bin/ntfy-alert}"
+
+# A torn state file (killed mid-write) must never read as "fail" on the next
+# run: that would suppress the first real outage page. Writes are tmp+rename.
+trap 'rm -f "$STATE_TMP" "$FAILS_TMP"' EXIT
+write_state() { printf '%s\n' "$1" > "$STATE_TMP" && mv "$STATE_TMP" "$STATE"; }
 
 # Test seams (default real tools):
 CURL="${CANDYBAR_WATCHDOG_CURL:-curl}"
@@ -60,19 +68,20 @@ if [[ "$code" == "200" ]]; then
   if [[ -z "$canary_id" ]]; then
     failures+=("canary ($CANARY_NAME not registered)")
   else
-    inv_json="$("$CURL" -fsS -m 10 "$BASE_URL/candybars/$canary_id/invocations?limit=5" 2>/dev/null || echo '')"
-    # Newest TERMINAL row: a still-running invocation (result null) proves
-    # nothing about a finished fire, so skip it.
-    finished="$(printf '%s' "$inv_json" | "$JQ" -r '[.invocations[] | select(.result != null)][0].finishedAt // empty' 2>/dev/null)"
-    result="$(printf '%s' "$inv_json" | "$JQ" -r '[.invocations[] | select(.result != null)][0].result // empty' 2>/dev/null)"
-    if [[ -z "$finished" ]]; then
-      failures+=("canary (no terminal invocation)")
+    inv_json="$("$CURL" -fsS -m 10 "$BASE_URL/candybars/$canary_id/invocations?limit=1" 2>/dev/null || echo '')"
+    # Freshness is counted from startedAt: a claimed-but-wedged run (result
+    # null, finishedAt null) ages out exactly like a fire that never ran.
+    started="$(printf '%s' "$inv_json" | "$JQ" -r '.invocations[0].startedAt // empty' 2>/dev/null)"
+    result="$(printf '%s' "$inv_json" | "$JQ" -r '.invocations[0].result // "none"' 2>/dev/null)"
+    if [[ -z "$started" ]]; then
+      failures+=("canary (no invocation)")
     else
-      finished_epoch="$(date -d "$finished" +%s 2>/dev/null || echo 0)"
-      age=$(( $(now) - finished_epoch ))
-      if [[ "$finished_epoch" == "0" || "$age" -gt "$MAX_CANARY_AGE_S" ]]; then
-        failures+=("canary (last terminal invocation ${age}s ago, limit ${MAX_CANARY_AGE_S}s)")
-      elif [[ "$result" != "success" ]]; then
+      started_epoch="$(date -d "$started" +%s 2>/dev/null || echo 0)"
+      age=$(( $(now) - started_epoch ))
+      if [[ "$started_epoch" == "0" || "$age" -gt "$MAX_CANARY_AGE_S" ]]; then
+        failures+=("canary (last invocation started ${age}s ago, limit ${MAX_CANARY_AGE_S}s)")
+      elif [[ "$result" != "success" && "$result" != "null" && "$result" != "none" ]]; then
+        # result null = the newest fire is still running: fresh, no verdict yet.
         failures+=("canary (last invocation result: $result)")
       fi
     fi
@@ -95,8 +104,8 @@ page() { # page <title> <message>
 }
 
 if (( ${#failures[@]} > 0 )); then
-  printf '%s\n' "${failures[@]}" > "$FAILS"
-  echo fail > "$STATE"
+  printf '%s\n' "${failures[@]}" > "$FAILS_TMP" && mv "$FAILS_TMP" "$FAILS"
+  write_state fail
   if [[ "$prev" != "fail" ]]; then
     page "candybar DOWN" "candybar-watchdog FAIL on $(hostname -s): $(IFS='; '; echo "${failures[*]}"). No re-page until recovery; watch https://candybar.delo.sh/healthz."
   fi
@@ -106,7 +115,7 @@ fi
 # all green
 touch "$STAMP"
 rm -f "$FAILS"
-echo ok > "$STATE"
+write_state ok
 if [[ "$prev" == "fail" ]]; then
   page "candybar RECOVERED" "candybar-watchdog green again on $(hostname -s): healthz, canary and executor all pass."
 fi

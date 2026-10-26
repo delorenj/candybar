@@ -148,10 +148,12 @@ CANARY = {"id": "aaaaaaaa-0000-7000-8000-000000000001", "name": "watchdog-canary
 
 
 def fresh_inv(result: str = "success", age_s: int = 30) -> dict:
+    ts = (datetime.now(UTC) - timedelta(seconds=age_s)).isoformat()
     return {
         "id": "inv-1",
         "result": result,
-        "finishedAt": (datetime.now(UTC) - timedelta(seconds=age_s)).isoformat(),
+        "startedAt": ts,
+        "finishedAt": ts,
     }
 
 
@@ -232,13 +234,33 @@ class TestFailures:
         assert "executor" in log
         assert not rig.stamped()
 
-    def test_running_row_is_skipped_for_terminal(self, rig: Rig) -> None:
-        running = {"id": "inv-0", "result": None, "finishedAt": None}
-        rig.set_invocations([running, fresh_inv()])
+    def test_running_row_fresh_is_ok(self, rig: Rig) -> None:
+        # A just-started run (result null) is fresh: no verdict yet, no page.
+        running = {
+            "id": "inv-0",
+            "result": None,
+            "startedAt": datetime.now(UTC).isoformat(),
+            "finishedAt": None,
+        }
+        rig.set_invocations([running])
         cp = rig.run()
         assert cp.returncode == 0
         assert rig.stamped()
         assert rig.page_log() == ""
+
+    def test_wedged_run_ages_out(self, rig: Rig) -> None:
+        # Claimed but never finished (hard-killed executor): startedAt ages
+        # past the limit and the watchdog pages — finishedAt stays null.
+        wedged = {
+            "id": "inv-0",
+            "result": None,
+            "startedAt": (datetime.now(UTC) - timedelta(seconds=600)).isoformat(),
+            "finishedAt": None,
+        }
+        rig.set_invocations([wedged])
+        rig.run()
+        assert "candybar DOWN" in rig.page_log()
+        assert not rig.stamped()
 
     def test_connection_refused_healthz(self, rig: Rig) -> None:
         # curl exits nonzero without printing a code: script maps to 000.
