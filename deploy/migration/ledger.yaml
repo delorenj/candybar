@@ -36,9 +36,9 @@ jobs:
   - systemctl --user disable --now newapi-allowances.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-allowances.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1793a-d2a0-7070-b267-4f6d3e41a3b5
+  cutover_at: '2026-10-26T17:21:01.164216Z'
   verification:
     invocation_id: null
     result: null
@@ -49,6 +49,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:21:01.164216Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793a-d2a0-7070-b267-4f6d3e41a3b5 enabled; first fire 2026-10-26T17:25:00Z
 - id: systemd:newapi-vm-health
   wave: '7.13'
   candybar:
@@ -82,9 +86,9 @@ jobs:
   - systemctl --user disable --now newapi-vm-health.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-vm-health.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1793b-612b-797c-8746-17759edbb316
+  cutover_at: '2026-10-26T17:21:37.543548Z'
   verification:
     invocation_id: null
     result: null
@@ -95,6 +99,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:21:37.543548Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793b-612b-797c-8746-17759edbb316 enabled; first fire 2026-10-26T17:25:00Z
 - id: systemd:newapi-db-pull
   wave: '7.13'
   candybar:
@@ -127,9 +135,9 @@ jobs:
   - systemctl --user disable --now newapi-db-pull.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-db-pull.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17939-8d7e-7b6b-b51a-18f13c120eaf
+  cutover_at: '2026-10-26T17:19:37.802787Z'
   verification:
     invocation_id: null
     result: null
@@ -140,6 +148,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:19:37.802787Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17939-8d7e-7b6b-b51a-18f13c120eaf enabled; first fire 2026-10-27T12:05:00Z
 - id: systemd:newapi-claude-token
   wave: '7.13'
   candybar:
@@ -171,9 +183,9 @@ jobs:
   - systemctl --user disable --now newapi-claude-token.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-claude-token.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1793b-6898-766c-8bbb-e5fa19dcef06
+  cutover_at: '2026-10-26T17:21:39.434690Z'
   verification:
     invocation_id: null
     result: null
@@ -184,6 +196,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:21:39.434690Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793b-6898-766c-8bbb-e5fa19dcef06 enabled; first fire 2026-10-26T17:30:00Z
 - id: systemd:newapi-oauth-connections
   wave: '7.13'
   candybar:
@@ -216,9 +232,9 @@ jobs:
   - systemctl --user disable --now newapi-oauth-connections.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-oauth-connections.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1793b-64ce-7e0a-aea1-1b461ff550fe
+  cutover_at: '2026-10-26T17:21:38.494156Z'
   verification:
     invocation_id: null
     result: null
@@ -229,6 +245,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:21:38.494156Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793b-64ce-7e0a-aea1-1b461ff550fe enabled; first fire 2026-10-26T17:25:00Z
 - id: systemd:newapi-openrouter-sync
   wave: '7.13'
   candybar:
@@ -260,9 +280,9 @@ jobs:
   - systemctl --user disable --now newapi-openrouter-sync.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-openrouter-sync.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17939-b32c-7c55-af69-f7aa768fbc15
+  cutover_at: '2026-10-26T17:19:47.445867Z'
   verification:
     invocation_id: null
     result: null
@@ -273,6 +293,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:19:47.445867Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17939-b32c-7c55-af69-f7aa768fbc15 enabled; first fire 2026-10-27T07:47:00Z
 - id: systemd:newapi-staff-sso
   wave: '7.13'
   candybar:
@@ -305,9 +329,9 @@ jobs:
   - systemctl --user disable --now newapi-staff-sso.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-staff-sso.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17939-b676-7b1b-8232-ffd3ae91498c
+  cutover_at: '2026-10-26T17:19:48.287493Z'
   verification:
     invocation_id: null
     result: null
@@ -318,6 +342,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:19:48.287493Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17939-b676-7b1b-8232-ffd3ae91498c enabled; first fire 2026-10-26T18:07:00Z
 - id: systemd:newapi-token-watch
   wave: '7.13'
   candybar:
@@ -349,9 +377,9 @@ jobs:
   - systemctl --user disable --now newapi-token-watch.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-token-watch.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17939-b9af-7316-bada-e543afdf55b9
+  cutover_at: '2026-10-26T17:19:49.128067Z'
   verification:
     invocation_id: null
     result: null
@@ -362,6 +390,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:19:49.128067Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17939-b9af-7316-bada-e543afdf55b9 enabled; first fire 2026-10-27T12:30:00Z
 - id: systemd:aai-free-scout.timer
   wave: '7.13'
   candybar:
@@ -394,9 +426,9 @@ jobs:
   - systemctl --user disable --now aai-free-scout.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/aai-free-scout.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17939-bd28-7d5a-ab3e-2d4a83e9f996
+  cutover_at: '2026-10-26T17:19:50.013161Z'
   verification:
     invocation_id: null
     result: null
@@ -407,6 +439,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:19:50.013161Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17939-bd28-7d5a-ab3e-2d4a83e9f996 enabled; first fire 2026-10-27T08:37:00Z
 - id: systemd:intelliforia-pull-prod.timer
   wave: '7.12'
   candybar:
@@ -877,7 +913,7 @@ jobs:
   rollback:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler internal'
   status: planned
-  candybar_id: null
+  candybar_id: 01a1793b-6dcd-730f-8317-5975681f9792
   cutover_at: null
   verification:
     invocation_id: null
@@ -889,6 +925,14 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for hermes
+  - at: '2026-10-26T17:21:40.299864Z'
+    action: cutover
+    outcome: registered-disabled
+    detail: registered candybar crank-beat (01a1793b-6dcd-730f-8317-5975681f9792) enabled=false
+  - at: '2026-10-26T17:21:44.498005Z'
+    action: cutover
+    outcome: pinned-external
+    detail: '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler external'
 - id: hermes:33god-pm:f3db72089593
   wave: '7.17'
   candybar:
@@ -924,7 +968,7 @@ jobs:
   rollback:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler internal'
   status: planned
-  candybar_id: null
+  candybar_id: 01a1793b-7e99-7b33-b53e-514014a99922
   cutover_at: null
   verification:
     invocation_id: null
@@ -936,6 +980,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for hermes
+  - at: '2026-10-26T17:21:44.596404Z'
+    action: cutover
+    outcome: registered-disabled
+    detail: registered candybar aperture-lane-beat (01a1793b-7e99-7b33-b53e-514014a99922) enabled=false
 - id: hermes:delodocs-pm:fc39bd8b33c8
   wave: '7.17'
   candybar:
