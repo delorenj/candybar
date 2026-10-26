@@ -241,6 +241,15 @@ class Executor:
             await self._fail_unknown_candybar(envelope, msg)
             return
 
+        if self.registry.stopping:
+            # Shutdown began before this command started (fetched in the
+            # role's last poll, or still in its dedupe read): nothing has run,
+            # so leave it on the stream for the next executor instead of
+            # spawning a child into a stopping process.
+            log.info("executor stopping; returning %s to the stream unexecuted", key)
+            await msg.nak()  # type: ignore[attr-defined]
+            return
+
         try:
             await self._publish(
                 build_candybar_invoked(

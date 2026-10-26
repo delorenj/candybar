@@ -689,13 +689,65 @@ def test_terminal_publish_failure_naks_but_row_is_committed() -> None:
 def test_shutdown_marks_running_child_failed() -> None:
     store, bus = FakeStore(), FakeBus()
     registry = ProcessRegistry()
-    registry.stopping = True
-    outcome = make_outcome(exit_code=-15)
-    executor, _runs = make_executor(store, bus, outcome, registry=registry)
+
+    async def run_until_stopped(**kwargs: Any) -> RunOutcome:
+        # Stop arrives while the child runs; terminate_all SIGTERMs it.
+        await registry.terminate_all()
+        return make_outcome(exit_code=-15)
+
+    executor = Executor(
+        by_key=store.by_key,
+        entrypoint=store.get_entrypoint,
+        record=store.record,
+        publish=bus.publish,
+        run=run_until_stopped,
+        registry=registry,
+    )
     msg = FakeMsg(make_command().model_dump_json().encode())
     run(executor.handle_message(msg))
     assert store.records[0].result == "fail"
     assert store.records[0].error_message == "executor stopped (SIGTERM)"
+    assert msg.acked == 1
+
+
+def test_command_handled_after_stop_began_is_returned_unexecuted() -> None:
+    """A command the role fetched in its last poll (or still deduping) at stop.
+
+    The role's finally runs terminate_all BEFORE such a task first runs, so a
+    child it spawned would never be signalled and would outlive docker's stop
+    grace. It must not run at all: no spawn, no invoked fact, no row — nak'd
+    back to the stream for the next executor.
+    """
+    store, bus = FakeStore(), FakeBus()
+    registry = ProcessRegistry()
+    run(registry.terminate_all())  # stop already began
+    executor, runs = make_executor(store, bus, registry=registry)
+    msg = FakeMsg(make_command().model_dump_json().encode())
+    run(executor.handle_message(msg))
+    assert runs == [] and bus.events == [] and store.records == []
+    assert msg.naks == [0] and msg.acked == 0 and msg.termed == 0
+    assert executor._inflight == set()
+
+
+def test_child_spawned_after_terminate_all_is_sigtermed_on_arrival(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """The spawn raced shutdown: terminate_all swept before the child existed."""
+    monkeypatch.setenv("CANDYBAR_WORK_ROOT", str(tmp_path / "work"))
+    entrypoint = make_script(tmp_path, "forever.sh", "sleep 30\nexit 0")
+    registry = ProcessRegistry()
+
+    async def scenario() -> RunOutcome:
+        await registry.terminate_all()  # nothing registered yet
+        return await asyncio.wait_for(
+            run_invocation(**invoke_kwargs(entrypoint=entrypoint, registry=registry)),
+            timeout=10,
+        )
+
+    outcome = run(scenario())
+    assert outcome.exit_code not in (0, None)
+    assert outcome.runtime_ms < 10_000
+    assert not registry.procs
 
 
 def test_terminal_event_id_is_deterministic() -> None:

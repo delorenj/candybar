@@ -94,16 +94,33 @@ class ProcessRegistry:
     async def terminate_all(self) -> None:
         self.stopping = True
         for proc in list(self.procs):
-            if proc.returncode is None:
-                try:
-                    # Children spawn in their own session: kill the whole
-                    # group so grandchildren can't hold the pipes open.
-                    os.killpg(proc.pid, signal.SIGTERM)
-                except (ProcessLookupError, PermissionError, OSError):
-                    try:
-                        proc.terminate()
-                    except ProcessLookupError:
-                        pass  # exited between the check and the signal
+            self.terminate(proc)
+
+    def add(self, proc: asyncio.subprocess.Process) -> None:
+        """Track a freshly spawned child; SIGTERM it at once if stop already began.
+
+        terminate_all sweeps only the children registered when it runs. A
+        spawn that was in flight then (or started after) would otherwise run
+        to completion during shutdown, past docker's stop grace, and be
+        SIGKILLed unrecorded — so a late child is signalled on arrival.
+        """
+        self.procs.add(proc)
+        if self.stopping:
+            self.terminate(proc)
+
+    @staticmethod
+    def terminate(proc: asyncio.subprocess.Process) -> None:
+        if proc.returncode is not None:
+            return
+        try:
+            # Children spawn in their own session: kill the whole
+            # group so grandchildren can't hold the pipes open.
+            os.killpg(proc.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                proc.terminate()
+            except ProcessLookupError:
+                pass  # exited between the check and the signal
 
 
 def cgroup_root() -> str:
@@ -241,7 +258,7 @@ async def run_invocation(
         cpu_baseline = metering.read_cpu_usage_usec(scope)
         gpu_session = (GPU_SAMPLER if gpu is None else gpu).track(proc.pid, scope)
         if registry is not None:
-            registry.procs.add(proc)
+            registry.add(proc)
         try:
             try:
                 communicate = asyncio.create_task(proc.communicate())
