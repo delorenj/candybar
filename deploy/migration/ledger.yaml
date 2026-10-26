@@ -1290,13 +1290,13 @@ jobs:
   - systemctl --user disable --now cache-prune-codex-tmp.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune-codex-tmp.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17941-50aa-7b5e-a1f1-570707d1fd6d
   cutover_at: '2026-10-26T17:28:06.560551Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: c930cb71-918f-5b10-a7b5-652d89d18a1d
+    result: success
+    at: '2026-10-26T18:17:00.247837Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:23:13.764467Z'
@@ -1307,6 +1307,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17941-50aa-7b5e-a1f1-570707d1fd6d enabled; first fire 2026-10-26T18:17:00Z
+  - at: '2026-10-26T18:17:11.499250Z'
+    action: verify
+    outcome: ok
+    detail: invocation c930cb71-918f-5b10-a7b5-652d89d18a1d (scheduled) success exit=0 runtime=160ms memory=10125312B cpu=0.3666
 - id: systemd:cache-prune-daily.timer
   wave: '7.7'
   candybar:
