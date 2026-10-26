@@ -2,7 +2,7 @@
 title: 'Story 5.6: Skip operations API'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'd8c96e5947937b840c71e966422da658c15163cb'
 route: 'dispatch'
 review_loop_iteration: 0
