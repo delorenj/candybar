@@ -73,6 +73,22 @@ Invalid cron/name → `application/problem+json` (422); duplicate name → 409;
 bus down → 503 and no row. API bind: `CANDYBAR_API_HOST`/`CANDYBAR_API_PORT`;
 CLI target: `CANDYBAR_API_URL`.
 
+## Run a candybar now
+
+```bash
+uv run candybar run <id>   # POST /candybars/<id>/invoke -> 202
+```
+
+The api role publishes one `bloodbank.cmd.cron.candybar.invoke` command with
+`trigger=manual` and `idempotency_key = candybar:<id>:manual:<command_id>`
+(AD-12); the executor runs it exactly like a scheduled fire, so the
+invocation row, registry counters, metrics, and `invoked`/`completed`/`failed`
+facts all carry `trigger=manual`, and the child sees `CANDYBAR_TRIGGER=manual`
+(with an empty `CANDYBAR_TICK_ID`). Every run is a new invocation. The CLI
+returns once the command is accepted, not when the job finishes. Unknown id → 404,
+malformed id → 422, bus down → 503: each prints the problem+json body and
+exits 1. Needs the `api` and `executor` roles running.
+
 ## Run the daemon
 
 ```bash

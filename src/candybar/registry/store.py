@@ -123,6 +123,11 @@ async def insert_candybar(
     return row
 
 
+async def get_candybar(session: AsyncSession, candybar_id: UUID) -> Candybar | None:
+    """The registry row for a candybar id, or None when unknown."""
+    return await session.get(Candybar, candybar_id)
+
+
 async def get_entrypoint(session: AsyncSession, candybar_id: UUID) -> str | None:
     """The registered entrypoint for a candybar id, or None when unknown."""
     result = await session.execute(select(Candybar.entrypoint).where(Candybar.id == candybar_id))

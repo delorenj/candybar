@@ -6,6 +6,9 @@ executor's `invocation_id` exemplars survive the scrape). The register flow foll
 spine's state rule — the `bloodbank.cron.candybar.created` fact is published
 FIRST, then the registry row commits in the same request flow; a publish
 failure means no row (503), a unique-violation race maps to 409.
+Story 1.8 adds `POST /candybars/{id}/invoke` (AD-12): the api publishes one
+`bloodbank.cmd.cron.candybar.invoke` command with `trigger=manual` and answers
+202 — the executor runs it down the same path as a scheduled fire.
 All errors are RFC 7807 problem+json. Epic 5 adds the CAP-8 read surface.
 """
 
@@ -16,6 +19,7 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 
 import nats.errors
 from fastapi import FastAPI, Request
@@ -24,11 +28,13 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import REGISTRY, CollectorRegistry
 from prometheus_client.exposition import choose_encoder
 from pydantic import BaseModel, ConfigDict
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from candybar.events.builders import build_candybar_created
+from candybar.events.builders import build_candybar_created, build_candybar_invoke
 from candybar.registry import (
     CandybarManifest,
     DuplicateNameError,
+    get_candybar,
     insert_candybar,
     name_taken,
     uuid7,
@@ -37,6 +43,9 @@ from candybar.registry import (
 log = logging.getLogger(__name__)
 
 PROBLEM_JSON = "application/problem+json"
+
+# Transport failures that mean "the command/fact never reached the bus".
+BUS_ERRORS = (nats.errors.Error, OSError, TimeoutError)
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[Any]]
 
@@ -105,6 +114,14 @@ def create_app(
     async def _validation_problem(_request: Request, exc: RequestValidationError) -> JSONResponse:
         return problem(422, "Invalid request body", str(exc.errors())[:500])
 
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_problem(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        # Unknown routes / wrong methods speak RFC 7807 too, not starlette's {"detail"}.
+        response = problem(exc.status_code, str(exc.detail), f"{exc.status_code} {exc.detail}")
+        if exc.headers:
+            response.headers.update(exc.headers)
+        return response
+
     @app.exception_handler(Exception)
     async def _unhandled_problem(_request: Request, exc: Exception) -> JSONResponse:
         # The API speaks RFC 7807 on every failure — never starlette's plain 500.
@@ -144,7 +161,7 @@ def create_app(
                 )
                 try:
                     await sink.publish(event)
-                except (nats.errors.Error, OSError, TimeoutError) as exc:
+                except BUS_ERRORS as exc:
                     log.error("failed to publish candybar.created for %s: %s", manifest.name, exc)
                     return problem(
                         503,
@@ -161,5 +178,49 @@ def create_app(
             )
 
         return JSONResponse(status_code=201, content=candybar_row_json(row))
+
+    @app.post("/candybars/{candybar_id}/invoke", status_code=202)
+    async def invoke(candybar_id: UUID) -> JSONResponse:
+        """Manual invoke (AD-12): publish one trigger=manual command, answer 202."""
+        async with session_factory() as session:
+            row = await get_candybar(session, candybar_id)
+            name = row.name if row is not None else None
+        if name is None:
+            return problem(404, "Candybar not found", f"no candybar registered with id {candybar_id}")
+
+        # A fresh command per request: two runs are two invocations. The
+        # envelope id doubles as the command id (as in the dispatcher), so a
+        # re-sent publish dedupes on Nats-Msg-Id.
+        command_id = uuid4()
+        command = build_candybar_invoke(
+            candybar_id=candybar_id,
+            name=name,
+            trigger="manual",
+            command_id=command_id,
+            event_id=command_id,
+        )
+        try:
+            await sink.publish(command)
+        except BUS_ERRORS as exc:
+            log.error("failed to publish manual invoke for %s: %s", candybar_id, exc)
+            return problem(503, "Event bus unavailable", "could not publish the invoke command")
+
+        log.info(
+            "manual invoke of %s (%s) accepted: invocation %s",
+            name,
+            candybar_id,
+            command.data.invocation_id,
+        )
+        return JSONResponse(
+            status_code=202,
+            content={
+                "candybarId": str(candybar_id),
+                "name": name,
+                "invocationId": str(command.data.invocation_id),
+                "commandId": str(command.command_id),
+                "idempotencyKey": command.idempotency_key,
+                "trigger": command.data.trigger,
+            },
+        )
 
     return app

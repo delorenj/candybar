@@ -1,8 +1,8 @@
 """candybar CLI entry point.
 
-`--help`/`--version` and `daemon` (Story 1.3) today; `register` (Story 1.4)
-loads a candybar.toml manifest and registers it via the API; `run` arrives
-with Story 1.8.
+`--help`/`--version` and `daemon` (Story 1.3); `register` (Story 1.4)
+loads a candybar.toml manifest and registers it via the API; `run`
+(Story 1.8) invokes a registered candybar now via the API (AD-12).
 """
 
 import asyncio
@@ -11,6 +11,7 @@ import logging
 import os
 import signal
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Annotated
@@ -127,6 +128,38 @@ def register(
         raise typer.Exit(code=1) from exc
 
     typer.echo(f"registered {body['name']} (id {body['id']})")
+
+
+@app.command()
+def run(
+    candybar_id: Annotated[str, typer.Argument(metavar="ID", help="Registry id (UUID) of the candybar.")],
+) -> None:
+    """Invoke a registered candybar now, out of schedule (Story 1.8, AD-12).
+
+    Calls POST /candybars/{id}/invoke on CANDYBAR_API_URL (default
+    http://127.0.0.1:8700). The API publishes a trigger=manual invoke command
+    and the executor runs it exactly like a scheduled fire; this command
+    returns once the invocation is accepted, not when it finishes.
+    """
+    base = os.environ.get(API_URL_ENV, DEFAULT_API_URL).rstrip("/")
+    # Quote the whole segment: an id can never reach a different route.
+    url = f"{base}/candybars/{urllib.parse.quote(candybar_id, safe='')}/invoke"
+    request = urllib.request.Request(url, data=b"", method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            body = json.loads(response.read().decode())
+    except urllib.error.HTTPError as exc:
+        # The API's problem+json body explains the rejection (404 unknown id, ...).
+        typer.echo(exc.read().decode(), err=True)
+        raise typer.Exit(code=1) from exc
+    except (urllib.error.URLError, OSError) as exc:
+        typer.echo(f"candybar API unreachable at {base}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        f"invoked {body['name']} (id {body['candybarId']}): "
+        f"invocation {body['invocationId']}, idempotency_key {body['idempotencyKey']}"
+    )
 
 
 if __name__ == "__main__":
