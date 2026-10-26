@@ -4,1911 +4,721 @@
 # how a cutover is undone when the daemon is down.
 version: 1
 jobs:
-- id: systemd:newapi-allowances
-  wave: '7.13'
+- id: systemd:forever-ago-vault.timer
+  wave: '7.9'
   candybar:
-    name: newapi-allowances
-    description: Collect read-only AutomaticAI provider subscription allowances
+    name: forever-ago-vault
+    description: Nightly local tarball snapshot of the DeLoDocs vault (keep newest 3); offsite history via restic-vault
     tags:
     - migrated
-    - automaticai
-    schedule: '*/5 * * * *'
-    timezone: UTC
-    runner:
-      kind: systemd
-      unit: newapi-allowances.service
-  native:
-    kind: systemd-timer
-    schedule: OnBootSec=1m; OnActiveSec=1m; OnUnitActiveSec=5m; RandomizedDelaySec=15s; Persistent=true
-    jitter_s: 15
-    unit: newapi-allowances.timer
-    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-allowances.timer
-  deviations:
-  - RandomizedDelaySec=15s dropped
-  - OnBootSec/OnActiveSec boot re-arm dropped
-  - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: false
-  source_of_truth:
-    repo: AutomaticAI-io/client-portal
-    path: gateway/ops/systemd/newapi-allowances.timer
-    commit: f337c6f7049094132085b332604f24c974d8de1a
-  disable:
-  - systemctl --user disable --now newapi-allowances.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-allowances.timer
-  status: verified
-  candybar_id: 01a1793a-d2a0-7070-b267-4f6d3e41a3b5
-  cutover_at: '2026-10-26T17:21:01.164216Z'
-  verification:
-    invocation_id: 5489318d-e9f2-5211-aa7b-49ea0885b505
-    result: success
-    at: '2026-10-26T17:25:06.003740Z'
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:15:39.722006Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:21:01.164216Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793a-d2a0-7070-b267-4f6d3e41a3b5 enabled; first fire 2026-10-26T17:25:00Z
-  - at: '2026-10-26T17:28:07.826265Z'
-    action: verify
-    outcome: ok
-    detail: invocation 5489318d-e9f2-5211-aa7b-49ea0885b505 (scheduled) success exit=0 runtime=5942ms memory=55091200B cpu=0.1787
-- id: systemd:newapi-vm-health
-  wave: '7.13'
-  candybar:
-    name: newapi-vm-health
-    description: Check the cloud gateway VM and push problems to ntfy
-    tags:
-    - migrated
-    - automaticai
-    schedule: '*/5 * * * *'
-    timezone: UTC
-    runner:
-      kind: systemd
-      unit: newapi-vm-health.service
-  native:
-    kind: systemd-timer
-    schedule: OnBootSec=2min; OnActiveSec=2min; OnUnitActiveSec=5min; RandomizedDelaySec=20s; Persistent=true
-    jitter_s: 20
-    unit: newapi-vm-health.timer
-    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-vm-health.timer
-  deviations:
-  - RandomizedDelaySec=20s dropped
-  - OnBootSec/OnActiveSec boot re-arm dropped
-  - Persistent=true catch-up replaced by candybar misfire policy
-  - exit 1 = problems pushed to ntfy, mapped to success by the unit SuccessExitStatus=1
-  native_failing: false
-  source_of_truth:
-    repo: AutomaticAI-io/client-portal
-    path: gateway/ops/systemd/newapi-vm-health.timer
-    commit: f337c6f7049094132085b332604f24c974d8de1a
-  disable:
-  - systemctl --user disable --now newapi-vm-health.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-vm-health.timer
-  status: verified
-  candybar_id: 01a1793b-612b-797c-8746-17759edbb316
-  cutover_at: '2026-10-26T17:21:37.543548Z'
-  verification:
-    invocation_id: 705d1f8f-e8f6-538e-8adf-7eb587cd0c8e
-    result: success
-    at: '2026-10-26T17:25:04.522244Z'
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:15:40.072190Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:21:37.543548Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793b-612b-797c-8746-17759edbb316 enabled; first fire 2026-10-26T17:25:00Z
-  - at: '2026-10-26T17:28:23.630016Z'
-    action: verify
-    outcome: ok
-    detail: invocation 705d1f8f-e8f6-538e-8adf-7eb587cd0c8e (scheduled) success exit=0 runtime=4458ms memory=14807040B cpu=0.0205
-- id: systemd:newapi-db-pull
-  wave: '7.13'
-  candybar:
-    name: newapi-db-pull
-    description: Pull the cloud gateway database onto this machine and restore-test it
-    tags:
-    - migrated
-    - automaticai
-    schedule: 5 8 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: newapi-db-pull.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 08:05:00; RandomizedDelaySec=10m; Persistent=true
-    jitter_s: 600
-    unit: newapi-db-pull.timer
-    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-db-pull.timer
-  deviations:
-  - RandomizedDelaySec=10m dropped (now fires exactly 08:05 local)
-  - Persistent=true catch-up replaced by candybar misfire policy
-  - still after the ~07:35 excluded cron.daily dump
-  native_failing: false
-  source_of_truth:
-    repo: AutomaticAI-io/client-portal
-    path: gateway/ops/systemd/newapi-db-pull.timer
-    commit: f337c6f7049094132085b332604f24c974d8de1a
-  disable:
-  - systemctl --user disable --now newapi-db-pull.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-db-pull.timer
-  status: cutover
-  candybar_id: 01a17939-8d7e-7b6b-b51a-18f13c120eaf
-  cutover_at: '2026-10-26T17:19:37.802787Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:15:40.439162Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:19:37.802787Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17939-8d7e-7b6b-b51a-18f13c120eaf enabled; first fire 2026-10-27T12:05:00Z
-- id: systemd:newapi-claude-token
-  wave: '7.13'
-  candybar:
-    name: newapi-claude-token
-    description: Copy Claude Code's OAuth access token onto the new-api Claude channel
-    tags:
-    - migrated
-    - automaticai
-    schedule: '*/30 * * * *'
-    timezone: UTC
-    runner:
-      kind: systemd
-      unit: newapi-claude-token.service
-  native:
-    kind: systemd-timer
-    schedule: OnBootSec=2min; OnActiveSec=2min; OnUnitActiveSec=30min; Persistent=true
-    jitter_s: 0
-    unit: newapi-claude-token.timer
-    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-claude-token.timer
-  deviations:
-  - OnBootSec/OnActiveSec boot re-arm dropped
-  - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: true
-  source_of_truth:
-    repo: AutomaticAI-io/client-portal
-    path: gateway/ops/systemd/newapi-claude-token.timer
-    commit: f337c6f7049094132085b332604f24c974d8de1a
-  disable:
-  - systemctl --user disable --now newapi-claude-token.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-claude-token.timer
-  status: cutover
-  candybar_id: 01a1793b-6898-766c-8bbb-e5fa19dcef06
-  cutover_at: '2026-10-26T17:21:39.434690Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:15:40.798925Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:21:39.434690Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793b-6898-766c-8bbb-e5fa19dcef06 enabled; first fire 2026-10-26T17:30:00Z
-- id: systemd:newapi-oauth-connections
-  wave: '7.13'
-  candybar:
-    name: newapi-oauth-connections
-    description: Renew AutomaticAI dedicated OAuth grants and synchronize access credentials
-    tags:
-    - migrated
-    - automaticai
-    schedule: '*/5 * * * *'
-    timezone: UTC
-    runner:
-      kind: systemd
-      unit: newapi-oauth-connections.service
-  native:
-    kind: systemd-timer
-    schedule: OnBootSec=2m; OnActiveSec=2m; OnUnitActiveSec=5m; RandomizedDelaySec=20s; Persistent=true
-    jitter_s: 20
-    unit: newapi-oauth-connections.timer
-    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-oauth-connections.timer
-  deviations:
-  - RandomizedDelaySec=20s dropped
-  - OnBootSec/OnActiveSec boot re-arm dropped
-  - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: false
-  source_of_truth:
-    repo: AutomaticAI-io/client-portal
-    path: gateway/ops/systemd/newapi-oauth-connections.timer
-    commit: f337c6f7049094132085b332604f24c974d8de1a
-  disable:
-  - systemctl --user disable --now newapi-oauth-connections.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-oauth-connections.timer
-  status: verified
-  candybar_id: 01a1793b-64ce-7e0a-aea1-1b461ff550fe
-  cutover_at: '2026-10-26T17:21:38.494156Z'
-  verification:
-    invocation_id: 0bb303bf-db5e-578b-9157-46005de78cae
-    result: success
-    at: '2026-10-26T17:25:03.018617Z'
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:15:41.144538Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:21:38.494156Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793b-64ce-7e0a-aea1-1b461ff550fe enabled; first fire 2026-10-26T17:25:00Z
-  - at: '2026-10-26T17:28:24.108885Z'
-    action: verify
-    outcome: ok
-    detail: invocation 0bb303bf-db5e-578b-9157-46005de78cae (scheduled) success exit=0 runtime=2952ms memory=41517056B cpu=0.3311
-- id: systemd:newapi-openrouter-sync
-  wave: '7.13'
-  candybar:
-    name: newapi-openrouter-sync
-    description: Sync OpenRouter's catalog and prices into the AutomaticAI passthrough family
-    tags:
-    - migrated
-    - automaticai
-    schedule: 47 3 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: newapi-openrouter-sync.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 03:47:00; RandomizedDelaySec=10m; Persistent=true
-    jitter_s: 600
-    unit: newapi-openrouter-sync.timer
-    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-openrouter-sync.timer
-  deviations:
-  - RandomizedDelaySec=10m dropped (now fires exactly 03:47 local)
-  - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: false
-  source_of_truth:
-    repo: AutomaticAI-io/client-portal
-    path: gateway/ops/systemd/newapi-openrouter-sync.timer
-    commit: f337c6f7049094132085b332604f24c974d8de1a
-  disable:
-  - systemctl --user disable --now newapi-openrouter-sync.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-openrouter-sync.timer
-  status: cutover
-  candybar_id: 01a17939-b32c-7c55-af69-f7aa768fbc15
-  cutover_at: '2026-10-26T17:19:47.445867Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:15:41.490900Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:19:47.445867Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17939-b32c-7c55-af69-f7aa768fbc15 enabled; first fire 2026-10-27T07:47:00Z
-- id: systemd:newapi-staff-sso
-  wave: '7.13'
-  candybar:
-    name: newapi-staff-sso
-    description: Provision AutomaticAI staff rows in new-api for Google SSO (allowlist)
-    tags:
-    - migrated
-    - automaticai
-    schedule: 7 * * * *
-    timezone: UTC
-    runner:
-      kind: systemd
-      unit: newapi-staff-sso.service
-  native:
-    kind: systemd-timer
-    schedule: OnBootSec=5min; OnActiveSec=5min; OnUnitActiveSec=1h; Persistent=true
-    jitter_s: 0
-    unit: newapi-staff-sso.timer
-    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-staff-sso.timer
-  deviations:
-  - relative 1h timer pinned to minute 7 of each hour (matches the timer phase at inventory)
-  - OnBootSec/OnActiveSec boot re-arm dropped
-  - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: false
-  source_of_truth:
-    repo: AutomaticAI-io/client-portal
-    path: gateway/ops/systemd/newapi-staff-sso.timer
-    commit: f337c6f7049094132085b332604f24c974d8de1a
-  disable:
-  - systemctl --user disable --now newapi-staff-sso.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-staff-sso.timer
-  status: cutover
-  candybar_id: 01a17939-b676-7b1b-8232-ffd3ae91498c
-  cutover_at: '2026-10-26T17:19:48.287493Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:15:41.842351Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:19:48.287493Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17939-b676-7b1b-8232-ffd3ae91498c enabled; first fire 2026-10-26T18:07:00Z
-- id: systemd:newapi-token-watch
-  wave: '7.13'
-  candybar:
-    name: newapi-token-watch
-    description: Renew GitHub-bound gateway consumer tokens near expiry and alert on any token expiring within 14 days
-    tags:
-    - migrated
-    - automaticai
-    schedule: 30 8 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: newapi-token-watch.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 08:30:00; RandomizedDelaySec=10min; Persistent=true
-    jitter_s: 600
-    unit: newapi-token-watch.timer
-    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-token-watch.timer
-  deviations:
-  - RandomizedDelaySec=10min dropped (now fires exactly 08:30 local)
-  - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: false
-  source_of_truth:
-    repo: AutomaticAI-io/client-portal
-    path: gateway/ops/systemd/newapi-token-watch.timer
-    commit: f337c6f7049094132085b332604f24c974d8de1a
-  disable:
-  - systemctl --user disable --now newapi-token-watch.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-token-watch.timer
-  status: cutover
-  candybar_id: 01a17939-b9af-7316-bada-e543afdf55b9
-  cutover_at: '2026-10-26T17:19:49.128067Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:15:42.216875Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:19:49.128067Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17939-b9af-7316-bada-e543afdf55b9 enabled; first fire 2026-10-27T12:30:00Z
-- id: systemd:aai-free-scout.timer
-  wave: '7.13'
-  candybar:
-    name: aai-free-scout
-    description: 'AutomaticAI free-provider scout: sign up one free LLM provider and add it to automaticai/free'
-    tags:
-    - migrated
-    - automaticai
-    - llm
-    schedule: 37 4 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: aai-free-scout.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 04:37:00; RandomizedDelaySec=10m; Persistent=true
-    jitter_s: 600
-    unit: aai-free-scout.timer
-    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/aai-free-scout.timer
-  deviations:
-  - RandomizedDelaySec=10m dropped (now fires exactly 04:37 local)
-  - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: false
-  source_of_truth:
-    repo: AutomaticAI-io/client-portal
-    path: gateway/ops/systemd/aai-free-scout.timer
-    commit: f337c6f7049094132085b332604f24c974d8de1a
-  disable:
-  - systemctl --user disable --now aai-free-scout.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/aai-free-scout.timer
-  status: cutover
-  candybar_id: 01a17939-bd28-7d5a-ab3e-2d4a83e9f996
-  cutover_at: '2026-10-26T17:19:50.013161Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:15:42.566444Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:19:50.013161Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17939-bd28-7d5a-ab3e-2d4a83e9f996 enabled; first fire 2026-10-27T08:37:00Z
-- id: systemd:intelliforia-pull-prod.timer
-  wave: '7.12'
-  candybar:
-    name: intelliforia-pull-prod
-    description: Nightly Heroku prod pg_dump restored into the local docker stack, then pushed to the staging droplet (was intelliforia-pull-prod.timer)
-    tags:
-    - migrated
-    - intelliforia
-    schedule: 15 4 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: intelliforia-pull-prod.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 04:15:00; RandomizedDelaySec=15m; Persistent=true
-    jitter_s: 900
-    unit: intelliforia-pull-prod.timer
-    unit_file: /home/delorenj/.config/systemd/user/intelliforia-pull-prod.timer
-  deviations:
-  - RandomizedDelaySec=15m dropped (candybar fires on the minute)
-  - Persistent=true maps to candybar misfire coalesce-to-latest
-  native_failing: false
-  source_of_truth:
-    repo: IntelliForia/intelliforia
-    path: infra/pull-prod/install.sh
-    commit: 9ff09c5d1237ebed21522078ec12368068aa2958
-  disable:
-  - systemctl --user disable --now intelliforia-pull-prod.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-pull-prod.timer
-  status: cutover
-  candybar_id: 01a17938-39bc-74a6-a5d3-26e2d01f9f75
-  cutover_at: '2026-10-26T17:18:10.854333Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:26.005859Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:18:10.854333Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17938-39bc-74a6-a5d3-26e2d01f9f75 enabled; first fire 2026-10-27T08:15:00Z
-- id: systemd:intelliforia-client-health.timer
-  wave: '7.12'
-  candybar:
-    name: intelliforia-client-health
-    description: Nightly IntelliForia client health and tripwires from the local prod copy (INT-406); ntfy Intelliforia, Cait delivery off
-    tags:
-    - migrated
-    - intelliforia
-    schedule: 30 5 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: intelliforia-client-health.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 05:30:00; RandomizedDelaySec=300; Persistent=true
-    jitter_s: 300
-    unit: intelliforia-client-health.timer
-    unit_file: /home/delorenj/.config/systemd/user/intelliforia-client-health.timer
-  deviations:
-  - RandomizedDelaySec=300 dropped (candybar fires on the minute)
-  - Persistent=true maps to candybar misfire coalesce-to-latest
-  native_failing: false
-  source_of_truth:
-    repo: IntelliForia/intelliforia
-    path: infra/client-health/install.sh
-    commit: 9ff09c5d1237ebed21522078ec12368068aa2958
-  disable:
-  - systemctl --user disable --now intelliforia-client-health.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-client-health.timer
-  status: cutover
-  candybar_id: 01a17938-56bc-7741-aba0-83c8ba8cf906
-  cutover_at: '2026-10-26T17:18:18.429218Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:26.027730Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:18:18.429218Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17938-56bc-7741-aba0-83c8ba8cf906 enabled; first fire 2026-10-27T09:30:00Z
-- id: systemd:intelliforia-client-health-monday.timer
-  wave: '7.12'
-  candybar:
-    name: intelliforia-client-health-monday
-    description: Monday one-line-per-client health summary (INT-406); ntfy Intelliforia, Cait delivery off
-    tags:
-    - migrated
-    - intelliforia
-    schedule: 30 8 * * 1
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: intelliforia-client-health-monday.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=Mon *-*-* 08:30:00 America/New_York; Persistent=false
-    jitter_s: 0
-    unit: intelliforia-client-health-monday.timer
-    unit_file: /home/delorenj/.config/systemd/user/intelliforia-client-health-monday.timer
-  deviations: []
-  native_failing: false
-  source_of_truth:
-    repo: IntelliForia/intelliforia
-    path: infra/client-health/install.sh
-    commit: 9ff09c5d1237ebed21522078ec12368068aa2958
-  disable:
-  - systemctl --user disable --now intelliforia-client-health-monday.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-client-health-monday.timer
-  status: cutover
-  candybar_id: 01a17938-5cb9-7594-a7a6-f6a3e96e3a4b
-  cutover_at: '2026-10-26T17:18:19.828062Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:26.046671Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:18:19.828062Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17938-5cb9-7594-a7a6-f6a3e96e3a4b enabled; first fire 2026-11-02T13:30:00Z
-- id: systemd:intelliforia-staging-track-main.timer
-  wave: '7.12'
-  candybar:
-    name: intelliforia-staging-track-main
-    description: 'Weekday mornings: rebuild and ship origin/main to the IntelliForia staging droplet and health-check it (stands down while pull-prod runs)'
-    tags:
-    - migrated
-    - intelliforia
-    schedule: 5 7 * * 1-5
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: intelliforia-staging-track-main.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=Mon..Fri *-*-* 07:05:00; Persistent=true
-    jitter_s: 0
-    unit: intelliforia-staging-track-main.timer
-    unit_file: /home/delorenj/.config/systemd/user/intelliforia-staging-track-main.timer
-  deviations:
-  - Persistent=true maps to candybar misfire coalesce-to-latest
-  native_failing: false
-  source_of_truth:
-    repo: IntelliForia/intelliforia
-    path: infra/staging/systemd/intelliforia-staging-track-main.timer
-    commit: 9ff09c5d1237ebed21522078ec12368068aa2958
-  disable:
-  - systemctl --user disable --now intelliforia-staging-track-main.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-staging-track-main.timer
-  status: cutover
-  candybar_id: 01a17938-6222-7abf-b39e-41495eff680f
-  cutover_at: '2026-10-26T17:18:21.515299Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:26.066794Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:18:21.515299Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17938-6222-7abf-b39e-41495eff680f enabled; first fire 2026-10-27T11:05:00Z
-- id: systemd:tolt-forge-daily
-  wave: '7.16'
-  candybar:
-    name: tolt-forge-daily
-    description: Daily Foundry run of Tower of Lost Things on headless Claude Code (subscription)
-    tags:
-    - migrated
-    - llm
-    - personal
-    schedule: 0 16 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: tolt-forge-daily.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 16:00:00; Persistent=true; RandomizedDelaySec=60
-    jitter_s: 60
-    unit: tolt-forge-daily.timer
-    unit_file: /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-forge-daily.timer
-  deviations:
-  - RandomizedDelaySec=60 dropped (now fires exactly 16:00 local)
-  - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: true
-  source_of_truth:
-    repo: delorenj/tower-of-lost-things
-    path: foundry/cron/tolt-forge-daily.timer
-    commit: 1576845debc6f6e03d17bfdcbe76b3a9327c2e47
-  disable:
-  - systemctl --user disable --now tolt-forge-daily.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-forge-daily.timer
-  status: cutover
-  candybar_id: 01a17938-5381-7f92-8f1e-6966648dd452
-  cutover_at: '2026-10-26T17:18:17.559351Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:31.252762Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:18:17.559351Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17938-5381-7f92-8f1e-6966648dd452 enabled; first fire 2026-10-26T20:00:00Z
-- id: systemd:tolt-items-daily
-  wave: '7.16'
-  candybar:
-    name: tolt-items-daily
-    description: Nightly Item Forge batch (10 candidates, fal-ai image generation)
-    tags:
-    - migrated
-    - llm
-    - personal
+    - backups
     schedule: 0 3 * * *
     timezone: America/New_York
     runner:
       kind: systemd
-      unit: tolt-items-daily.service
+      unit: forever-ago-vault.service
   native:
     kind: systemd-timer
-    schedule: OnCalendar=*-*-* 03:00:00; Persistent=true; RandomizedDelaySec=120
-    jitter_s: 120
-    unit: tolt-items-daily.timer
-    unit_file: /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-items-daily.timer
-  deviations:
-  - RandomizedDelaySec=120 dropped (now fires exactly 03:00 local)
-  - Persistent=true catch-up replaced by candybar misfire policy
-  - tolt-items-inbox.path trigger stays on systemd (not this job)
-  native_failing: true
-  source_of_truth:
-    repo: delorenj/tower-of-lost-things
-    path: foundry/cron/tolt-items-daily.timer
-    commit: 1576845debc6f6e03d17bfdcbe76b3a9327c2e47
-  disable:
-  - systemctl --user disable --now tolt-items-daily.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-items-daily.timer
-  status: cutover
-  candybar_id: 01a17938-6fff-7821-bcf3-3048d43cce18
-  cutover_at: '2026-10-26T17:18:24.754946Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:43.160477Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:18:24.754946Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17938-6fff-7821-bcf3-3048d43cce18 enabled; first fire 2026-10-27T07:00:00Z
-- id: systemd:pr-crusher
-  wave: '7.16'
-  candybar:
-    name: pr-crusher
-    description: Nightly hardened PR-crusher session against mcp-server-trello (opencode workers, automerge off)
-    tags:
-    - migrated
-    - llm
-    - personal
-    schedule: 0 3 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: pr-crusher.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 03:00:00; RandomizedDelaySec=15m; Persistent=true
+    schedule: OnCalendar=*-*-* 03:00:00; Persistent=true; RandomizedDelaySec=15m
     jitter_s: 900
-    unit: pr-crusher.timer
-    unit_file: /home/delorenj/.config/systemd/user/pr-crusher.timer
+    unit: forever-ago-vault.timer
+    unit_file: /home/delorenj/docker/systemd/user/forever-ago-vault.timer
   deviations:
-  - RandomizedDelaySec=15m dropped (now fires exactly 03:00 local)
-  - Persistent=true catch-up replaced by candybar misfire policy
-  - bwrap sandbox, MemoryMax/CPUQuota, systemd-creds stay in the .service (systemd runner)
-  native_failing: true
-  source_of_truth:
-    repo: delorenj/pr-crusher
-    path: scripts/install.sh
-    commit: 8c64f90d688686d920889607009ee0eb18aceb81
-  disable:
-  - systemctl --user disable --now pr-crusher.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/.config/systemd/user/pr-crusher.timer
-  status: cutover
-  candybar_id: 01a17938-75c4-7219-8204-dfa8d0572a1f
-  cutover_at: '2026-10-26T17:18:26.351942Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:52.266848Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:18:26.351942Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17938-75c4-7219-8204-dfa8d0572a1f enabled; first fire 2026-10-27T07:00:00Z
-- id: systemd:honda-hunt-daily-check.timer
-  wave: '7.16'
-  candybar:
-    name: honda-hunt-daily-check
-    description: Daily Civic Si negotiation inbox check (read-only codex agent, desktop notify)
-    tags:
-    - migrated
-    - llm
-    - personal
-    schedule: 0 9 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: honda-hunt-daily-check.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 09:00:00 America/New_York; Persistent=true; AccuracySec=1min
-    jitter_s: 0
-    unit: honda-hunt-daily-check.timer
-    unit_file: /home/delorenj/.config/systemd/user/honda-hunt-daily-check.timer
-  deviations:
-  - AccuracySec=1min dropped
-  - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: true
-  source_of_truth:
-    repo: DeLoDocs vault (not git)
-    path: Projects/project-fuckudeer/scripts/systemd/honda-hunt-daily-check.timer
-    commit: nogit-sha256:dd4b6353c8147cc8e7a5e3cf00701d10eca22ec69f145dbe4abd9e2fca979716
-  disable:
-  - systemctl --user disable --now honda-hunt-daily-check.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/.config/systemd/user/honda-hunt-daily-check.timer
-  status: cutover
-  candybar_id: 01a17938-961c-7581-b9c2-ec6f9e3a708a
-  cutover_at: '2026-10-26T17:18:34.537833Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:52.685063Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:18:34.537833Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17938-961c-7581-b9c2-ec6f9e3a708a enabled; first fire 2026-10-27T13:00:00Z
-- id: systemd:delodocs-wiki-self-tuning-weekly.timer
-  wave: '7.16'
-  candybar:
-    name: delodocs-wiki-self-tuning-weekly
-    description: Weekly DeLoDocs wiki self-tuning reviewer (hermes openrouter deepseek-v4-flash)
-    tags:
-    - migrated
-    - llm
-    - personal
-    schedule: 45 8 * * 1
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: delodocs-wiki-self-tuning-weekly.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=Mon *-*-* 08:45:00
-    jitter_s: 0
-    unit: delodocs-wiki-self-tuning-weekly.timer
-    unit_file: /home/delorenj/.config/systemd/user/delodocs-wiki-self-tuning-weekly.timer
-  deviations:
-  - no jitter; Persistent absent natively
-  native_failing: true
-  source_of_truth:
-    repo: DeLoDocs vault (not git)
-    path: _vault/Workflows/systemd/delodocs-wiki-self-tuning-weekly.timer
-    commit: nogit-sha256:99624124a86cbe7eff67ffa4ff0e8828e40e355c58ad787aebdc5310df22091e
-  disable:
-  - systemctl --user disable --now delodocs-wiki-self-tuning-weekly.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/.config/systemd/user/delodocs-wiki-self-tuning-weekly.timer
-  status: cutover
-  candybar_id: 01a17938-9a3b-71bc-b1b9-c0ceadfc86fe
-  cutover_at: '2026-10-26T17:18:35.830721Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:53.068511Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:18:35.830721Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17938-9a3b-71bc-b1b9-c0ceadfc86fe enabled; first fire 2026-11-02T13:45:00Z
-- id: hermes:33god-pm:777c511a009c
-  wave: '7.17'
-  candybar:
-    name: crank-beat
-    description: 'Crank heartbeat: zcrank-gate monitor + agent prods stalled Workspace panes (was hermes 33god-pm:777c511a009c)'
-    tags:
-    - migrated
-    - hermes-agent
-    - wave-7-17
-    schedule: '*/5 * * * *'
-    timezone: America/New_York
-    noise: true
-    runner:
-      kind: hermes
-      profile: 33god-pm
-      job_id: 777c511a009c
-      timeout_s: 1800
-  native:
-    kind: hermes
-    schedule: '*/5 * * * * (hermes cron expr, profile tz America/New_York)'
-    jitter_s: 0
-    profile: 33god-pm
-    job_id: 777c511a009c
-    jobs_file: /home/delorenj/code/33GOD/agents/hermes/pm/runtime/cron/jobs.json
-  deviations: []
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/agents
-    path: tools/jev-clairic/hermes/cron-jobs.json
-    commit: 03761d6
-  disable:
-  - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler external'
-  rollback:
-  - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler internal'
-  status: cutover
-  candybar_id: 01a1793b-6dcd-730f-8317-5975681f9792
-  cutover_at: '2026-10-26T17:28:03.162377Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:44.526572Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for hermes
-  - at: '2026-10-26T17:21:40.299864Z'
-    action: cutover
-    outcome: registered-disabled
-    detail: registered candybar crank-beat (01a1793b-6dcd-730f-8317-5975681f9792) enabled=false
-  - at: '2026-10-26T17:21:44.498005Z'
-    action: cutover
-    outcome: pinned-external
-    detail: '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler external'
-  - at: '2026-10-26T17:28:03.162377Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793b-6dcd-730f-8317-5975681f9792 enabled after the batched hermes-gateway-restart; pin active
-- id: hermes:33god-pm:f3db72089593
-  wave: '7.17'
-  candybar:
-    name: aperture-lane-beat
-    description: Aperture delivery-lane PM beat on lane-state change (was hermes 33god-pm:f3db72089593, every 120m -> even hours :00)
-    tags:
-    - migrated
-    - hermes-agent
-    - wave-7-17
-    schedule: 0 */2 * * *
-    timezone: UTC
-    runner:
-      kind: hermes
-      profile: 33god-pm
-      job_id: f3db72089593
-      timeout_s: 3600
-  native:
-    kind: hermes
-    schedule: every 120m (hermes interval, anchored to last run)
-    jitter_s: 0
-    profile: 33god-pm
-    job_id: f3db72089593
-    jobs_file: /home/delorenj/code/33GOD/agents/hermes/pm/runtime/cron/jobs.json
-  deviations:
-  - 'interval ''every 120m'' (anchored to last run) -> cron ''0 */2 * * *'' UTC: phase not preserved, only the interval (cron-inventory.md mapping for interval jobs)'
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/agents
-    path: tools/jev-clairic/hermes/aperture-lane-monitor.sh
-    commit: 03761d6
-  disable:
-  - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler external'
-  rollback:
-  - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler internal'
-  status: cutover
-  candybar_id: 01a1793b-7e99-7b33-b53e-514014a99922
-  cutover_at: '2026-10-26T17:28:03.172945Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:44.858083Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for hermes
-  - at: '2026-10-26T17:21:44.596404Z'
-    action: cutover
-    outcome: registered-disabled
-    detail: registered candybar aperture-lane-beat (01a1793b-7e99-7b33-b53e-514014a99922) enabled=false
-  - at: '2026-10-26T17:21:50.284331Z'
-    action: cutover
-    outcome: pinned-external
-    detail: '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler external'
-  - at: '2026-10-26T17:28:03.172945Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793b-7e99-7b33-b53e-514014a99922 enabled after the batched hermes-gateway-restart; pin active
-- id: hermes:delodocs-pm:fc39bd8b33c8
-  wave: '7.17'
-  candybar:
-    name: delodocs-triage-second-pass
-    description: DeLoDocs vault _triage/ backlog drain, <=10 files/day (was hermes delodocs-pm:fc39bd8b33c8)
-    tags:
-    - migrated
-    - hermes-agent
-    - wave-7-17
-    schedule: 0 9 * * *
-    timezone: America/New_York
-    runner:
-      kind: hermes
-      profile: delodocs-pm
-      job_id: fc39bd8b33c8
-      timeout_s: 3600
-  native:
-    kind: hermes
-    schedule: 0 9 * * * (hermes cron expr, profile tz America/New_York)
-    jitter_s: 0
-    profile: delodocs-pm
-    job_id: fc39bd8b33c8
-    jobs_file: /home/delorenj/code/DeLoDocs/agents/hermes/pm/runtime/cron/jobs.json
-  deviations: []
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/candybar
-    path: deploy/migration/ledger.yaml
-    commit: 216657b
-  disable:
-  - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler external'
-  rollback:
-  - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler internal'
-  status: cutover
-  candybar_id: 01a1793b-951c-7dbb-8aff-0abcb26bdf90
-  cutover_at: '2026-10-26T17:28:03.182875Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:45.194172Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for hermes
-  - at: '2026-10-26T17:21:50.359455Z'
-    action: cutover
-    outcome: registered-disabled
-    detail: registered candybar delodocs-triage-second-pass (01a1793b-951c-7dbb-8aff-0abcb26bdf90) enabled=false
-  - at: '2026-10-26T17:22:10.035129Z'
-    action: cutover
-    outcome: pinned-external
-    detail: '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler external'
-  - at: '2026-10-26T17:28:03.182875Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793b-951c-7dbb-8aff-0abcb26bdf90 enabled after the batched hermes-gateway-restart; pin active
-- id: hermes:dumply:8aecd027dbd0
-  wave: '7.17'
-  candybar:
-    name: dumply-daily-story
-    description: Dumply daily TIKT story session (was hermes dumply:8aecd027dbd0); telegram:-5546637302
-    tags:
-    - migrated
-    - hermes-agent
-    - wave-7-17
-    schedule: 30 20 * * *
-    timezone: America/New_York
-    runner:
-      kind: hermes
-      profile: dumply
-      job_id: 8aecd027dbd0
-      timeout_s: 3600
-  native:
-    kind: hermes
-    schedule: 30 20 * * * (hermes cron expr, profile tz America/New_York)
-    jitter_s: 0
-    profile: dumply
-    job_id: 8aecd027dbd0
-    jobs_file: /home/delorenj/.hermes/profiles/dumply/cron/jobs.json
-  deviations: []
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/candybar
-    path: deploy/migration/ledger.yaml
-    commit: 216657b
-  disable:
-  - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler external'
-  rollback:
-  - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler internal'
-  status: cutover
-  candybar_id: 01a1793b-e235-7efd-8719-d316aba335b4
-  cutover_at: '2026-10-26T17:28:03.192006Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:45.561130Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for hermes
-  - at: '2026-10-26T17:22:10.096938Z'
-    action: cutover
-    outcome: registered-disabled
-    detail: registered candybar dumply-daily-story (01a1793b-e235-7efd-8719-d316aba335b4) enabled=false
-  - at: '2026-10-26T17:22:15.742822Z'
-    action: cutover
-    outcome: pinned-external
-    detail: '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler external'
-  - at: '2026-10-26T17:28:03.192006Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793b-e235-7efd-8719-d316aba335b4 enabled after the batched hermes-gateway-restart; pin active
-- id: hermes:peter-griffin:b240575fae0c
-  wave: '7.17'
-  candybar:
-    name: token-usage-report
-    description: Daily system token usage and anomaly report (was hermes peter-griffin:b240575fae0c); telegram:7564050286
-    tags:
-    - migrated
-    - hermes-agent
-    - wave-7-17
-    schedule: 53 5 * * *
-    timezone: America/New_York
-    runner:
-      kind: hermes
-      profile: peter-griffin
-      job_id: b240575fae0c
-      timeout_s: 3600
-  native:
-    kind: hermes
-    schedule: 53 5 * * * (hermes cron expr, profile tz America/New_York)
-    jitter_s: 0
-    profile: peter-griffin
-    job_id: b240575fae0c
-    jobs_file: /home/delorenj/.hermes/profiles/peter-griffin/cron/jobs.json
-  deviations: []
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/candybar
-    path: deploy/migration/ledger.yaml
-    commit: 216657b
-  disable:
-  - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler external'
-  rollback:
-  - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler internal'
-  status: cutover
-  candybar_id: 01a1793b-f875-73c7-b1cd-4df0d7f28cbd
-  cutover_at: '2026-10-26T17:28:03.201181Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:45.915968Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for hermes
-  - at: '2026-10-26T17:22:15.794411Z'
-    action: cutover
-    outcome: registered-disabled
-    detail: registered candybar token-usage-report (01a1793b-f875-73c7-b1cd-4df0d7f28cbd) enabled=false
-  - at: '2026-10-26T17:22:20.529011Z'
-    action: cutover
-    outcome: pinned-external
-    detail: '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler external'
-  - at: '2026-10-26T17:28:03.201181Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793b-f875-73c7-b1cd-4df0d7f28cbd enabled after the batched hermes-gateway-restart; pin active
-- id: hermes:peter-griffin:3684c5aa8eac
-  wave: '7.17'
-  candybar:
-    name: token-optimization
-    description: Daily token optimization and verification (was hermes peter-griffin:3684c5aa8eac); gates on token-usage-report manifest
-    tags:
-    - migrated
-    - hermes-agent
-    - wave-7-17
-    schedule: 23 6 * * *
-    timezone: America/New_York
-    runner:
-      kind: hermes
-      profile: peter-griffin
-      job_id: 3684c5aa8eac
-      timeout_s: 3600
-  native:
-    kind: hermes
-    schedule: 23 6 * * * (hermes cron expr, profile tz America/New_York)
-    jitter_s: 0
-    profile: peter-griffin
-    job_id: 3684c5aa8eac
-    jobs_file: /home/delorenj/.hermes/profiles/peter-griffin/cron/jobs.json
-  deviations: []
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/candybar
-    path: deploy/migration/ledger.yaml
-    commit: 216657b
-  disable:
-  - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler external'
-  rollback:
-  - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler internal'
-  status: cutover
-  candybar_id: 01a1793c-0b29-7ef2-ac1d-aa1bc158ce1c
-  cutover_at: '2026-10-26T17:28:03.216463Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:17:46.286550Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for hermes
-  - at: '2026-10-26T17:22:20.581352Z'
-    action: cutover
-    outcome: registered-disabled
-    detail: registered candybar token-optimization (01a1793c-0b29-7ef2-ac1d-aa1bc158ce1c) enabled=false
-  - at: '2026-10-26T17:22:23.770883Z'
-    action: cutover
-    outcome: pinned-external
-    detail: '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler external'
-  - at: '2026-10-26T17:28:03.216463Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793c-0b29-7ef2-ac1d-aa1bc158ce1c enabled after the batched hermes-gateway-restart; pin active
-- id: systemd:cache-prune-codex-tmp.timer
-  wave: '7.7'
-  candybar:
-    name: cache-prune-codex-tmp
-    description: Hourly sweep of the codex app-server .tmp/git-* scratch dirs (migrated from cache-prune-codex-tmp.timer)
-    tags:
-    - migrated
-    - infra
-    schedule: 17 * * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: cache-prune-codex-tmp.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* *:17:00; Persistent=true; RandomizedDelaySec=3min
-    jitter_s: 180
-    unit: cache-prune-codex-tmp.timer
-    unit_file: /home/delorenj/code/infra/systemd/user/cache-prune-codex-tmp.timer
-  deviations:
-  - RandomizedDelaySec=3min dropped
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/infra
-    path: systemd/user/cache-prune-codex-tmp.timer
-    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
-  disable:
-  - systemctl --user disable --now cache-prune-codex-tmp.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune-codex-tmp.timer
-  status: cutover
-  candybar_id: 01a17941-50aa-7b5e-a1f1-570707d1fd6d
-  cutover_at: '2026-10-26T17:28:06.560551Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:13.764467Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:28:06.560551Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17941-50aa-7b5e-a1f1-570707d1fd6d enabled; first fire 2026-10-26T18:17:00Z
-- id: systemd:cache-prune-daily.timer
-  wave: '7.7'
-  candybar:
-    name: cache-prune-daily
-    description: Daily age-based sweep of trash, updater leftovers, runner _work and Rust incremental builds (migrated from cache-prune-daily.timer)
-    tags:
-    - migrated
-    - infra
-    schedule: 23 5 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: cache-prune-daily.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 05:23:00; Persistent=true; RandomizedDelaySec=10min
-    jitter_s: 600
-    unit: cache-prune-daily.timer
-    unit_file: /home/delorenj/code/infra/systemd/user/cache-prune-daily.timer
-  deviations:
-  - RandomizedDelaySec=10min dropped
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/infra
-    path: systemd/user/cache-prune-daily.timer
-    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
-  disable:
-  - systemctl --user disable --now cache-prune-daily.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune-daily.timer
-  status: cutover
-  candybar_id: 01a17941-5493-76ad-9549-cd33cde24f58
-  cutover_at: '2026-10-26T17:28:07.557073Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:13.802102Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:28:07.557073Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17941-5493-76ad-9549-cd33cde24f58 enabled; first fire 2026-10-27T09:23:00Z
-- id: systemd:cache-prune.timer
-  wave: '7.7'
-  candybar:
-    name: cache-prune
-    description: Weekly sweep of uv/bun/npx/mise/pnpm/go caches, HF models, stale Rust targets, venvs and node_modules (migrated from cache-prune.timer)
-    tags:
-    - migrated
-    - infra
-    schedule: 7 5 * * 0
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: cache-prune.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=Sun *-*-* 05:07:00; Persistent=true; RandomizedDelaySec=15min
-    jitter_s: 900
-    unit: cache-prune.timer
-    unit_file: /home/delorenj/code/infra/systemd/user/cache-prune.timer
-  deviations:
-  - RandomizedDelaySec=15min dropped
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/infra
-    path: systemd/user/cache-prune.timer
-    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
-  disable:
-  - systemctl --user disable --now cache-prune.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune.timer
-  status: cutover
-  candybar_id: 01a17941-5879-7692-beb8-549ad17f3e8d
-  cutover_at: '2026-10-26T17:28:08.575118Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:13.841635Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:28:08.575118Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17941-5879-7692-beb8-549ad17f3e8d enabled; first fire 2026-11-01T10:07:00Z
-- id: systemd:docker-prune.timer
-  wave: '7.7'
-  candybar:
-    name: docker-prune
-    description: Daily Docker sweep of old unused images, build cache and anonymous volumes (migrated from docker-prune.timer)
-    tags:
-    - migrated
-    - infra
-    schedule: 41 5 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: docker-prune.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 05:41:00; Persistent=true; RandomizedDelaySec=10min
-    jitter_s: 600
-    unit: docker-prune.timer
-    unit_file: /home/delorenj/code/infra/systemd/user/docker-prune.timer
-  deviations:
-  - RandomizedDelaySec=10min dropped
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/infra
-    path: systemd/user/docker-prune.timer
-    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
-  disable:
-  - systemctl --user disable --now docker-prune.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/docker-prune.timer
-  status: cutover
-  candybar_id: 01a17941-5c4f-7445-a8c9-4f653505764c
-  cutover_at: '2026-10-26T17:28:09.532912Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:13.881150Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:28:09.532912Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17941-5c4f-7445-a8c9-4f653505764c enabled; first fire 2026-10-27T09:41:00Z
-- id: systemd:state-maintain
-  wave: '7.7'
-  candybar:
-    name: state-maintain
-    description: Daily retention and VACUUM for host state SQLite DBs plus zstd compression of agent transcripts older than 30 days (migrated from state-maintain.timer)
-    tags:
-    - migrated
-    - infra
-    schedule: 40 5 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: state-maintain.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 05:40:00; Persistent=true; RandomizedDelaySec=15min
-    jitter_s: 900
-    unit: state-maintain.timer
-    unit_file: /home/delorenj/code/infra/systemd/user/state-maintain.timer
-  deviations:
-  - RandomizedDelaySec=15min dropped
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/infra
-    path: systemd/user/state-maintain.timer
-    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
-  disable:
-  - systemctl --user disable --now state-maintain.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/state-maintain.timer
-  status: cutover
-  candybar_id: 01a17941-601b-745b-9070-d0f6fec1e893
-  cutover_at: '2026-10-26T17:28:10.502416Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:13.918852Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:28:10.502416Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17941-601b-745b-9070-d0f6fec1e893 enabled; first fire 2026-10-27T09:40:00Z
-- id: systemd:user-logrotate
-  wave: '7.7'
-  candybar:
-    name: user-logrotate
-    description: Daily user-level log rotation (logrotate plus generated Hermes include) and age-based log sweep (migrated from user-logrotate.timer)
-    tags:
-    - migrated
-    - infra
-    schedule: 17 5 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: user-logrotate.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 05:17:00; Persistent=true; RandomizedDelaySec=10min
-    jitter_s: 600
-    unit: user-logrotate.timer
-    unit_file: /home/delorenj/code/infra/systemd/user/user-logrotate.timer
-  deviations:
-  - RandomizedDelaySec=10min dropped
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/infra
-    path: systemd/user/user-logrotate.timer
-    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
-  disable:
-  - systemctl --user disable --now user-logrotate.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/user-logrotate.timer
-  status: cutover
-  candybar_id: 01a17941-63ec-772d-a26f-101de7484056
-  cutover_at: '2026-10-26T17:28:11.479202Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:13.954908Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:28:11.479202Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17941-63ec-772d-a26f-101de7484056 enabled; first fire 2026-10-27T09:17:00Z
-- id: systemd:zellij-ark
-  wave: '7.7'
-  candybar:
-    name: zellij-ark
-    description: Moves zellij servers and pane workloads out of GNOME graphical-session scopes into the ark slices, so agents survive gdm restarts and logout (migrated from zellij-ark.timer)
-    tags:
-    - migrated
-    - infra
-    schedule: '*/2 * * * *'
-    timezone: UTC
-    runner:
-      kind: systemd
-      unit: zellij-ark-adopt.service
-  native:
-    kind: systemd-timer
-    schedule: OnBootSec=1min; OnUnitActiveSec=2min; AccuracySec=15s (not Persistent)
-    jitter_s: 15
-    unit: zellij-ark.timer
-    unit_file: /home/delorenj/code/infra/systemd/user/zellij-ark.timer
-  deviations:
-  - interval timer (OnUnitActiveSec=2min) becomes cron */2; phase not preserved
-  - OnBootSec=1min boot start dropped (first candybar fire within 2 min of executor start)
-  - AccuracySec=15s wakeup coalescing dropped
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/infra
-    path: systemd/user/zellij-ark.timer
-    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
-  disable:
-  - systemctl --user disable --now zellij-ark.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/zellij-ark.timer
-  status: cutover
-  candybar_id: 01a17941-ac64-7f65-bd20-f20d8d84e0bf
-  cutover_at: '2026-10-26T17:28:30.029554Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:13.992832Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:28:30.029554Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17941-ac64-7f65-bd20-f20d8d84e0bf enabled; first fire 2026-10-26T17:30:00Z
-- id: systemd:gnome-shell-restart.timer
-  wave: '7.7'
-  candybar:
-    name: gnome-shell-restart
-    description: Hourly check that restarts GNOME Shell when it holds more than 100k open file handles (migrated from gnome-shell-restart.timer)
-    tags:
-    - migrated
-    - infra
-    schedule: 0 * * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: gnome-shell-restart.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=hourly; Persistent=true
-    jitter_s: 0
-    unit: gnome-shell-restart.timer
-    unit_file: /home/delorenj/code/infra/systemd/user/gnome-shell-restart.timer
-  deviations: []
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/infra
-    path: systemd/user/gnome-shell-restart.timer
-    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
-  disable:
-  - systemctl --user disable --now gnome-shell-restart.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/gnome-shell-restart.timer
-  status: cutover
-  candybar_id: 01a17941-6796-736f-a679-79b1fd5fdfca
-  cutover_at: '2026-10-26T17:28:12.411348Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:14.032768Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:28:12.411348Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17941-6796-736f-a679-79b1fd5fdfca enabled; first fire 2026-10-26T18:00:00Z
-- id: systemd:srvls-metrics
-  wave: '7.7'
-  candybar:
-    name: srvls-metrics
-    description: Writes the host background-task inventory as Prometheus textfile metrics every 5 minutes (migrated from srvls-metrics.timer)
-    tags:
-    - migrated
-    - infra
-    schedule: '*/5 * * * *'
-    timezone: UTC
-    runner:
-      kind: systemd
-      unit: srvls-metrics.service
-  native:
-    kind: systemd-timer
-    schedule: OnBootSec=2min; OnUnitActiveSec=5min; RandomizedDelaySec=20 (not Persistent)
-    jitter_s: 20
-    unit: srvls-metrics.timer
-    unit_file: /home/delorenj/code/infra/systemd/user/srvls-metrics.timer
-  deviations:
-  - interval timer (OnUnitActiveSec=5min) becomes cron */5; phase not preserved
-  - OnBootSec=2min boot start dropped
-  - RandomizedDelaySec=20s dropped
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/infra
-    path: systemd/user/srvls-metrics.timer
-    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
-  disable:
-  - systemctl --user disable --now srvls-metrics.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/srvls-metrics.timer
-  status: cutover
-  candybar_id: 01a17941-6b32-7ab3-b126-f61d74d9593d
-  cutover_at: '2026-10-26T17:28:13.328263Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:14.070856Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:28:13.328263Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17941-6b32-7ab3-b126-f61d74d9593d enabled; first fire 2026-10-26T17:30:00Z
-- id: systemd:srvls-snapshot
-  wave: '7.7'
-  candybar:
-    name: srvls-snapshot
-    description: Nightly markdown inventory snapshot of every host background task, committed locally to ~/code/infra/docs/inventory (migrated from srvls-snapshot.timer)
-    tags:
-    - migrated
-    - infra
-    schedule: 10 4 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: srvls-snapshot.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 04:10:00; Persistent=true
-    jitter_s: 0
-    unit: srvls-snapshot.timer
-    unit_file: /home/delorenj/code/infra/systemd/user/srvls-snapshot.timer
-  deviations: []
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/infra
-    path: systemd/user/srvls-snapshot.timer
-    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
-  disable:
-  - systemctl --user disable --now srvls-snapshot.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/srvls-snapshot.timer
-  status: cutover
-  candybar_id: 01a17941-6f01-7764-910f-b532a019fc48
-  cutover_at: '2026-10-26T17:28:14.343510Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:14.110431Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:28:14.343510Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17941-6f01-7764-910f-b532a019fc48 enabled; first fire 2026-10-27T08:10:00Z
-- id: systemd:hindsight-capture-sweep.timer
-  wave: '7.10'
-  candybar:
-    name: hindsight-capture-sweep
-    description: Flush Hindsight session write-back buffers and the jot WAL (was systemd hindsight-capture-sweep.timer)
-    tags:
-    - migrated
-    - hindsight
-    - wave-7-10
-    schedule: '*/10 * * * *'
-    timezone: UTC
-    runner:
-      kind: systemd
-      unit: hindsight-capture-sweep.service
-  native:
-    kind: systemd-timer
-    schedule: OnBootSec=2min; OnUnitActiveSec=10min; AccuracySec=30s
-    jitter_s: 30
-    unit: hindsight-capture-sweep.timer
-    unit_file: /home/delorenj/code/33GOD/bloodbank/services/hook-hub/systemd/hindsight-capture-sweep.timer
-  deviations:
-  - AccuracySec=30s dropped
-  - OnBootSec=2min boot re-arm dropped
-  - interval kept (10 min); phase not preserved
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/bloodbank
-    path: services/hook-hub/systemd/hindsight-capture-sweep.timer
-    commit: be782321a009ca569c9e9e31cab135a874bee156
-  disable:
-  - systemctl --user disable --now hindsight-capture-sweep.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/code/33GOD/bloodbank/services/hook-hub/systemd/hindsight-capture-sweep.timer
-  status: cutover
-  candybar_id: 01a1793d-f18c-7e83-9080-f3e42a96bd1f
-  cutover_at: '2026-10-26T17:24:25.589397Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:34.911012Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:24:25.589397Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793d-f18c-7e83-9080-f3e42a96bd1f enabled; first fire 2026-10-26T17:30:00Z
-- id: systemd:hindsight-write-probe.timer
-  wave: '7.10'
-  candybar:
-    name: hindsight-write-probe
-    description: 'Hourly Hindsight write-path probe: retain, extraction and consolidation read-back, ntfy on failure'
-    tags:
-    - migrated
-    - hindsight
-    - wave-7-10
-    schedule: 4 * * * *
-    timezone: UTC
-    runner:
-      kind: systemd
-      unit: hindsight-write-probe.service
-  native:
-    kind: systemd-timer
-    schedule: OnBootSec=2min; OnActiveSec=2min; OnUnitActiveSec=1h; AccuracySec=1min; Persistent=true
-    jitter_s: 60
-    unit: hindsight-write-probe.timer
-    unit_file: /home/delorenj/.agents/hooks/hindsight/systemd/hindsight-write-probe.timer
-  deviations:
-  - AccuracySec=1min dropped
-  - OnBootSec/OnActiveSec boot re-arm dropped
-  - Persistent=true catch-up replaced by candybar misfire policy
-  - interval kept (1h) at minute :04; phase not preserved
-  - 'epics.md said the live dir is not the repo; correction: ~/.agents IS the delorenj/agents checkout and the unit is symlinked straight from it'
-  native_failing: false
-  source_of_truth:
-    repo: delorenj/agents
-    path: hooks/hindsight/systemd/hindsight-write-probe.timer
-    commit: aa35242c1cfa7a6000fa44503ab53f032e33a527
-  disable:
-  - systemctl --user disable --now hindsight-write-probe.timer
-  rollback:
-  - systemctl --user enable --now /home/delorenj/.agents/hooks/hindsight/systemd/hindsight-write-probe.timer
-  status: cutover
-  candybar_id: 01a17941-24c0-79c4-81d7-8fc3dcdadf06
-  cutover_at: '2026-10-26T17:27:55.297867Z'
-  verification:
-    invocation_id: null
-    result: null
-    at: null
-  disable_pending: false
-  history:
-  - at: '2026-10-26T17:23:34.911012Z'
-    action: plan
-    outcome: written
-    detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:27:55.297867Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a17941-24c0-79c4-81d7-8fc3dcdadf06 enabled; first fire 2026-10-26T18:04:00Z
-- id: systemd:hindsight-memory-analysis.timer
-  wave: '7.10'
-  candybar:
-    name: hindsight-memory-analysis
-    description: Daily Hindsight memory strategy performance analysis with retained summary and ntfy (was systemd hindsight-memory-analysis.timer)
-    tags:
-    - migrated
-    - hindsight
-    - wave-7-10
-    schedule: 0 5 * * *
-    timezone: America/New_York
-    runner:
-      kind: systemd
-      unit: hindsight-memory-analysis.service
-  native:
-    kind: systemd-timer
-    schedule: OnCalendar=*-*-* 05:00:00; RandomizedDelaySec=15m; Persistent=true
-    jitter_s: 900
-    unit: hindsight-memory-analysis.timer
-    unit_file: /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-memory-analysis.timer
-  deviations:
-  - RandomizedDelaySec=15m dropped (now fires exactly 05:00 local)
-  - Persistent=true catch-up replaced by candybar misfire policy
+  - RandomizedDelaySec=15m dropped (candybar fires on the exact cron minute)
+  - Persistent=true catch-up maps to candybar misfire semantics (AD-6)
   native_failing: false
   source_of_truth:
     repo: delorenj/DeLoContainers
-    path: stacks/ai/hindsight/systemd/hindsight-memory-analysis.timer
-    commit: ec2767a10356a259274aee9160d92b027403f03b
+    path: systemd/user/forever-ago-vault.timer
+    commit: 33e58bf8f8df134bde641a8c2be1cb1cc5ae5e2f
   disable:
-  - systemctl --user disable --now hindsight-memory-analysis.timer
+  - systemctl --user disable --now forever-ago-vault.timer
   rollback:
-  - systemctl --user enable --now /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-memory-analysis.timer
-  status: cutover
-  candybar_id: 01a1793e-2686-796d-bc20-a620f13809b1
-  cutover_at: '2026-10-26T17:24:39.511061Z'
+  - systemctl --user enable --now /home/delorenj/docker/systemd/user/forever-ago-vault.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
   verification:
     invocation_id: null
     result: null
     at: null
   disable_pending: false
   history:
-  - at: '2026-10-26T17:23:34.911012Z'
+  - at: '2026-10-26T17:20:00Z'
+    action: plan
+    outcome: note
+    detail: Source of truth was hand-written ~/.config/systemd/user/forever-ago-vault.{timer,service} (untracked). Commit 33e58bf gives them a tracked home in DeLoContainers systemd/user/ (symlinked live) with a do-not-reenable header; the forever-ago README's generic template keeps placeholder paths and cannot resurrect this machine's job.
+  - at: '2026-10-26T17:30:25.320278Z'
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:24:39.511061Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793e-2686-796d-bc20-a620f13809b1 enabled; first fire 2026-10-27T09:00:00Z
-- id: systemd:hindsight-template-sweep.timer
-  wave: '7.10'
+- id: systemd:restic-vault
+  wave: '7.9'
   candybar:
-    name: hindsight-template-sweep
-    description: Daily sweep applying Hindsight project templates to unsteered banks (was systemd hindsight-template-sweep.timer)
+    name: restic-vault
+    description: Nightly offsite restic snapshot of the DeLoDocs vault to gdrive:backups/delodocs, plus forget/prune (7d/4w/12m/3y)
     tags:
     - migrated
-    - hindsight
-    - wave-7-10
+    - backups
     schedule: 30 4 * * *
     timezone: America/New_York
     runner:
       kind: systemd
-      unit: hindsight-template-sweep.service
+      unit: restic-vault.service
   native:
     kind: systemd-timer
-    schedule: OnCalendar=*-*-* 04:30:00; RandomizedDelaySec=30m; Persistent=true
-    jitter_s: 1800
-    unit: hindsight-template-sweep.timer
-    unit_file: /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-template-sweep.timer
+    schedule: OnCalendar=*-*-* 04:30:00; Persistent=true; RandomizedDelaySec=20m
+    jitter_s: 1200
+    unit: restic-vault.timer
+    unit_file: /home/delorenj/docker/systemd/user/restic-vault.timer
   deviations:
-  - RandomizedDelaySec=30m dropped (now fires exactly 04:30 local)
-  - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: true
+  - RandomizedDelaySec=20m dropped (candybar fires on the exact cron minute)
+  - Persistent=true catch-up maps to candybar misfire semantics (AD-6)
+  - Must still run after forever-ago-vault (03:00); ordering holds via cron minutes
+  native_failing: false
   source_of_truth:
     repo: delorenj/DeLoContainers
-    path: stacks/ai/hindsight/systemd/hindsight-template-sweep.timer
-    commit: ec2767a10356a259274aee9160d92b027403f03b
+    path: systemd/user/restic-vault.timer
+    commit: 33e58bf8f8df134bde641a8c2be1cb1cc5ae5e2f
   disable:
-  - systemctl --user disable --now hindsight-template-sweep.timer
+  - systemctl --user disable --now restic-vault.timer
   rollback:
-  - systemctl --user enable --now /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-template-sweep.timer
-  status: cutover
-  candybar_id: 01a1793e-46ae-724c-9c34-eed9b832445b
-  cutover_at: '2026-10-26T17:24:47.477082Z'
+  - systemctl --user enable --now /home/delorenj/docker/systemd/user/restic-vault.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
   verification:
     invocation_id: null
     result: null
     at: null
   disable_pending: false
   history:
-  - at: '2026-10-26T17:23:34.911012Z'
+  - at: '2026-10-26T17:20:00Z'
+    action: plan
+    outcome: note
+    detail: Source of truth was hand-written ~/.config/systemd/user/restic-vault.{timer,service} (untracked, no owning repo). Commit 33e58bf gives them a tracked home in DeLoContainers systemd/user/ (symlinked live) with a do-not-reenable header.
+  - at: '2026-10-26T17:30:25.342247Z'
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
-  - at: '2026-10-26T17:24:47.477082Z'
-    action: cutover
-    outcome: ok
-    detail: candybar 01a1793e-46ae-724c-9c34-eed9b832445b enabled; first fire 2026-10-27T08:30:00Z
+- id: systemd:backup-drill.timer
+  wave: '7.9'
+  candybar:
+    name: backup-drill
+    description: Monthly restore drill — verify and restore the newest forever-ago tarball and a restic sample, byte-compare against the live vault
+    tags:
+    - migrated
+    - backups
+    schedule: 0 9 1 * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: backup-drill.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-01 09:00:00; Persistent=true; RandomizedDelaySec=1h
+    jitter_s: 3600
+    unit: backup-drill.timer
+    unit_file: /home/delorenj/docker/systemd/user/backup-drill.timer
+  deviations:
+  - RandomizedDelaySec=1h dropped (candybar fires on the exact cron minute)
+  - Persistent=true catch-up maps to candybar misfire semantics (AD-6)
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/DeLoContainers
+    path: systemd/user/backup-drill.timer
+    commit: 33e58bf8f8df134bde641a8c2be1cb1cc5ae5e2f
+  disable:
+  - systemctl --user disable --now backup-drill.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/docker/systemd/user/backup-drill.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:20:00Z'
+    action: plan
+    outcome: note
+    detail: Source of truth was hand-written ~/.config/systemd/user/backup-drill.{timer,service} plus ~/.local/bin/backup-drill (all untracked). Commit 33e58bf gives the units a tracked home in DeLoContainers systemd/user/ (symlinked live) with a do-not-reenable header; the drill script itself is the job payload, not the scheduler, and stays where it is.
+  - at: '2026-10-26T17:30:25.364912Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:restic-dbdumps
+  wave: '7.9'
+  candybar:
+    name: restic-dbdumps
+    description: Daily offsite restic snapshot of the nightly Postgres dumps and Hindsight manual dumps to gdrive:backups/postgres-dumps, plus forget/prune
+    tags:
+    - migrated
+    - backups
+    schedule: 15 9 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: restic-dbdumps.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 09:15:00; Persistent=true; RandomizedDelaySec=10m
+    jitter_s: 600
+    unit: restic-dbdumps.timer
+    unit_file: /home/delorenj/docker/systemd/user/restic-dbdumps.timer
+  deviations:
+  - RandomizedDelaySec=10m dropped (candybar fires on the exact cron minute)
+  - Persistent=true catch-up maps to candybar misfire semantics (AD-6)
+  - Must still run after the excluded anacron cron.daily db-backup (~07:35 + ~7 min); ordering holds via cron minutes
+  native_failing: true
+  source_of_truth:
+    repo: delorenj/DeLoContainers
+    path: systemd/user/restic-dbdumps.timer
+    commit: a221e0101a4d608a867a191ad41d9b0de96e26c7
+  disable:
+  - systemctl --user disable --now restic-dbdumps.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/docker/systemd/user/restic-dbdumps.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:20:00Z'
+    action: plan
+    outcome: note
+    detail: Units were already tracked in DeLoContainers and symlinked by hand (no installer exists to resurrect the timer). Commit a221e01 adds the do-not-reenable retirement note to the tracked timer.
+  - at: '2026-10-26T17:30:25.389857Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:milkshake-ledger-backup.timer
+  wave: '7.9'
+  candybar:
+    name: milkshake-ledger-backup
+    description: Daily verified Milkshake ledger copy, offsite restic snapshot to gdrive:backups/milkshake, 14d local prune, .last-success stamp for infra-doctor
+    tags:
+    - migrated
+    - backups
+    schedule: 30 2 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: milkshake-ledger-backup.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 02:30:00 America/New_York; Persistent=true; RandomizedDelaySec=10m
+    jitter_s: 600
+    unit: milkshake-ledger-backup.timer
+    unit_file: /home/delorenj/docker/systemd/user/milkshake-ledger-backup.timer
+  deviations:
+  - RandomizedDelaySec=10m dropped (candybar fires on the exact cron minute)
+  - Persistent=true catch-up maps to candybar misfire semantics (AD-6)
+  - 02:30 ET falls in the 2027-03-14 spring-forward gap; AD-16 fires it once at 03:00 EDT (pinned by tests/test_wave3_dst.py)
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/DeLoContainers
+    path: systemd/user/milkshake-ledger-backup.timer
+    commit: a221e0101a4d608a867a191ad41d9b0de96e26c7
+  disable:
+  - systemctl --user disable --now milkshake-ledger-backup.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/docker/systemd/user/milkshake-ledger-backup.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:20:00Z'
+    action: plan
+    outcome: note
+    detail: Units were already tracked in DeLoContainers and symlinked by hand (no installer exists to resurrect the timer). Commit a221e01 adds the do-not-reenable retirement note to the tracked timer.
+  - at: '2026-10-26T17:30:25.414887Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:ifvault-nightly.timer
+  wave: '7.9'
+  candybar:
+    name: ifvault-nightly
+    description: Nightly IntelliForia vault backup — snapshot over ssh from the droplet, verify, docker boot test, restic to gdrive:backups/ifvault
+    tags:
+    - migrated
+    - backups
+    - intelliforia
+    schedule: 40 1 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: ifvault-nightly.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 01:40:00 America/New_York; RandomizedDelaySec=10m; Persistent=true
+    jitter_s: 600
+    unit: ifvault-nightly.timer
+    unit_file: /home/delorenj/.config/systemd/user/ifvault-nightly.timer
+  deviations:
+  - RandomizedDelaySec=10m dropped (candybar fires on the exact cron minute)
+  - Persistent=true catch-up maps to candybar misfire semantics (AD-6)
+  - 01:40 ET falls in the 2026-11-01 repeated DST hour; AD-16 fires it once at the first occurrence (05:40Z; pinned by tests/test_wave3_dst.py)
+  native_failing: true
+  source_of_truth:
+    repo: IntelliForia/intelliforia
+    path: infra/vault/install-nightly.sh
+    commit: 753b34250359209c9324fde4d47ac8ddba3e2dd9
+  disable:
+  - systemctl --user disable --now ifvault-nightly.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/ifvault-nightly.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:20:00Z'
+    action: plan
+    outcome: note
+    detail: Commit 753b3425 rewrites infra/vault/install-nightly.sh (mise vault:backup:install) to install the units without `enable --now` of the timer and to warn if the timer is found enabled, so a re-install cannot resurrect it.
+  - at: '2026-10-26T17:30:25.440971Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:delodocs-inbox-cleanup.timer
+  wave: '7.9'
+  candybar:
+    name: delodocs-inbox-cleanup
+    description: DeLoDocs Inbox cleanup every 10 min — upload non-markdown attachments to MinIO delodocs-attachments, hold PDFs in Wax, delete deterministic junk
+    tags:
+    - migrated
+    - vault
+    schedule: '*/10 * * * *'
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: delodocs-inbox-cleanup.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*:0/10; AccuracySec=1min; Persistent=true
+    jitter_s: 0
+    unit: delodocs-inbox-cleanup.timer
+    unit_file: /home/delorenj/.config/systemd/user/delodocs-inbox-cleanup.timer
+  deviations:
+  - AccuracySec=1min slack dropped (candybar fires on the exact 10-minute boundary)
+  - Persistent=true catch-up maps to candybar misfire semantics (AD-6)
+  native_failing: false
+  source_of_truth:
+    repo: DeLoDocs vault (not a git repo)
+    path: _vault/Workflows/systemd/delodocs-inbox-cleanup.service
+    commit: not-git-2026-10-26-diff-in-history
+  disable:
+  - systemctl --user disable --now delodocs-inbox-cleanup.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/delodocs-inbox-cleanup.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:20:00Z'
+    action: plan
+    outcome: note
+    detail: 'DeLoDocs is not git, so the source-of-truth change is recorded here. (1) The live service had drifted from the vault copy; the vault copy was synced to it: ExecStart gained `--hold-pdfs-in Wax`. (2) _vault/Workflows/README.md''s install steps no longer end in `systemctl --user enable --now delodocs-inbox-cleanup.timer` and state that candybar schedules the job (timer stays installed but disabled for rollback); the README''s scheduler table row now reads "candybar (systemd runner)".'
+  - at: '2026-10-26T17:30:25.466843Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: crontab:22
+  wave: '7.9'
+  candybar:
+    name: sync-vault-to-drive
+    description: rclone sync of the DeLoDocs vault (~/d) to gdrive:ObsidianVault with flock, 100m self-timeout and vox announcements
+    tags:
+    - migrated
+    - vault
+    schedule: 30 */2 * * *
+    timezone: America/New_York
+    runner:
+      kind: exec
+      argv:
+      - /home/delorenj/.local/bin/sync-vault-to-drive
+      workdir: /home/delorenj
+      env: {}
+      timeout_s: 7200
+  native:
+    kind: crontab
+    schedule: 30 */2 * * * /home/delorenj/.local/bin/sync-vault-to-drive  (user crontab line 22; system local time, no CRON_TZ)
+    jitter_s: 0
+    line: 30 */2 * * * /home/delorenj/.local/bin/sync-vault-to-drive
+    cron: 30 */2 * * *
+    timezone: America/New_York
+  deviations:
+  - cron evaluated the line in system local time with no CRON_TZ; the candybar pins America/New_York explicitly (same zone today)
+  - flock moves from /tmp to $XDG_RUNTIME_DIR (set under the systemd user manager, unset under cron); safe because the crontab line is removed in the same cutover
+  - the script announces start/finish/failure itself via notify-vox.sh, so no candybar on_failure hook
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/zshyzsh
+    path: scripts/sync-vault-to-drive.sh
+    commit: d0e7c4e2400b1d2587d50699cf8844f7f948ce42
+  disable:
+  - crontab -l | { grep -vxF -- '30 */2 * * * /home/delorenj/.local/bin/sync-vault-to-drive' || true; } | crontab -
+  - rm -f /home/delorenj/.config/systemd/user/sync-vault.service /home/delorenj/.config/systemd/user/sync-vault.timer
+  - systemctl --user daemon-reload
+  rollback:
+  - crontab -l 2>/dev/null | grep -qxF -- '30 */2 * * * /home/delorenj/.local/bin/sync-vault-to-drive' || { { crontab -l 2>/dev/null || true; printf '%s\n' '30 */2 * * * /home/delorenj/.local/bin/sync-vault-to-drive'; } | crontab -; }
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:20:00Z'
+    action: plan
+    outcome: note
+    detail: 'The crontab line was hand-edited (no installer writes it; zshyzsh''s op-token-sync only manages the BASH_ENV header, which this job never used). Commit d0e7c4e records the candybar scheduling in the script header. The stale, never-enabled sync-vault.{service,timer} (untracked, disabled since May) are deleted by the disable commands so no third scheduler can be re-enabled; skillex folder-curator/references/ drive-sync.md no longer cites them (delorenj/skills dfc5deb, skillex db71277). External side effects (rclone sync deletes remote extraneous files): NEVER `candybar run` to test — first scheduled fire is the proof.'
+- id: systemd:bloodbank-agent-hooks-health.timer
+  wave: '7.8'
+  candybar:
+    name: bloodbank-agent-hooks-health
+    description: 'Agent-hooks health: validate deployed hook configs, cross-check live hook telemetry (Holocene)'
+    tags:
+    - migrated
+    - 33god
+    - bloodbank
+    schedule: '*/5 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: bloodbank-agent-hooks-health.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=2min; OnActiveSec=2min; OnUnitActiveSec=5min; Persistent=true
+    jitter_s: 0
+    unit: bloodbank-agent-hooks-health.timer
+    unit_file: /home/delorenj/.config/systemd/user/bloodbank-agent-hooks-health.timer
+  deviations:
+  - 'OnUnitActiveSec=5min interval mapped to */5 cron: phase not preserved'
+  - OnBootSec/OnActiveSec boot re-arm dropped
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/bloodbank
+    path: services/agent-hooks/ops/systemd/install-timer.sh
+    commit: 3bced422fdedb333a994eab751ad9ad548bfc3de
+  disable:
+  - systemctl --user disable --now bloodbank-agent-hooks-health.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/bloodbank-agent-hooks-health.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:30:36.948832Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:candystore-project-sync.timer
+  wave: '7.8'
+  candybar:
+    name: candystore-project-sync
+    description: Hourly sync of the pjangler project registry into Candystore projects/aliases/dir-map
+    tags:
+    - migrated
+    - 33god
+    - candystore
+    schedule: 5 * * * *
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: candystore-project-sync.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=3min; OnActiveSec=3min; OnUnitActiveSec=1h; AccuracySec=1min; Persistent=true
+    jitter_s: 0
+    unit: candystore-project-sync.timer
+    unit_file: /home/delorenj/code/33GOD/candystore/ops/systemd/candystore-project-sync.timer
+  deviations:
+  - 'OnUnitActiveSec=1h interval mapped to hourly cron at :05: phase not preserved (natively :53)'
+  - AccuracySec=1min dropped
+  - OnBootSec/OnActiveSec boot re-arm dropped
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/candystore
+    path: mise.toml
+    commit: 175a54dc5ab1990e83005afbd1052c1b513449ce
+  disable:
+  - systemctl --user disable --now candystore-project-sync.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/33GOD/candystore/ops/systemd/candystore-project-sync.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:30:36.971121Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:holocene-pad-roster.timer
+  wave: '7.8'
+  candybar:
+    name: holocene-pad-roster
+    description: Refresh the Agent Pad roster (routable agents, avatars) served at agent-pad.delo.sh/roster
+    tags:
+    - migrated
+    - 33god
+    - holocene
+    schedule: '*/2 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: holocene-pad-roster.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=1min; OnUnitActiveSec=2min; AccuracySec=15s
+    jitter_s: 0
+    unit: holocene-pad-roster.timer
+    unit_file: /home/delorenj/code/33GOD/holocene/services/pad-roster/holocene-pad-roster.timer
+  deviations:
+  - 'OnUnitActiveSec=2min interval mapped to */2 cron: phase not preserved'
+  - AccuracySec=15s dropped
+  - 'no Persistent natively: missed runs simply resume'
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/holocene
+    path: services/pad-roster/install.sh
+    commit: 95529e9eab7e48bb223364acd5a18da8b4760988
+  disable:
+  - systemctl --user disable --now holocene-pad-roster.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/33GOD/holocene/services/pad-roster/holocene-pad-roster.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:30:36.990011Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:hermes-single-install-guard.timer
+  wave: '7.8'
+  candybar:
+    name: hermes-single-install-guard
+    description: 'Hermes drift guard: every consumer resolves to one install and one history (infra-doctor watches its ok stamp)'
+    tags:
+    - migrated
+    - 33god
+    - hermes
+    schedule: '*/15 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: hermes-single-install-guard.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=2min; OnActiveSec=2min; OnUnitActiveSec=15min; AccuracySec=1min; Persistent=true
+    jitter_s: 0
+    unit: hermes-single-install-guard.timer
+    unit_file: /home/delorenj/.config/systemd/user/hermes-single-install-guard.timer
+  deviations:
+  - 'OnUnitActiveSec=15min interval mapped to */15 cron: phase not preserved'
+  - AccuracySec=1min dropped
+  - OnBootSec/OnActiveSec boot re-arm dropped
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/hermes-agent-template
+    path: scripts/systemd/hermes-single-install-guard.timer
+    commit: fb2d8fd78e6b3e958254cd4bf3e1a574436bf022
+  disable:
+  - systemctl --user disable --now hermes-single-install-guard.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/hermes-single-install-guard.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:30:37.014264Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:skillex-hermes-resync
+  wave: '7.8'
+  candybar:
+    name: skillex-hermes-resync
+    description: Fallback resync of Skillex-only Hermes desks with the all-skills catalog (exits 1 by design when a desk needs a human)
+    tags:
+    - migrated
+    - 33god
+    - skillex
+    schedule: 7,22,37,52 * * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: skillex-hermes-resync.service
+  native:
+    kind: systemd-timer
+    schedule: OnStartupSec=2min; OnCalendar=*-*-* *:07,22,37,52:00; Persistent=true; RandomizedDelaySec=30s; AccuracySec=30s
+    jitter_s: 30
+    unit: skillex-hermes-resync.timer
+    unit_file: /home/delorenj/code/skillex/systemd/skillex-hermes-resync.timer
+  deviations:
+  - RandomizedDelaySec=30s dropped
+  - OnStartupSec=2min boot run dropped
+  - companion skillex-hermes-resync.path catalog-HEAD trigger stays on systemd (event trigger, out of scope)
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: true
+  source_of_truth:
+    repo: delorenj/skillex
+    path: scripts/install-hermes-resync.sh
+    commit: 7a0becd7fa06bad73289bf60a2835b76686d6cbb
+  disable:
+  - systemctl --user disable --now skillex-hermes-resync.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/skillex/systemd/skillex-hermes-resync.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:30:37.036679Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:naipkins-registry-snapshot
+  wave: '7.8'
+  candybar:
+    name: naipkins-registry-snapshot
+    description: Snapshot the pjangler project registry to the file the naipkins container reads
+    tags:
+    - migrated
+    - 33god
+    - naipkins
+    schedule: '*/5 * * * *'
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: naipkins-registry-snapshot.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*:0/5; RandomizedDelaySec=30; AccuracySec=1min; Persistent=true
+    jitter_s: 30
+    unit: naipkins-registry-snapshot.timer
+    unit_file: /home/delorenj/code/naipkins/systemd/user/naipkins-registry-snapshot.timer
+  deviations:
+  - RandomizedDelaySec=30 dropped
+  - AccuracySec=1min dropped
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/naipkins
+    path: README.md
+    commit: 14db6532f824b88299120b1d5ac353b1d73f2051
+  disable:
+  - systemctl --user disable --now naipkins-registry-snapshot.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/naipkins/systemd/user/naipkins-registry-snapshot.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:30:37.055999Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:delonet-n8n-workflows-sync.timer
+  wave: '7.8'
+  candybar:
+    name: delonet-n8n-workflows-sync
+    description: Export every n8n workflow from ~/.n8n/database.sqlite into git, commit and push
+    tags:
+    - migrated
+    - delonet
+    - n8n
+    schedule: '*/15 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: delonet-n8n-workflows-sync.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=5min; OnActiveSec=5min; OnUnitActiveSec=15min; Persistent=true
+    jitter_s: 0
+    unit: delonet-n8n-workflows-sync.timer
+    unit_file: /home/delorenj/code/delonet-n8n-workflows/systemd/delonet-n8n-workflows-sync.timer
+  deviations:
+  - 'OnUnitActiveSec=15min interval mapped to */15 cron: phase not preserved'
+  - OnBootSec/OnActiveSec boot re-arm dropped
+  - Persistent=true catch-up replaced by candybar misfire coalesce-to-latest
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/delonet-n8n-workflows
+    path: README.md
+    commit: 2be096eccf868baf0afe3432de64de742289b011
+  disable:
+  - systemctl --user disable --now delonet-n8n-workflows-sync.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/delonet-n8n-workflows/systemd/delonet-n8n-workflows-sync.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:30:37.076650Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
