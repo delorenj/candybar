@@ -264,6 +264,7 @@ async def run_invocation(
     on_wait: Callable[[], Awaitable[None]] | None = None,
     root: str | None = None,
     gpu: GpuSampler | None = None,
+    stdout_result: Callable[[str], ResultFile | None] | None = None,
 ) -> RunOutcome:
     """Spawn the job, wait for exit, and gather the AD-8 outcome.
 
@@ -272,6 +273,11 @@ async def run_invocation(
     `workdir`, `env`, `timeout_s`) is the Story 7.3 exec runner: run from
     `workdir`, or the user's home when unset (the directory cron and
     `systemd --user` give their jobs), killed after `timeout_s`.
+
+    `stdout_result` (the Story 7.4 hermes runner) derives the AD-8 result from
+    the child's stdout when it wrote no result file: the Hermes CLI is not an
+    SDK, so it reports through a final stdout line instead. It is only a
+    refinement: any exception inside it is swallowed and the exit code stands.
     """
     if (entrypoint is None) == (argv is None):
         raise ValueError("run_invocation needs exactly one of entrypoint and argv")
@@ -377,6 +383,11 @@ async def run_invocation(
         # NUL survives errors="replace" and Postgres text rejects it (scrub_text).
         stderr_tail = scrub_text(stderr.decode("utf-8", errors="replace")[-STDERR_TAIL_MAX:])
         result, result_error = _read_result_file(result_path)
+        if result is None and result_error is None and stdout_result is not None and stdout:
+            try:
+                result = stdout_result(stdout.decode("utf-8", errors="replace"))
+            except Exception:  # a parser bug must not turn a finished run into a spawn failure
+                log.exception("invocation %s: stdout result parser failed", invocation_id)
         return RunOutcome(
             exit_code=proc.returncode,
             runtime_ms=runtime_ms,

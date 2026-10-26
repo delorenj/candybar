@@ -78,8 +78,7 @@ def test_canonical_form_drops_unset_optionals_and_is_idempotent() -> None:
         ({"kind": "systemd", "unit": "a/b.service"}, "<name>.service"),
         ({"kind": "systemd", "unit": "a b.service"}, "<name>.service"),
         ({"kind": "systemd"}, "unit"),
-        # Story 7.4 owns the hermes runner: until it lands the kind is unknown.
-        ({"kind": "hermes", "profile": "p", "job_id": "j"}, "kind"),
+        ({"kind": "docker", "image": "x"}, "kind"),
         ({"argv": ["ok"]}, "kind"),
     ],
 )
@@ -284,7 +283,7 @@ def test_register_a_plain_entrypoint_is_still_checked(rig: Rig) -> None:
         {},  # neither
         {"entrypoint": "/bin/true", "runner": EXEC},  # both
         {"runner": {"kind": "exec", "argv": []}},
-        {"runner": {"kind": "hermes", "profile": "p", "job_id": "j"}},
+        {"runner": {"kind": "hermes", "profile": "p", "job_id": "--wait"}},
         {"runner": {"kind": "exec", "argv": ["x"], "env": {"CANDYBAR_ID": "1"}}},
     ],
 )

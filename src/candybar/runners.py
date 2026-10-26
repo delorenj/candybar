@@ -11,10 +11,16 @@ no I/O, so the manifest, the API and the executor validate the same shape:
   `systemctl --user start --wait <unit>`; the `.service` keeps every directive
   (EnvironmentFile, hardening, TimeoutStartSec, OnFailure=) and only its
   `.timer` retires.
+- `hermes`  -> `{profile, job_id, timeout_s?, on_failure?}` (Story 7.4, AD-19):
+  the executor runs `hermes -p <profile> cron run <job_id> --wait` and the
+  Hermes job keeps its delivery, sessions, `context_from` and monitor gates.
+  The job must be pinned `scheduler: external` in Hermes so its own ticker
+  never fires it; this runner is its only trigger. The attempt's input +
+  output tokens become the invocation's token spend. Hermes no-agent jobs do
+  not use this runner (README, "Runner kinds").
 
 The bare `entrypoint` column stays the `exec` default for rows that carry no
-runner. A kind this module does not know (the `hermes` runner is Story 7.4's)
-is rejected at registration, never stored.
+runner. A kind this module does not know is rejected at registration, never stored.
 
 The stored form is canonical: `canonical_runner` validates, applies defaults
 and drops unset optionals, so a stored dict re-validates to itself and the
@@ -36,6 +42,10 @@ ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # `systemctl start` takes the name verbatim: no leading dash (option injection),
 # no slash (path), and only the characters a unit name can hold.
 SYSTEMD_UNIT_RE = re.compile(r"^[A-Za-z0-9_.:@\\][A-Za-z0-9_.:@\\-]*\.service$")
+# A hermes profile name or job ref (id or name): the CLI takes it as one argv
+# item, so no leading dash (option injection), no whitespace, no path.
+HERMES_REF_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.:@-]*$")
+HERMES_DEFAULT_TIMEOUT_S = 3600
 TIMEOUT_MAX_SECONDS = 7 * 24 * 3600
 ARGV_MAX_ITEMS = 256
 ENV_MAX_ITEMS = 256
@@ -126,11 +136,30 @@ class SystemdRunner(_RunnerBase):
         return value
 
 
-Runner = Annotated[ExecRunner | SystemdRunner, Field(discriminator="kind")]
-_RUNNER_ADAPTER: TypeAdapter[ExecRunner | SystemdRunner] = TypeAdapter(Runner)
+class HermesRunner(_RunnerBase):
+    kind: Literal["hermes"]
+    profile: str
+    job_id: str
+    # Bounds the whole `cron run --wait`: Hermes gives up waiting at this many
+    # seconds and the executor kills the CLI a grace period later.
+    timeout_s: int = Field(default=HERMES_DEFAULT_TIMEOUT_S, ge=1, le=TIMEOUT_MAX_SECONDS)
+
+    @field_validator("profile", "job_id")
+    @classmethod
+    def _ref_is_one_safe_argv_item(cls, value: str, info: object) -> str:
+        if not HERMES_REF_RE.match(value):
+            raise ValueError(
+                f"{getattr(info, 'field_name', 'value')} must be a plain name or id "
+                f"(letters, digits, _ . : @ -, no leading dash), got {value!r}"
+            )
+        return value
 
 
-def parse_runner(raw: object) -> ExecRunner | SystemdRunner:
+Runner = Annotated[ExecRunner | SystemdRunner | HermesRunner, Field(discriminator="kind")]
+_RUNNER_ADAPTER: TypeAdapter[ExecRunner | SystemdRunner | HermesRunner] = TypeAdapter(Runner)
+
+
+def parse_runner(raw: object) -> ExecRunner | SystemdRunner | HermesRunner:
     """Validate a runner definition (a dict), raising `RunnerError` on any problem."""
     if not isinstance(raw, dict):
         raise RunnerError(f"runner must be an object, got {type(raw).__name__}")
@@ -160,15 +189,20 @@ def runner_label(runner: dict[str, Any]) -> str:
     """The short human label kept in the NOT NULL `entrypoint` column for a runner row."""
     if runner.get("kind") == "systemd":
         return f"systemd:{runner['unit']}"
+    if runner.get("kind") == "hermes":
+        return f"hermes:{runner['profile']}/{runner['job_id']}"
     argv = runner.get("argv") or ["?"]
     return str(argv[0])
 
 
 __all__ = [
     "ARGV_MAX_ITEMS",
+    "HERMES_DEFAULT_TIMEOUT_S",
+    "HERMES_REF_RE",
     "RESERVED_ENV_PREFIX",
     "SYSTEMD_UNIT_RE",
     "ExecRunner",
+    "HermesRunner",
     "Runner",
     "RunnerError",
     "SystemdRunner",

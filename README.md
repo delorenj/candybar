@@ -74,7 +74,7 @@ Invalid cron/name/timezone → `application/problem+json` (422); duplicate name 
 bus down → 503 and no row. API bind: `CANDYBAR_API_HOST`/`CANDYBAR_API_PORT`;
 CLI target: `CANDYBAR_API_URL`.
 
-## Runner kinds (Story 7.3, AD-18)
+## Runner kinds (Stories 7.3 and 7.4, AD-18, AD-19)
 
 A candybar defines how the executor starts it with **exactly one** of
 `entrypoint` (above: a bare executable, the `exec` default) or a `[candybar.runner]`
@@ -97,6 +97,15 @@ on_failure = ["ntfy-publish", "--topic", "alerts"]
 [candybar.runner]
 kind = "systemd"
 unit = "cache-prune.service"
+```
+
+```toml
+# hermes: trigger a Hermes agent-mode job and wait for its durable attempt
+[candybar.runner]
+kind = "hermes"
+profile = "33god-pm"        # hermes -p <profile>
+job_id = "a1b2c3d4e5f6"     # the Hermes job id (hex), not its name
+timeout_s = 3600            # default; bounds the whole wait (the CLI is killed 60s later)
 ```
 
 | | `exec` | `systemd` |
@@ -124,7 +133,31 @@ unit = "cache-prune.service"
   while an active unit references it. `After=` adds the reference and no
   behaviour. Without the holder everything still runs and passes or fails
   correctly; the unit just meters 0.
-- **`on_failure`** (either kind) is an argv run once, best effort and unmetered,
+- **The `hermes` runner (AD-19).** It runs
+  `hermes -p <profile> cron run <job_id> --wait --timeout <timeout_s>` through
+  the exec spawn path, so the CLI is metered like any exec child (and, because
+  Hermes runs the attempt inside that CLI, so is the agent) while Hermes keeps
+  delivery, sessions, `context_from` and monitor gates. Exit 0 is success, 1 is
+  failure; the CLI's final `cron-run-result: {...}` line supplies the failure
+  message and the attempt's input + output tokens as the token spend (0 when
+  Hermes recorded none). Two requirements on the Hermes side, both shipped in
+  delorenj/hermes-agent:
+  - the job must be pinned `scheduler: external`
+    (`hermes cron edit <id> --scheduler external`), or Hermes' own ticker would
+    fire it as well. The ticker honours the pin after the gateway restart that
+    story 7.17 batches; until then the pin is inert, so **do not cut over a
+    Hermes job before 7.17 deploys it**.
+  - a trigger that finds the job already running **joins** that attempt instead
+    of starting another: never two concurrent attempts of one job.
+  The executor finds the CLI as `hermes` on its `PATH` (`~/.local/bin/hermes`
+  in the unit), or as `CANDYBAR_HERMES`.
+- **Hermes no-agent jobs do not use this runner.** A `no_agent` Hermes job is a
+  script whose stdout is delivered verbatim; migrate it as an `exec` runner that
+  runs the script directly, and reproduce its `failure_deliver` with an
+  `on_failure` hook (an argv that delivers `$CANDYBAR_FAILURE_MESSAGE` to the
+  same target, e.g. `ntfy-publish`). That keeps no agent machinery in the path
+  and nothing to pin.
+- **`on_failure`** (any kind) is an argv run once, best effort and unmetered,
   right after a recorded failure, with the AD-8 env plus
   `CANDYBAR_FAILURE_MESSAGE`; it is capped at 60s. It is skipped, with a
   warning, for a `systemd` runner whose unit already has `OnFailure=` (that unit

@@ -1,7 +1,8 @@
 """Pick the runner for a run target and fire the on_failure hook (Story 7.3, AD-18).
 
 `run_target` is the executor's default `run`: the worker hands it either the
-bare `entrypoint` path of a pre-Epic-7 candybar, or the stored runner dict.
+bare `entrypoint` path of a pre-Epic-7 candybar, or the stored runner dict
+(`exec`, `systemd`, or the Story 7.4 `hermes` runner).
 Everything below it returns a `RunOutcome`, so a bad stored runner or a unit
 that will not start fails through the same record path as any failed run.
 
@@ -26,9 +27,10 @@ from pathlib import Path
 from uuid import UUID
 
 from ..events.builders import STDERR_TAIL_MAX
-from ..runners import ExecRunner, RunnerError, SystemdRunner, parse_runner
+from ..runners import ExecRunner, HermesRunner, RunnerError, SystemdRunner, parse_runner
 from ..text import scrub_text
 from .gpu import GpuSampler
+from .hermes_runner import hermes_argv, kill_after_seconds, parse_result_line
 from .runner import ProcessRegistry, RunOutcome, child_env, run_invocation
 from .systemd_runner import SystemdHost, run_systemd, show
 
@@ -86,6 +88,14 @@ async def run_target(
         )
     if isinstance(parsed, SystemdRunner):
         return await run_systemd(runner=parsed, host=host, **common)  # type: ignore[arg-type]
+    if isinstance(parsed, HermesRunner):
+        return await run_invocation(
+            argv=hermes_argv(parsed),
+            timeout_s=kill_after_seconds(parsed),
+            stdout_result=parse_result_line,
+            root=root,
+            **common,  # type: ignore[arg-type]
+        )
     assert isinstance(parsed, ExecRunner)
     return await run_invocation(
         argv=parsed.argv,
