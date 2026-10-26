@@ -69,14 +69,14 @@ def rig(monkeypatch: pytest.MonkeyPatch) -> Any:
             self.sink: FakeSink = FakeSink()
             self.fail_insert: bool = False
 
-        def client(self) -> TestClient:
+        def client(self, *, raise_server_exceptions: bool = True) -> TestClient:
             @asynccontextmanager
             async def session_factory() -> AsyncIterator[Any]:
                 yield object()
 
             return TestClient(
                 create_app(session_factory=session_factory, sink=self.sink),
-                raise_server_exceptions=True,
+                raise_server_exceptions=raise_server_exceptions,
             )
 
     rig = Rig()
@@ -184,3 +184,34 @@ def test_register_unknown_field_rejected(rig: Any) -> None:
     resp = rig.client().post("/candybars", json={**VALID_BODY, "schedul": "* * * * *"})
     assert resp.status_code == 422
     assert rig.rows == []
+
+
+def test_register_nonexistent_entrypoint_422_no_row_no_event(rig: Any) -> None:
+    resp = rig.client().post("/candybars", json={**VALID_BODY, "entrypoint": "/nonexistent/x.sh"})
+    assert resp.status_code == 422
+    assert resp.headers["content-type"] == "application/problem+json"
+    assert "entrypoint" in resp.json()["detail"]
+    assert rig.rows == [] and rig.sink.published == []
+
+
+def test_register_empty_entrypoint_422(rig: Any) -> None:
+    resp = rig.client().post("/candybars", json={**VALID_BODY, "entrypoint": ""})
+    assert resp.status_code == 422
+    assert rig.rows == [] and rig.sink.published == []
+
+
+def test_register_unexpected_error_is_problem_json_500(rig: Any, monkeypatch: Any) -> None:
+    """DB down (or any unexpected failure) still answers RFC 7807, never starlette's plain 500.
+
+    raise_server_exceptions=False: starlette's ServerErrorMiddleware re-raises
+    after responding so servers log the error; the TestClient flag mirrors that.
+    """
+
+    async def boom(session: Any, name: str) -> bool:
+        raise RuntimeError("database is gone")
+
+    monkeypatch.setattr(app_module, "name_taken", boom)
+    resp = rig.client(raise_server_exceptions=False).post("/candybars", json=VALID_BODY)
+    assert resp.status_code == 500
+    assert resp.headers["content-type"] == "application/problem+json"
+    assert rig.rows == [] and rig.sink.published == []

@@ -136,6 +136,68 @@ def test_register_round_trip_and_duplicate(migrated_db: str) -> None:
     asyncio.run(scenario())
 
 
+def test_invocation_and_skip_models_round_trip(migrated_db: str) -> None:
+    """Pin the ORM models against the MIGRATED schema (drift breaks 1.6/Epic 2)."""
+    import asyncio
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from candybar.registry.models import Candybar, Invocation, Skip
+
+    async def scenario() -> None:
+        engine = create_registry_engine(migrated_db)
+        try:
+            cb_id = uuid7()
+            async with session_scope(engine) as session:
+                session.add(
+                    Candybar(
+                        id=cb_id,
+                        name="orm-roundtrip",
+                        description="",
+                        tags=[],
+                        schedule="* * * * *",
+                        entrypoint="/bin/true",
+                        noise=False,
+                        total_invoked=0,
+                        total_successful=0,
+                        created_at=datetime.now(UTC),
+                        updated_at=datetime.now(UTC),
+                    )
+                )
+            async with session_scope(engine) as session:
+                now = datetime.now(UTC)
+                session.add(
+                    Invocation(
+                        id=uuid7(),
+                        candybar_id=cb_id,
+                        trigger="manual",
+                        tick_id=None,
+                        idempotency_key="candybar:x:manual:test",
+                        result=None,
+                        started_at=now,
+                        created_at=now,
+                    )
+                )
+                session.add(
+                    Skip(id=uuid7(), candybar_id=cb_id, kind="once", created_at=now)
+                )
+            async with session_scope(engine) as session:
+                inv = (
+                    await session.execute(select(Invocation).where(Invocation.candybar_id == cb_id))
+                ).scalar_one()
+                assert inv.trigger == "manual" and inv.result is None
+                assert inv.started_at.tzinfo is not None  # timestamptz, not naive
+                skip = (
+                    await session.execute(select(Skip).where(Skip.candybar_id == cb_id))
+                ).scalar_one()
+                assert skip.kind == "once"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
 def test_invocations_and_skips_shape(migrated_db: str) -> None:
     """The 1.6/Epic-2 columns exist with the constraints the spine requires."""
     with create_engine(migrated_db).connect() as conn:

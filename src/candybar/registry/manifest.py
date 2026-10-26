@@ -43,6 +43,13 @@ class CandybarManifest(BaseModel):
             )
         return value
 
+    @field_validator("entrypoint")
+    @classmethod
+    def _entrypoint_non_empty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("entrypoint must not be empty")
+        return value
+
     @field_validator("schedule")
     @classmethod
     def _schedule_is_standard_cron(cls, value: str) -> str:
@@ -62,7 +69,7 @@ def load_manifest(path: str | Path) -> CandybarManifest:
     """Load and validate the `candybar.toml` at `path` (a directory or the file itself).
 
     A relative `entrypoint` is resolved against the manifest's directory and
-    must exist.
+    must be an existing file (a directory or a missing path is rejected).
     """
     p = Path(path)
     manifest_path = p / MANIFEST_FILENAME if p.is_dir() else p
@@ -82,6 +89,8 @@ def load_manifest(path: str | Path) -> CandybarManifest:
     entrypoint = Path(manifest.entrypoint)
     if not entrypoint.is_absolute():
         entrypoint = (manifest_path.parent / entrypoint).resolve()
-    if not entrypoint.exists():
-        raise ManifestError(f"{manifest_path}: entrypoint does not exist: {manifest.entrypoint!r}")
+    if not entrypoint.is_file():
+        raise ManifestError(
+            f"{manifest_path}: entrypoint is not an existing file: {manifest.entrypoint!r}"
+        )
     return manifest.model_copy(update={"entrypoint": str(entrypoint)})

@@ -94,5 +94,7 @@ async def insert_candybar(
     try:
         await session.flush()  # surface unique violations here, inside the transaction
     except IntegrityError as exc:
-        raise DuplicateNameError(manifest.name) from exc
+        if "candybars_name_key" in str(exc):
+            raise DuplicateNameError(manifest.name) from exc
+        raise  # a different constraint fired — never misreport it as a name clash
     return row

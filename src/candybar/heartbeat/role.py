@@ -1,57 +1,37 @@
 """Production wiring for the heartbeat role (AD-2, AD-14).
 
-Connects to NATS JetStream (retrying until the bus is up or the role is
-stopped), wraps the JetStream context in a NatsTickSink, and runs the tick
-loop. The NATS URL comes from the `NATS_URL` env var — the ecosystem
-convention shared with the bloodbank services; the deploy story (1.9) wires
-the container value.
+Connect/retry posture is the shared one from `candybar.bus` (retry the initial
+connect until the bus is up or the role is stopped, reconnect forever after,
+drain on shutdown); this module only adds the tick loop on top. The NATS URL
+comes from the `NATS_URL` env var — the ecosystem convention shared with the
+bloodbank services; the deploy story (1.9) wires the container value.
+
+`CONNECT_RETRY_SECONDS` stays re-exported here: tests monkeypatch it on this
+module to accelerate the retry loop.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 
-import nats
-import nats.errors
+import nats  # noqa: F401  (tests monkeypatch role_mod.nats.connect, intercepting bus.connect_nats)
+
+from candybar.bus import CONNECT_RETRY_SECONDS, connect_nats, nats_url
 
 from .publisher import Heartbeat, NatsTickSink
 
 log = logging.getLogger(__name__)
 
-NATS_URL_ENV = "NATS_URL"
-DEFAULT_NATS_URL = "nats://localhost:4222"
-CONNECT_RETRY_SECONDS = 2.0
-
-
-def nats_url() -> str:
-    return os.environ.get(NATS_URL_ENV, DEFAULT_NATS_URL)
+__all__ = ["CONNECT_RETRY_SECONDS", "nats_url", "run_heartbeat"]
 
 
 async def run_heartbeat(stop: asyncio.Event) -> None:
     """Run the tick publisher against NATS until `stop` is set."""
     url = nats_url()
-    nc: nats.NATS | None = None
-    while nc is None and not stop.is_set():
-        try:
-            nc = await nats.connect(
-                url,
-                name="candybar-heartbeat",
-                max_reconnect_attempts=-1,  # reconnect forever after connect (daemon posture)
-            )
-        except (nats.errors.Error, OSError, TimeoutError) as exc:
-            log.warning(
-                "NATS connect to %s failed (%s: %s); retrying in %.0fs",
-                url,
-                type(exc).__name__,
-                exc,
-                CONNECT_RETRY_SECONDS,
-            )
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=CONNECT_RETRY_SECONDS)
-            except TimeoutError:
-                pass  # not stopped: loop around and retry the connect
+    nc = await connect_nats(
+        url, name="candybar-heartbeat", stop=stop, log=log, retry_seconds=CONNECT_RETRY_SECONDS
+    )
     if nc is None:
         log.info("heartbeat role stopped before NATS connect")
         return

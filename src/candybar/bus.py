@@ -34,8 +34,9 @@ async def connect_nats(
     name: str,
     stop: asyncio.Event,
     log: logging.Logger,
+    retry_seconds: float = CONNECT_RETRY_SECONDS,
 ) -> nats.NATS | None:
-    """Connect, retrying every CONNECT_RETRY_SECONDS until success or stop."""
+    """Connect, retrying every `retry_seconds` until success or stop."""
     nc: nats.NATS | None = None
     while nc is None and not stop.is_set():
         try:
@@ -46,10 +47,10 @@ async def connect_nats(
                 url,
                 type(exc).__name__,
                 exc,
-                CONNECT_RETRY_SECONDS,
+                retry_seconds,
             )
             try:
-                await asyncio.wait_for(stop.wait(), timeout=CONNECT_RETRY_SECONDS)
+                await asyncio.wait_for(stop.wait(), timeout=retry_seconds)
             except TimeoutError:
                 pass  # not stopped: loop around and retry
     return nc

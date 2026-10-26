@@ -165,8 +165,24 @@ def test_load_manifest_missing_entrypoint_file(tmp_path: Path) -> None:
         '[candybar]\nname = "demo"\nschedule = "* * * * *"\nentrypoint = "./nope.sh"\n',
         with_entrypoint=False,
     )
-    with pytest.raises(ManifestError, match="entrypoint does not exist"):
+    with pytest.raises(ManifestError, match="not an existing file"):
         load_manifest(tmp_path)
+
+
+def test_load_manifest_rejects_directory_entrypoint(tmp_path: Path) -> None:
+    # A directory "exists" — but the executor needs an executable FILE.
+    (tmp_path / "subdir").mkdir()
+    _write_manifest(
+        tmp_path,
+        '[candybar]\nname = "demo"\nschedule = "* * * * *"\nentrypoint = "./subdir"\n',
+    )
+    with pytest.raises(ManifestError, match="not an existing file"):
+        load_manifest(tmp_path)
+
+
+def test_manifest_rejects_empty_entrypoint() -> None:
+    with pytest.raises(ValueError, match="entrypoint must not be empty"):
+        _manifest(entrypoint="")
 
 
 # ---------------------------------------------------------------------------

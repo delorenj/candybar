@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from pathlib import Path
 from typing import Any
 
 import nats.errors
@@ -88,6 +89,12 @@ def create_app(*, session_factory: SessionFactory, sink: Any) -> FastAPI:
     async def _validation_problem(_request: Request, exc: RequestValidationError) -> JSONResponse:
         return problem(422, "Invalid request body", str(exc.errors())[:500])
 
+    @app.exception_handler(Exception)
+    async def _unhandled_problem(_request: Request, exc: Exception) -> JSONResponse:
+        # The API speaks RFC 7807 on every failure — never starlette's plain 500.
+        log.error("unhandled API error (%s): %s", type(exc).__name__, exc)
+        return problem(500, "Internal error", f"unexpected {type(exc).__name__}")
+
     @app.post("/candybars", status_code=201)
     async def register(body: RegisterRequest) -> JSONResponse:
         try:
@@ -95,6 +102,13 @@ def create_app(*, session_factory: SessionFactory, sink: Any) -> FastAPI:
         except ValueError as exc:
             # pydantic wraps the field validators; keep the message readable.
             return problem(422, "Invalid candybar definition", str(exc)[:500])
+
+        if not Path(manifest.entrypoint).is_file():
+            return problem(
+                422,
+                "Invalid candybar definition",
+                f"entrypoint is not an existing file: {manifest.entrypoint!r}",
+            )
 
         try:
             async with session_factory() as session:
