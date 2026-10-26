@@ -1497,9 +1497,9 @@ jobs:
   - systemctl --user disable --now user-logrotate.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/user-logrotate.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17941-63ec-772d-a26f-101de7484056
+  cutover_at: '2026-10-26T17:28:11.479202Z'
   verification:
     invocation_id: null
     result: null
@@ -1510,6 +1510,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:28:11.479202Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-63ec-772d-a26f-101de7484056 enabled; first fire 2026-10-27T09:17:00Z
 - id: systemd:zellij-ark
   wave: '7.7'
   candybar:
@@ -1584,9 +1588,9 @@ jobs:
   - systemctl --user disable --now gnome-shell-restart.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/gnome-shell-restart.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17941-6796-736f-a679-79b1fd5fdfca
+  cutover_at: '2026-10-26T17:28:12.411348Z'
   verification:
     invocation_id: null
     result: null
@@ -1597,6 +1601,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:28:12.411348Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-6796-736f-a679-79b1fd5fdfca enabled; first fire 2026-10-26T18:00:00Z
 - id: systemd:srvls-metrics
   wave: '7.7'
   candybar:
@@ -1629,9 +1637,9 @@ jobs:
   - systemctl --user disable --now srvls-metrics.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/srvls-metrics.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17941-6b32-7ab3-b126-f61d74d9593d
+  cutover_at: '2026-10-26T17:28:13.328263Z'
   verification:
     invocation_id: null
     result: null
@@ -1642,6 +1650,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:28:13.328263Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-6b32-7ab3-b126-f61d74d9593d enabled; first fire 2026-10-26T17:30:00Z
 - id: systemd:srvls-snapshot
   wave: '7.7'
   candybar:
@@ -1671,9 +1683,9 @@ jobs:
   - systemctl --user disable --now srvls-snapshot.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/srvls-snapshot.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17941-6f01-7764-910f-b532a019fc48
+  cutover_at: '2026-10-26T17:28:14.343510Z'
   verification:
     invocation_id: null
     result: null
@@ -1684,6 +1696,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:28:14.343510Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17941-6f01-7764-910f-b532a019fc48 enabled; first fire 2026-10-27T08:10:00Z
 - id: systemd:hindsight-capture-sweep.timer
   wave: '7.10'
   candybar:
