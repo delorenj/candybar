@@ -278,6 +278,30 @@ def test_a_previous_minute_command_does_not_steal_the_current_minutes_run() -> N
     assert fact.data.reason == SKIP_BACKLOG and msg.acked == 1
 
 
+def test_previous_minute_command_coalesces_at_exact_tick_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    from candybar.executor import worker as worker_module
+
+    # A queued command can be fetched exactly as the new minute starts.
+    # previous_fire is strictly-before; its bound must be next minute, not
+    # the current minute, or the old fire appears latest and steals the slot.
+    exact = minute_floor(datetime.now(UTC))
+    real_datetime = datetime
+
+    class FrozenDatetime(real_datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:
+            return exact.astimezone(tz or UTC)
+
+    monkeypatch.setattr(worker_module, "datetime", FrozenDatetime)
+    executor, store, bus, runs, _reads = backlog_ports()
+    old = exact - ONE_MINUTE
+    msg = FakeMsg(make_command(tick_id=tick_id_of(old)).model_dump_json().encode())
+    run(executor.handle_message(msg))
+    assert runs == [] and store.records == []
+    [fact] = bus.events
+    assert fact.data.reason == SKIP_BACKLOG and msg.acked == 1
+
+
 def test_a_stalled_backlog_read_does_not_claim_the_overlap_slot() -> None:
     # Post-outage DB latency must not let the older command reserve the slot
     # before deciding it will be coalesced; the current fire gets to run.

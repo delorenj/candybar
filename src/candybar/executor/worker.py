@@ -55,7 +55,7 @@ from uuid import UUID, uuid5
 
 from pydantic import ValidationError
 
-from ..dispatcher.schedule import SkipSet, ceil_minute, previous_fire
+from ..dispatcher.schedule import SkipSet, previous_fire
 from ..events import (
     STDERR_TAIL_MAX,
     build_candybar_completed,
@@ -737,7 +737,9 @@ class Executor:
                 tz_name,
             )
             tz = UTC
-        bound = ceil_minute(now)
+        # At the exact minute boundary, include the current minute in the
+        # backward search. `previous_fire` is strictly before its bound.
+        bound = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
         skips = await self._skip_set(envelope.data.candybar_id, tz, fire, bound)
         latest = previous_fire(schedule, bound, tz=tz, skips=skips)
         if latest == fire:
