@@ -18,7 +18,7 @@ from candybar.daemon import ROLES, resolve_roles
 def test_api_role_registered_and_resolvable() -> None:
     assert ROLES["api"] is role_mod.run_api
     assert resolve_roles("api") == ["api"]
-    assert resolve_roles("all") == ["api", "heartbeat"]
+    assert resolve_roles("all") == ["api", "dispatcher", "heartbeat"]
 
 
 def test_run_api_stopped_before_connect_serves_nothing(monkeypatch: Any) -> None:

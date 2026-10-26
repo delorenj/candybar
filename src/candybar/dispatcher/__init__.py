@@ -1,4 +1,7 @@
-"""Dispatcher role: tick consumer — schedule evaluation, misfire coalescing, skip honor (AD-5, AD-6, AD-13).
+"""Tick-driven schedule evaluation and durable dispatch (AD-5, AD-13)."""
 
-Implemented by Stories 1.5 and Epic 2.
-"""
+from .role import run_dispatcher
+from .schedule import matches_tick
+from .worker import Dispatcher, command_for
+
+__all__ = ["Dispatcher", "command_for", "matches_tick", "run_dispatcher"]

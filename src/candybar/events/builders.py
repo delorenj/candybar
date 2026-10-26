@@ -262,6 +262,8 @@ def build_candybar_invoke(
     tick_id: str | None = None,
     invocation_id: UUID | None = None,
     command_id: UUID | None = None,
+    event_id: UUID | None = None,
+    issued_at: datetime | None = None,
 ) -> CandybarInvokeCommand:
     """Build the dispatch command (AD-5, AD-12).
 
@@ -285,6 +287,8 @@ def build_candybar_invoke(
     else:
         raise ValueError(f"unknown trigger: {trigger!r} (expected one of {sorted(voc.TRIGGERS)})")
     return CandybarInvokeCommand(
+        id=event_id or uuid4(),
+        **({"time": issued_at} if issued_at is not None else {}),
         subject=voc.subject_for(voc.TYPE_CANDYBAR_INVOKE, "command"),
         dataschema=voc.dataschema_for(voc.TYPE_CANDYBAR_INVOKE),
         schemaref=voc.schemaref_for(voc.TYPE_CANDYBAR_INVOKE),

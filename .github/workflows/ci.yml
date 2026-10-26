@@ -80,7 +80,7 @@ jobs:
           timeout 15 bash -c 'until (echo > /dev/tcp/127.0.0.1/4222) 2>/dev/null; do sleep 0.5; done'
 
       - name: Integration tests (live NATS)
-        run: CANDYBAR_TEST_NATS=1 uv run pytest tests/test_heartbeat_integration.py -q
+        run: CANDYBAR_TEST_NATS=1 uv run pytest tests/test_heartbeat_integration.py tests/test_dispatcher_integration.py -q
         env:
           NATS_URL: nats://127.0.0.1:4222
 

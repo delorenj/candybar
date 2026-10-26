@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -66,6 +67,19 @@ async def session_scope(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 async def name_taken(session: AsyncSession, name: str) -> bool:
     result = await session.execute(select(Candybar.id).where(Candybar.name == name))
     return result.scalar_one_or_none() is not None
+
+
+@dataclass(frozen=True)
+class ScheduleEntry:
+    id: UUID
+    name: str
+    schedule: str
+
+
+async def list_schedules(session: AsyncSession) -> list[ScheduleEntry]:
+    """Read the current registry inventory without exposing ORM to dispatchers."""
+    result = await session.execute(select(Candybar.id, Candybar.name, Candybar.schedule))
+    return [ScheduleEntry(id=id, name=name, schedule=schedule) for id, name, schedule in result]
 
 
 async def insert_candybar(

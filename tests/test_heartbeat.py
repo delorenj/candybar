@@ -285,7 +285,7 @@ def test_clock_guard_sanity_heartbeat_does_own_one() -> None:
 
 
 def test_available_roles_contains_heartbeat() -> None:
-    assert available_roles() == ["api", "heartbeat"]  # api joined in story 1.4
+    assert available_roles() == ["api", "dispatcher", "heartbeat"]  # dispatcher joined in 1.5
 
 
 def test_resolve_roles_all_defaults_to_everything() -> None:

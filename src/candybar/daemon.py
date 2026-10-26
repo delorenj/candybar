@@ -1,8 +1,8 @@
 """Daemon role composition: one asyncio process, roles selected by flag (AD-2).
 
 The daemon is the single deployable. Roles land with their owning stories:
-heartbeat (1.3) and api (1.4) today; dispatcher (1.5) and executor (1.6)
-register here as they arrive; the api role grows its CAP-8 surface in Epic 5.
+heartbeat (1.3), api (1.4), and dispatcher (1.5) today; executor (1.6)
+registers as it arrives; the api role grows its CAP-8 surface in Epic 5.
 Roles share one stop event and run under one TaskGroup: if any role crashes,
 the process exits rather than running half-alive.
 """
@@ -13,12 +13,14 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 from .api.role import run_api
+from .dispatcher.role import run_dispatcher
 from .heartbeat.role import run_heartbeat
 
 RoleFn = Callable[[asyncio.Event], Awaitable[None]]
 
 ROLES: dict[str, RoleFn] = {
     "api": run_api,
+    "dispatcher": run_dispatcher,
     "heartbeat": run_heartbeat,
 }
 
