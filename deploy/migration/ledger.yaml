@@ -3588,13 +3588,13 @@ jobs:
   - systemctl --user disable --now mobile-deploy-hub-catchup.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/mobile-deploy-hub-catchup.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17954-67f1-75f3-8f29-19df110d8a9c
   cutover_at: '2026-10-26T17:48:57.778763Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: d451ded3-4765-5519-a702-955e52a7fc70
+    result: success
+    at: '2026-10-26T17:50:00.975184Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:45:36.614187Z'
@@ -3605,6 +3605,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17954-67f1-75f3-8f29-19df110d8a9c enabled; first fire 2026-10-26T17:50:00Z
+  - at: '2026-10-26T17:51:08.946079Z'
+    action: verify
+    outcome: ok
+    detail: invocation d451ded3-4765-5519-a702-955e52a7fc70 (scheduled) success exit=0 runtime=701ms memory=43098112B cpu=1.1516
 - id: systemd:mobile-deploy-hub-macwatch.timer
   wave: '7.11'
   candybar:
@@ -3635,13 +3639,13 @@ jobs:
   - systemctl --user disable --now mobile-deploy-hub-macwatch.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/mobile-deploy-hub-macwatch.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17954-c1ed-7e0a-9f4c-dc1213778ea4
   cutover_at: '2026-10-26T17:49:20.793523Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 48f2f5f4-9158-56aa-bb0d-83649dd3e42c
+    result: success
+    at: '2026-10-26T17:51:03.634249Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:45:36.634277Z'
@@ -3652,3 +3656,7 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17954-c1ed-7e0a-9f4c-dc1213778ea4 enabled; first fire 2026-10-26T17:51:00Z
+  - at: '2026-10-26T17:51:09.633508Z'
+    action: verify
+    outcome: ok
+    detail: invocation 48f2f5f4-9158-56aa-bb0d-83649dd3e42c (scheduled) success exit=0 runtime=3542ms memory=31342592B cpu=0.185
