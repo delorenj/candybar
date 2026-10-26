@@ -71,7 +71,7 @@ context:
 
 **Commands:**
 - `uv run candybar migrate status --wave 7.8 --probe` -- expected: all entries cutover/verified, native=retired
-- `systemctl --user list-timers --all | grep -E 'bloodbank-agent-hooks|candystore-project|pad-roster|single-install-guard|skillex-hermes-resync|naipkins-registry|n8n-workflows'` -- expected: no rows
+- `uv run candybar migrate status --wave 7.8 --probe` -- expected: all seven native=retired (systemd may list disabled timers with NEXT `-` even without `--all`)
 - `curl -s http://127.0.0.1:8700/candybars` -- the 7 names present, enabled, correct tz
 - `cd <owning repo> && git log --oneline -1` per repo -- the source-of-truth commit is on origin
 
