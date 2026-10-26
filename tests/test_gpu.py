@@ -306,6 +306,28 @@ def test_pmon_failure_disables_with_one_warning(
     assert len(warnings) == 1 and "disabled" in warnings[0].getMessage()
 
 
+def test_pmon_dying_mid_run_warns_once_and_restarts(
+    tmp_path: Path, monkeypatch: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A pmon that reports samples and then dies (driver reset, OOM kill)
+    is restarted by the next invocation, and warns once per process only."""
+    monkeypatch.setenv("CANDYBAR_WORK_ROOT", str(tmp_path / "work"))
+    flaky = make_script(tmp_path, "nvidia-smi", f"echo '{HEADER}'\necho '{line('t1', 1, 5)}'\nexit 1")
+    sampler = GpuSampler(flaky)
+    entrypoint = make_script(tmp_path, "job.sh", "sleep 0.3")
+
+    async def go() -> list[RunOutcome]:
+        outcomes = [await run_invocation(**invoke_kwargs(entrypoint=entrypoint, gpu=sampler)) for _ in range(3)]
+        await sampler.aclose()
+        return outcomes
+
+    with caplog.at_level(logging.WARNING, logger=gpu_mod.__name__):
+        outcomes = run(go())
+    assert [o.gpu_load for o in outcomes] == [0.0, 0.0, 0.0]
+    assert not sampler.disabled and sampler.pmon_starts == 3  # restarted each time
+    assert len([r for r in caplog.records if r.levelno >= logging.WARNING]) == 1
+
+
 def test_unspawnable_binary_meters_zero(tmp_path: Path, monkeypatch: Any) -> None:
     monkeypatch.setenv("CANDYBAR_WORK_ROOT", str(tmp_path / "work"))
     sampler = GpuSampler(str(tmp_path / "gone"))  # resolved, then deleted

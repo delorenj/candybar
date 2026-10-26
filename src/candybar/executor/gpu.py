@@ -131,6 +131,7 @@ class GpuSampler:
         self._cols: dict[str, int] | None = None
         self._tasks: set[asyncio.Task[None]] = set()
         self.disabled = False
+        self._warned_exit = False
         self.pmon_starts = 0  # observability for tests: one pmon per busy period
 
     # -- public -----------------------------------------------------------
@@ -225,7 +226,11 @@ class GpuSampler:
                 if run.data_lines == 0:
                     self._disable(f"{binary} pmon exited ({rc}) without reporting a sample")
                 else:
-                    log.warning("nvidia-smi pmon exited (%s); GPU sampling resumes on the next invocation", rc)
+                    # At most one warning per process (spec): a pmon that keeps
+                    # dying would otherwise log on every restart.
+                    level = logging.DEBUG if self._warned_exit else logging.WARNING
+                    self._warned_exit = True
+                    log.log(level, "nvidia-smi pmon exited (%s); GPU sampling resumes on the next invocation", rc)
             if self._run is run:
                 self._run = None
                 self._block = _Block()
