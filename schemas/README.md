@@ -1,7 +1,10 @@
 # schemas
 
-Placeholder — implemented by Story 1.2 (Bloodbank `cron` event vocabulary).
+Draft JSON schemas for the `bloodbank.cron.*` vocabulary (Story 1.2, AD-3).
 
-Draft JSON schemas for the `bloodbank.cron.*` vocabulary live here before
-being PR'd into `bloodbank/schemas/` alongside the domain registration in
-`bloodbank/docs/event-naming.md` (AD-3: PR-first, before any event emission).
+`cron/` holds verbatim copies of the canonical schemas registered in the
+bloodbank repo at `schemas/bloodbank/cron/` (domain registration:
+`bloodbank/docs/event-naming.md`, bloodbank commit `f6b992d`). The bloodbank
+tree is canonical; these drafts exist so this repo is self-describing. Keep
+them byte-identical to the canonical set — a schema change means a new
+canonical revision in bloodbank first, then a refresh here.
