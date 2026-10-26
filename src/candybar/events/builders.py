@@ -288,9 +288,7 @@ def build_candybar_invoke(
     if trigger in ("scheduled", "misfire"):
         if tick_id is None:
             raise ValueError(f"trigger {trigger!r} requires a tick_id")
-        if not voc.TICK_ID_RE.match(tick_id):
-            raise ValueError(f"invalid tick_id: {tick_id!r}")
-        idempotency_key = f"candybar:{candybar_id}:tick:{tick_id}"
+        idempotency_key = voc.scheduled_idempotency_key(candybar_id, tick_id)
     elif trigger == "manual":
         if tick_id is not None:
             raise ValueError("manual invokes carry no tick_id")

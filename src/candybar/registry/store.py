@@ -8,14 +8,14 @@ other module under src/candybar/ may import sqlalchemy or psycopg.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Collection
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid5
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import ARRAY, Text, and_, any_, bindparam, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
@@ -405,6 +405,26 @@ async def invocation_by_key(session: AsyncSession, idempotency_key: str) -> Invo
         select(Invocation).where(Invocation.idempotency_key == idempotency_key)
     )
     return result.scalar_one_or_none()
+
+
+async def fire_results(session: AsyncSession, keys: Collection[str]) -> dict[str, str]:
+    """Terminal results (`success`|`fail`) by idempotency key, for the keys recorded.
+
+    The schedule window's past-row read (Story 5.2): one lookup on the unique
+    `idempotency_key` index. The keys travel as ONE text[] parameter
+    (`= ANY(:keys)`), never an expanded IN list — a day of minutely fires
+    for a dozen candybars would pass psycopg's 65,535-parameter ceiling.
+    No keys, no query.
+    """
+    if not keys:
+        return {}
+    result = await session.execute(
+        select(Invocation.idempotency_key, Invocation.result).where(
+            Invocation.idempotency_key
+            == any_(bindparam("fire_keys", list(keys), type_=ARRAY(Text)))
+        )
+    )
+    return {key: outcome for key, outcome in result if outcome is not None}
 
 
 # Upper bound for one page of invocation history (the API enforces it too).

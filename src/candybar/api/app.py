@@ -24,17 +24,22 @@ and when anything changed one `bloodbank.cron.candybar.updated` fact
 commits in the same flow (spine state rule, as on register). Response shapes
 are the contract's, field for field: `entrypoint` is executor-internal and is
 not echoed.
+Story 5.2 adds `GET /schedule?from=<ts>&to=<ts>`: the contract schedule rows
+for every fire in the half-open UTC window, computed by `api/schedule.py`
+with the dispatcher's croniter/skip helpers (AD-13) off the event loop, past
+rows resolved to their recorded invocation's result by idempotency key.
 All errors are RFC 7807 problem+json. Epic 5 adds the rest of the CAP-8 read surface.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 import nats.errors
@@ -43,9 +48,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import REGISTRY, CollectorRegistry
 from prometheus_client.exposition import choose_encoder
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from candybar.dispatcher.schedule import group_skips
 from candybar.events.builders import (
     build_candybar_created,
     build_candybar_invoke,
@@ -55,15 +61,27 @@ from candybar.registry import (
     INVOCATION_LIST_MAX,
     CandybarManifest,
     DuplicateNameError,
+    fire_results,
     get_candybar,
     get_invocation,
     insert_candybar,
     list_candybars,
     list_invocations,
+    list_skips,
     lock_candybar,
     name_taken,
     update_candybar,
     uuid7,
+)
+
+from .schedule import (
+    WindowCandybar,
+    WindowError,
+    attach_results,
+    past_keys,
+    skip_read_start,
+    window_bounds,
+    window_rows,
 )
 
 log = logging.getLogger(__name__)
@@ -193,7 +211,11 @@ def create_app(
     session_factory: SessionFactory,
     sink: Any,
     metrics_registry: CollectorRegistry = REGISTRY,
+    now: Callable[[], datetime] | None = None,
 ) -> FastAPI:
+    # The wall clock decides which schedule rows are past/current (Story 5.2);
+    # reading it is not owning a timer (AD-1). Injectable for tests.
+    clock = now or (lambda: datetime.now(UTC))
     app = FastAPI(title="candybar", docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.get("/healthz")
@@ -430,5 +452,33 @@ def create_app(
             rows = await list_invocations(session, candybar_id, limit)
             body = [invocation_row_json(r) for r in rows]
         return JSONResponse(content={"candybarId": str(candybar_id), "invocations": body})
+
+    @app.get("/schedule")
+    async def schedule_window(
+        from_: Annotated[AwareDatetime, Query(alias="from")],
+        to: Annotated[AwareDatetime, Query()],
+    ) -> JSONResponse:
+        """Contract rows for every fire in `from <= fireTime < to`, ordered by fire time."""
+        try:
+            start, end = window_bounds(from_, to)
+        except WindowError as exc:
+            return problem(422, "Invalid schedule window", str(exc))
+        instant = clock()
+        async with session_factory() as session:
+            candybars = [WindowCandybar.of(row) for row in await list_candybars(session)]
+            skips = group_skips(await list_skips(session, skip_read_start(start, instant), end))
+        try:
+            # croniter is CPU-bound and the api shares the daemon's event loop
+            # with the heartbeat and dispatcher: compute off the loop.
+            rows = await asyncio.to_thread(
+                window_rows, candybars, start, end, now=instant, skips=skips
+            )
+        except WindowError as exc:
+            return problem(422, "Invalid schedule window", str(exc))
+        keys = past_keys(rows)
+        if keys:
+            async with session_factory() as session:
+                rows = attach_results(rows, await fire_results(session, keys))
+        return JSONResponse(content=[row.to_json() for row in rows])
 
     return app

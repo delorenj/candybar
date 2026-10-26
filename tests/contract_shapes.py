@@ -75,3 +75,69 @@ def assert_contract_shape(body: dict[str, Any], keys: set[str]) -> None:
     assert set(body) == keys, f"keys differ from the contract: {set(body) ^ keys}"
     for key in keys:
         assert FIELD_CHECKS[key](body[key]), f"{key}={body[key]!r} violates the contract"
+
+
+# ---------------------------------------------------------------------------
+# Schedule window rows (Story 5.2). The row bullet carries optional fields
+# (`lastResult?`) and quoted unions (`state: "past" | ...`); `noise` is added
+# to the row by the noise-collection section ("rows include `noise: bool`").
+
+SCHEDULE_ROUTE = "GET /schedule?from=<ts>&to=<ts>"
+
+
+def _row_fields(route: str) -> dict[str, tuple[bool, Any]]:
+    """name -> (optional, kind): kind is a type word or the frozenset of a quoted union."""
+    text = CONTRACT.read_text(encoding="utf-8")
+    line = next(ln for ln in text.splitlines() if ln.lstrip("- ").startswith(f"`{route}` →"))
+    inner = re.search(r"`\{([^}]*)\}`", line)
+    assert inner, f"no {{...}} field list on the contract line for {route}"
+    out: dict[str, tuple[bool, Any]] = {}
+    for part in inner.group(1).split(","):
+        m = re.match(r"\s*([A-Za-z]+)(\?)?\s*(?::\s*(.+?))?\s*$", part)
+        assert m, f"unparseable contract field {part!r} for {route}"
+        name, optional, annotation = m.groups()
+        kind: Any = annotation
+        if annotation and '"' in annotation:
+            kind = frozenset(re.findall(r'"([^"]+)"', annotation))
+        out[name] = (optional is not None, kind)
+    # The noise section extends the row: "`GET /schedule` rows include `noise: bool`".
+    noise_line = next(ln for ln in text.splitlines() if "`GET /schedule` rows include" in ln)
+    extra = re.search(r"rows include `(\w+): (\w+)`", noise_line)
+    assert extra, "no `name: type` on the contract's schedule-rows noise line"
+    out[extra.group(1)] = (False, extra.group(2))
+    return out
+
+
+SCHEDULE_ROW_FIELDS = _row_fields(SCHEDULE_ROUTE)
+SCHEDULE_REQUIRED_KEYS = {n for n, (opt, _) in SCHEDULE_ROW_FIELDS.items() if not opt}
+SCHEDULE_OPTIONAL_KEYS = {n for n, (opt, _) in SCHEDULE_ROW_FIELDS.items() if opt}
+STATE_VALUES: frozenset[str] = SCHEDULE_ROW_FIELDS["state"][1]
+RESULT_VALUES: frozenset[str] = SCHEDULE_ROW_FIELDS["lastResult"][1]
+
+
+def _utc_minute(value: Any) -> bool:
+    if not _utc_iso(value):
+        return False
+    parsed = datetime.fromisoformat(value)
+    return parsed.second == 0 and parsed.microsecond == 0
+
+
+SCHEDULE_FIELD_CHECKS: dict[str, Any] = {
+    "candybarId": _uuid,
+    "name": lambda v: isinstance(v, str) and v != "",
+    "schedule": lambda v: isinstance(v, str) and len(v.split()) == 5,
+    "fireTime": _utc_minute,
+    "state": lambda v: v in STATE_VALUES,
+    "lastResult": lambda v: v in RESULT_VALUES,
+    "skipped": lambda v: isinstance(v, bool),
+    "noise": lambda v: isinstance(v, bool),
+}
+
+
+def assert_schedule_row(body: dict[str, Any]) -> None:
+    keys = set(body)
+    missing = SCHEDULE_REQUIRED_KEYS - keys
+    extra = keys - SCHEDULE_REQUIRED_KEYS - SCHEDULE_OPTIONAL_KEYS
+    assert not missing and not extra, f"row keys differ from the contract: {missing=} {extra=}"
+    for key in keys:
+        assert SCHEDULE_FIELD_CHECKS[key](body[key]), f"{key}={body[key]!r} violates the contract"

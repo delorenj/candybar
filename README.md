@@ -96,6 +96,31 @@ or read-only keys and `null` → 422; unknown id → 404; name taken → 409; bu
 down → 503 with the row unchanged. `createdAt` is always UTC. The executor's
 `entrypoint` is accepted on writes but never echoed.
 
+## Schedule window (CAP-8, Story 5.2)
+
+```bash
+curl 'https://candybar.delo.sh/schedule?from=2026-10-26T00:00:00Z&to=2026-10-27T00:00:00Z'
+# [{candybarId, name, schedule, fireTime, state, lastResult?, skipped, noise}, ...]
+```
+
+You get one row per fire of every registered candybar in `from <= fireTime < to`,
+ordered by `(fireTime, name)`. Fire times come from the dispatcher's own croniter
+evaluation and skip helpers. They are UTC, and only fires after the candybar's
+registration are listed. `from` and `to` need an offset; use `Z`, because a raw
+`+` in a query string decodes as a space.
+
+- `state`: `past` means the fire time has been reached. `current` is the single
+  next fire across all candybars that is not skipped; the window contains it only
+  when that fire falls inside the window. `upcoming` is everything later.
+- `skipped`: an `occurrence` or `rest_of_day` skip covers the fire, and no run was
+  recorded for it.
+- `lastResult`: present only on past rows whose fire has a recorded run (scheduled
+  or misfire), and never null. Manual runs are not schedule rows.
+
+You get a 422 problem when `from`/`to` is missing or has no offset, when
+`to <= from`, when the window is longer than 31 days, or when it holds more than
+20,000 fires.
+
 ## Run a candybar now
 
 ```bash

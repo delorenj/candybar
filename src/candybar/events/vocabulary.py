@@ -139,3 +139,15 @@ def tick_event_id(tick_id: str) -> UUID:
 
 def candybar_ordering_key(candybar_id: object) -> str:
     return f"candybar:{candybar_id}"
+
+
+def scheduled_idempotency_key(candybar_id: object, tick_id: str) -> str:
+    """The invoke idempotency key of one fire (AD-5): `candybar:<id>:tick:<tick_id>`.
+
+    Shared by scheduled and misfire dispatches of the same fire time, so a
+    fire runs at most once whatever its trigger; the read API (Story 5.2)
+    resolves a past fire to its recorded invocation by this key.
+    """
+    if not TICK_ID_RE.match(tick_id):
+        raise ValueError(f"invalid tick_id: {tick_id!r}")
+    return f"candybar:{candybar_id}:tick:{tick_id}"
