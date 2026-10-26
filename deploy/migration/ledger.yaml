@@ -928,13 +928,13 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler internal'
-  status: cutover
+  status: verified
   candybar_id: 01a1793b-6dcd-730f-8317-5975681f9792
   cutover_at: '2026-10-26T17:28:03.162377Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 6bd5a5b5-0731-5498-ac1e-dbac6738e6ad
+    result: success
+    at: '2026-10-26T17:30:21.068749Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:44.526572Z'
@@ -953,6 +953,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793b-6dcd-730f-8317-5975681f9792 enabled after the batched hermes-gateway-restart; pin active
+  - at: '2026-10-26T17:33:34.043223Z'
+    action: verify
+    outcome: ok
+    detail: invocation 6bd5a5b5-0731-5498-ac1e-dbac6738e6ad (scheduled) success exit=0 runtime=20937ms memory=170086400B cpu=0.263
 - id: hermes:33god-pm:f3db72089593
   wave: '7.17'
   candybar:
@@ -2350,9 +2354,9 @@ jobs:
   - systemctl --user disable --now bloodbank-agent-hooks-health.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/bloodbank-agent-hooks-health.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17946-6d72-7091-8c78-aedca4bb4b29
+  cutover_at: '2026-10-26T17:33:41.632439Z'
   verification:
     invocation_id: null
     result: null
@@ -2363,6 +2367,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:33:41.632439Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17946-6d72-7091-8c78-aedca4bb4b29 enabled; first fire 2026-10-26T17:35:00Z
 - id: systemd:candystore-project-sync.timer
   wave: '7.8'
   candybar:
