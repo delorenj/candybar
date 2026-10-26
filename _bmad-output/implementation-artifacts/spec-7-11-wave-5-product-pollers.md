@@ -105,6 +105,14 @@ context: []
 
 ## Review Triage Log
 
+- `worker._backlog_decision` initial >2min-only check — **high, patched** (`9fc8b20`): live executor-pause drill at 17:41Z proved a 17:40 queued command (only 60s old) ran and overlap-skipped the current fire. Every previous-minute command now checks for a later non-skipped fire; the >2min threshold only changes a surviving run's trigger to `misfire`. Regression: `test_a_previous_minute_command_does_not_steal_the_current_minutes_run`.
+- `worker._execute` first cut reserved the live slot before awaiting the backlog DB reads — **medium, patched** (`73e31d7`): a command later coalesced could still overlap-skip the current fire during the read. Backlog is decided before the await-free live-slot reservation. Regression: `test_a_stalled_backlog_read_does_not_claim_the_overlap_slot`.
+- `worker._backlog_decision` used `ceil_minute(now)` as the exclusive `previous_fire` bound — **high, patched** (`249fbc1`): at exactly HH:MM:00, the just-due fire was excluded, so an earlier command falsely survived. The exclusive bound is now the NEXT minute. Regression freezes the worker clock at a minute boundary.
+- `worker._tick_fire` caught ValueError only — **low, patched** (`7470db9`): an out-of-range integer tick could raise OverflowError/OSError, crashing the task without ack/nak. It now treats these as unparseable; regression pins the boundary.
+- mobile-deploy-hub had two tests asserting `install.sh` enables the retired timers — **medium, patched** (`fff1e30`): a normal hub test run would fail after the source-of-truth change; worse, restoring the old assertion would resurrect the schedulers. The tests now assert files remain for rollback and the installer never enables either timer; 57 focused tests pass.
+- Spring/fall DST regression gap — **medium, covered** (`1a2abbc`): the original AD-20 tests used UTC only despite this wave's New York wall-clock requirement. Three deterministic tests now pin fixed-hour fall-back, wildcard-hour fall-back and spring-gap backlog rulings via shared `previous_fire`/`fire_times`.
+- Gruvato `OnFailure=` is still `gruvato-acoustid-alert.service` (live `systemctl show`), and the runner manifest has no `on_failure`. Deliberately did not induce a quota-alert failure to avoid an artificial ntfy page; the first scheduled fire remains pending at 19:07Z. Existing `test_systemd_runner.py` cases exercise failure mapping and OnFailure behavior with a stub systemctl.
+
 ## Design Notes
 
 Why the overlap probe lives in the worker, not only in the runner: the skip must be recorded BEFORE `invoked` is published and the claim row commits, or a skipped run would masquerade as a started invocation. The runner's own BUSY_STATES refusal stays as the backstop for the check-then-start race (a hand `systemctl start` landing between probe and start) and still records `failed` — loud and rare beats silent.
