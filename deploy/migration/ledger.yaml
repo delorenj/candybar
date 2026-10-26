@@ -1558,7 +1558,7 @@ jobs:
   - systemctl --user disable --now zellij-ark.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/zellij-ark.timer
-  status: cutover
+  status: rolled-back
   candybar_id: 01a17941-ac64-7f65-bd20-f20d8d84e0bf
   cutover_at: '2026-10-26T17:28:30.029554Z'
   verification:
@@ -1575,6 +1575,14 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17941-ac64-7f65-bd20-f20d8d84e0bf enabled; first fire 2026-10-26T17:30:00Z
+  - at: '2026-10-26T17:33:01.289059Z'
+    action: rollback
+    outcome: ok
+    detail: 'native scheduler restored: wave 7.7 AC: demonstrate rollback on one job (restore timer, confirm one native fire, re-cutover)'
+  - at: '2026-10-26T17:33:01.392896Z'
+    action: rollback
+    outcome: ok
+    detail: candybar 01a17941-ac64-7f65-bd20-f20d8d84e0bf disabled
 - id: systemd:gnome-shell-restart.timer
   wave: '7.7'
   candybar:
