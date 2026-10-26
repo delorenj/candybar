@@ -244,6 +244,9 @@ jobs:
           fi
           docker exec candybar-ci cat /sys/fs/cgroup/candybar/cgroup.subtree_control | tee /dev/stderr | grep -q memory
           docker exec candybar-ci sh -c 'grep -q "^Uid:[[:space:]]*10001" /proc/1/status'
+          # A real scoped, metered invocation as uid 10001 (the daemon's user).
+          docker cp scripts/container-metering-smoke.py candybar-ci:/tmp/metering-smoke.py
+          docker exec -u candybar candybar-ci python /tmp/metering-smoke.py
           START=$(date +%s%N); docker stop candybar-ci >/dev/null; END=$(date +%s%N)
           ELAPSED_MS=$(( (END - START) / 1000000 ))
           echo "docker stop took ${ELAPSED_MS}ms"

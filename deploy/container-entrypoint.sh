@@ -29,15 +29,16 @@ delegate_cgroups() {
   for c in memory cpu; do
     echo "+$c" > "$CG/cgroup.subtree_control" 2>/dev/null || log "controller $c unavailable"
   done
-  mkdir -p "$root"
+  mkdir -p "$root" || return 1
   for c in memory cpu; do
     echo "+$c" > "$root/cgroup.subtree_control" 2>/dev/null || true
   done
   # The unprivileged executor creates scopes under $root and moves children
   # from daemon/ into them: that needs ownership of $root and write access to
   # cgroup.procs of the common ancestor (the namespace root) and the source.
-  chown -R "$APP_USER:$APP_USER" "$root"
-  chown "$APP_USER" "$CG/cgroup.procs" "$CG/daemon/cgroup.procs"
+  # (set -e is suspended inside a condition: every step must fail the function.)
+  chown -R "$APP_USER:$APP_USER" "$root" || return 1
+  chown "$APP_USER" "$CG/cgroup.procs" "$CG/daemon/cgroup.procs" || return 1
   CANDYBAR_CGROUP_ROOT="$root"
   export CANDYBAR_CGROUP_ROOT
   log "cgroup scoping enabled at $root ($(cat "$root/cgroup.subtree_control"))"

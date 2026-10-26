@@ -140,6 +140,13 @@ def _enter_scope(root: str, invocation_id: UUID, pid: int) -> Path | None:
         metering.enable_controllers(scope.parent)
         scope.mkdir(exist_ok=True)
         (scope / "cgroup.procs").write_text(str(pid))
+    except ProcessLookupError:
+        # The child already exited before it could join (a sub-millisecond
+        # job). Expected and harmless: it runs unscoped and meters as 0. Not a
+        # warning — that is reserved for a scope tree that is actually broken.
+        log.debug("invocation %s exited before joining its cgroup scope", invocation_id)
+        shutil.rmtree(scope, ignore_errors=True)
+        return None
     except OSError as exc:
         log.warning("cgroup scope %s unavailable (%s); running unscoped", scope, exc)
         shutil.rmtree(scope, ignore_errors=True)

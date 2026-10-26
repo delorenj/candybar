@@ -170,6 +170,24 @@ def test_scoped_failure_still_measured(tmp_path: Path, monkeypatch: Any) -> None
     assert outcome.memory_peak_bytes == 3 * MIB and outcome.cpu_load > 0
 
 
+def test_no_memory_controller_still_measures_cpu(
+    tmp_path: Path, monkeypatch: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Scope without memory.peak (controller not delegated): memory 0, CPU measured."""
+    root = tmp_path / "cg"
+    monkeypatch.setenv("CANDYBAR_WORK_ROOT", str(tmp_path / "work"))
+    monkeypatch.setenv("CG_ROOT", str(root))
+    body = (
+        'sleep 0.3\nprintf "usage_usec 40000\\n" > "$CG_ROOT/$CANDYBAR_INVOCATION_ID/cpu.stat"\n'
+    )
+    entrypoint = make_script(tmp_path, "cpu-only.sh", body)
+    with caplog.at_level(logging.WARNING, logger=metering.__name__):
+        outcome = run(run_invocation(**invoke_kwargs(entrypoint=entrypoint, root=str(root))))
+    assert outcome.scoped and outcome.memory_peak_bytes == 0
+    assert outcome.cpu_load == metering.cpu_load(40_000, outcome.runtime_ms) > 0
+    assert any("memory.peak" in r.getMessage() for r in caplog.records)
+
+
 def test_unscoped_run_meters_zero(tmp_path: Path, monkeypatch: Any) -> None:
     monkeypatch.setenv("CANDYBAR_WORK_ROOT", str(tmp_path / "work"))
     entrypoint = make_script(tmp_path, "plain.sh", "exit 0")
@@ -392,3 +410,25 @@ def test_failed_event_round_trips_and_legacy_payload_parses() -> None:
     del raw["data"]["metrics"]  # a pre-3.1 failed event
     legacy = parse_envelope(raw)
     assert legacy.data.metrics == InvocationMetrics()
+
+
+def test_child_exiting_before_join_is_debug_not_warning(
+    tmp_path: Path, monkeypatch: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A sub-ms job exits before the post-spawn join (ESRCH): unscoped, no WARNING."""
+    from candybar.executor import runner
+
+    real_write = Path.write_text
+
+    def write_text(self: Path, data: str, *args: Any, **kwargs: Any) -> int:
+        if self.name == "cgroup.procs":
+            raise ProcessLookupError(3, "No such process")
+        return real_write(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", write_text)
+    with caplog.at_level(logging.DEBUG, logger=runner.__name__):
+        scope = runner._enter_scope(str(tmp_path / "cg"), INVOCATION_ID, 999_999)
+    assert scope is None
+    assert not (tmp_path / "cg" / str(INVOCATION_ID)).exists()
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("before joining" in r.getMessage() for r in caplog.records)
