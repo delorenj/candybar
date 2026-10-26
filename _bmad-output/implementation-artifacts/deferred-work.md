@@ -29,3 +29,9 @@ now completes in ~1s, pinned by tests/test_fast_stop_integration.py).
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-3-rust-sdk-sdks-rust.md`
   summary: A Rust candybar that panics with a NUL in its panic text still gets that NUL into the executor's stderr tail, because Rust's default panic hook prints the payload verbatim, before the SDK can scrub it.
   evidence: Real but rare. The SDK scrubs NUL from the result message and its own stderr line (a49ca6b), but the default hook writes to stderr first. The root cause is the executor's unscrubbed stderr path, which the 4.1 entry above already defers, and fixing that also closes this. An SDK-only fix would need a custom panic hook. It settles with the executor-side NUL scrub plus a live-PG test that panics with `"\0"`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-average-gpu-load-per-invocation-nvidia-smi-or-zero.md`
+  summary: Add an automated check that deploy/compose.yml keeps `gpus: all` and `pid: host`, since dropping `pid: host` makes production GPU load silently read 0.
+  evidence: No YAML parser is in the dependency set, and a source-text assertion would not count as verification. Story 3.2 proved the wiring live (gpu-burn row gpu_load 0.505 after redeploy). A parsed-config test (PyYAML dev dependency, or `docker compose config --format json` with a stub .env in CI) would close it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-average-gpu-load-per-invocation-nvidia-smi-or-zero.md`
+  summary: Run the real-nvidia-smi attribution tests (CANDYBAR_TEST_GPU=1) in CI.
+  evidence: CI is hosted ubuntu-latest (public repo) with no GPU, so a driver update that changes pmon output would ship green. The parser tests use captured real shapes, and a manual or self-hosted GPU job on big-chungus would settle it.
