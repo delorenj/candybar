@@ -6,10 +6,11 @@ than one minute past it is a gap; per candybar, only the LATEST missed fire
 in that gap runs (`trigger=misfire`), and earlier missed fires inside the 24h
 catch-up window are recorded as `skipped` (`reason=misfire_coalesced`).
 
-Operator skips (Story 2.3, AD-13) are registry override rows applied before
-any invoke command is emitted: a skipped fire publishes `skipped` with the
-skip kind as its reason instead of a command, on the tick path and inside a
-gap alike, and coalescing runs the latest NON-skipped missed fire.
+Operator skips (Stories 2.3/2.4, AD-13) are registry override rows applied
+before any invoke command is emitted: a skipped fire publishes `skipped` with
+the skip kind as its reason (`occurrence` for one fire, `rest_of_day` for a
+whole UTC date) instead of a command, on the tick path and inside a gap
+alike, and coalescing runs the latest NON-skipped missed fire.
 """
 
 from __future__ import annotations
@@ -115,13 +116,14 @@ def misfire_skipped_for(
     )
 
 
-def occurrence_skipped_for(
+def operator_skipped_for(
     entry: ScheduleEntry, fire: datetime, reason: str, tick: TickFiredEvent
 ) -> CandybarSkippedEvent:
-    """The `skipped` fact for a fire an operator skip suppressed (Story 2.3).
+    """The `skipped` fact for a fire an operator skip suppressed (Stories 2.3/2.4).
 
-    Keyed on (reason, candybar, fire tick) only, so the tick path, a gap
-    tick and any redelivery all rebuild the same broker-dedupable id.
+    `reason` is the skip kind (`occurrence` / `rest_of_day`). Keyed on
+    (reason, candybar, fire tick) only, so the tick path, a gap tick and any
+    redelivery all rebuild the same broker-dedupable id.
     """
     fired = _tick_id_of(fire)
     return build_candybar_skipped(
@@ -278,7 +280,7 @@ class Dispatcher:
             if matches_tick(entry.schedule, minute):
                 reason = overrides.get(entry.id, NO_SKIPS).reason_for(minute)
                 if reason is not None:
-                    await self._publish(occurrence_skipped_for(entry, minute, reason, tick))
+                    await self._publish(operator_skipped_for(entry, minute, reason, tick))
                     log.info("skipped %s at %s (%s)", entry.name, tick.data.tick_id, reason)
                     continue
                 await self._publish(command_for(entry, tick))
@@ -314,7 +316,7 @@ class Dispatcher:
                 if reason is None:
                     await self._publish(misfire_skipped_for(plan.entry, fire, tick))
                 else:
-                    await self._publish(occurrence_skipped_for(plan.entry, fire, reason, tick))
+                    await self._publish(operator_skipped_for(plan.entry, fire, reason, tick))
             if plan.latest is not None:
                 await self._publish(misfire_command_for(plan.entry, plan.latest, tick))
         log.info(

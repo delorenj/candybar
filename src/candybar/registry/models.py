@@ -22,9 +22,10 @@ TRIGGERS = ("scheduled", "manual", "misfire")
 RESULTS = ("success", "fail")
 
 # Skip kinds (Epic 2 owns the vocabulary). The kind is also the `skipped`
-# event's `data.reason` for an operator skip. Story 2.4 adds `rest_of_day`.
+# event's `data.reason` for an operator skip.
 SKIP_OCCURRENCE = "occurrence"  # one fire `{candybar_id, fire_time}` (Story 2.3)
-SKIP_KINDS = (SKIP_OCCURRENCE,)
+SKIP_REST_OF_DAY = "rest_of_day"  # one UTC date `{candybar_id, day}` (Story 2.4)
+SKIP_KINDS = (SKIP_OCCURRENCE, SKIP_REST_OF_DAY)
 
 
 class Base(DeclarativeBase):

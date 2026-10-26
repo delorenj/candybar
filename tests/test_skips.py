@@ -29,7 +29,7 @@ from candybar.dispatcher.schedule import (
 from candybar.dispatcher.worker import (
     MISFIRE_COALESCED,
     misfire_skipped_for,
-    occurrence_skipped_for,
+    operator_skipped_for,
     plan_misfires,
 )
 from candybar.events import build_tick_fired, parse_envelope
@@ -358,14 +358,14 @@ def test_planner_lists_overrides_separately_and_keeps_coalesced_unchanged():
 def test_occurrence_skipped_identity_is_deterministic_across_paths():
     job = entry()
     fire = at(10, 10)
-    on_tick = occurrence_skipped_for(job, fire, "occurrence", build_tick_fired(fire))
-    in_gap = occurrence_skipped_for(job, fire, "occurrence", build_tick_fired(at(10, 23)))
+    on_tick = operator_skipped_for(job, fire, "occurrence", build_tick_fired(fire))
+    in_gap = operator_skipped_for(job, fire, "occurrence", build_tick_fired(at(10, 23)))
     assert on_tick.id == in_gap.id
     # Distinct from the coalesced fact for the same fire, and from other fires.
     assert on_tick.id != misfire_skipped_for(job, fire, build_tick_fired(at(10, 23))).id
-    assert on_tick.id != occurrence_skipped_for(job, at(10, 15), "occurrence", build_tick_fired(fire)).id
+    assert on_tick.id != operator_skipped_for(job, at(10, 15), "occurrence", build_tick_fired(fire)).id
     tick = build_tick_fired(fire)
-    linked = occurrence_skipped_for(job, fire, "occurrence", tick)
+    linked = operator_skipped_for(job, fire, "occurrence", tick)
     assert linked.causationid == tick.id and linked.correlationid == tick.correlationid
     assert linked.ordering_key == f"candybar:{job.id}"
 

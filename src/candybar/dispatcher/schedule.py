@@ -3,8 +3,8 @@
 All fire-time math is UTC (AD-13) over standard five-field cron via croniter.
 Nothing here reads the wall clock: callers pass the tick minute they consumed.
 
-Operator skips (Story 2.3) are applied here too: the fire-time helpers take
-an optional per-candybar `SkipSet` and omit the fires it covers, so the
+Operator skips (Stories 2.3/2.4) are applied here too: the fire-time helpers
+take an optional per-candybar `SkipSet` and omit the fires it covers, so the
 dispatcher and the read API (Epic 5) compute the same skip-aware fires.
 """
 
@@ -12,13 +12,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
 from croniter import CroniterBadDateError, croniter
 
-from ..registry.models import SKIP_OCCURRENCE
+from ..registry.models import SKIP_OCCURRENCE, SKIP_REST_OF_DAY
 
 ONE_MINUTE = timedelta(minutes=1)
 
@@ -29,6 +29,7 @@ class SkipRow(Protocol):
     candybar_id: UUID
     kind: str
     fire_time: datetime | None
+    day: date | None
 
 
 @dataclass(frozen=True)
@@ -36,19 +37,26 @@ class SkipSet:
     """The operator skips of ONE candybar (registry `skips` rows).
 
     `reason_for(fire)` is the `skipped` event reason (the skip kind) when an
-    override covers that fire, else None. Story 2.4 adds rest-of-day dates.
+    override covers that fire, else None. An occurrence skip names one fire;
+    a rest-of-day skip (Story 2.4) covers its whole UTC date. When both cover
+    one fire the occurrence reason wins — the more specific override.
     """
 
     occurrences: frozenset[datetime] = frozenset()
+    rest_of_day: frozenset[date] = frozenset()
 
     def reason_for(self, fire: datetime) -> str | None:
-        return SKIP_OCCURRENCE if fire in self.occurrences else None
+        if fire in self.occurrences:
+            return SKIP_OCCURRENCE
+        if fire.date() in self.rest_of_day:
+            return SKIP_REST_OF_DAY
+        return None
 
     def covers(self, fire: datetime) -> bool:
         return self.reason_for(fire) is not None
 
     def __bool__(self) -> bool:
-        return bool(self.occurrences)
+        return bool(self.occurrences) or bool(self.rest_of_day)
 
 
 NO_SKIPS = SkipSet()
@@ -61,10 +69,20 @@ def group_skips(rows: Iterable[SkipRow]) -> dict[UUID, SkipSet]:
     rolled-back daemon cannot interpret must not suppress or wedge dispatch.
     """
     occurrences: dict[UUID, set[datetime]] = {}
+    days: dict[UUID, set[date]] = {}
     for row in rows:
         if row.kind == SKIP_OCCURRENCE and row.fire_time is not None:
             occurrences.setdefault(row.candybar_id, set()).add(row.fire_time.astimezone(UTC))
-    return {cid: SkipSet(occurrences=frozenset(fires)) for cid, fires in occurrences.items()}
+        elif row.kind == SKIP_REST_OF_DAY and row.day is not None:
+            days.setdefault(row.candybar_id, set()).add(row.day)
+    ids = occurrences.keys() | days.keys()
+    return {
+        cid: SkipSet(
+            occurrences=frozenset(occurrences.get(cid, ())),
+            rest_of_day=frozenset(days.get(cid, ())),
+        )
+        for cid in ids
+    }
 
 
 def _require_utc_minute(minute: datetime, what: str = "tick minute") -> None:

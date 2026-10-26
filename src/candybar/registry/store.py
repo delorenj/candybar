@@ -11,18 +11,25 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid5
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from .ids import uuid7
 from .manifest import CandybarManifest
-from .models import SKIP_OCCURRENCE, Candybar, DispatchCursor, Invocation, Skip
+from .models import (
+    SKIP_OCCURRENCE,
+    SKIP_REST_OF_DAY,
+    Candybar,
+    DispatchCursor,
+    Invocation,
+    Skip,
+)
 
 DATABASE_URL_ENV = "DATABASE_URL"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://localhost:5432/candybar"
@@ -213,16 +220,90 @@ async def add_occurrence_skip(
     return _skip_entry(row), created
 
 
+def _require_date(day: date) -> None:
+    # A datetime IS a date subclass; the override's identity is the UTC date,
+    # so a datetime (or anything else) is a caller bug, refused not coerced.
+    if isinstance(day, datetime) or not isinstance(day, date):
+        # ValueError (not TypeError): invalid skip inputs are one error class
+        # for callers, matching add_occurrence_skip's bad-time ValueError.
+        raise ValueError(  # noqa: TRY004
+            "day must be a datetime.date (a UTC calendar date)"
+        )
+
+
+def rest_of_day_skip_id(candybar_id: UUID, day: date) -> UUID:
+    """The deterministic row id of the rest-of-day skip `{candybar_id, day}`."""
+    _require_date(day)
+    return uuid5(SKIP_NAMESPACE, f"{SKIP_REST_OF_DAY}:{candybar_id}:{day.isoformat()}")
+
+
+async def add_rest_of_day_skip(
+    session: AsyncSession, candybar_id: UUID, day: date, *, reason: str | None = None
+) -> tuple[SkipEntry, bool]:
+    """Store a skip of every remaining fire of a candybar on the UTC date `day`.
+
+    The stored date covers that whole UTC day; already-dispatched fires are
+    unaffected (their ticks are gone), and the following UTC day dispatches
+    normally. Idempotent, same contract as `add_occurrence_skip`: `(entry,
+    created)`, `created` False keeps the first row and its note. Whether the
+    schedule fires at all on `day` is the caller's check (the API's 404,
+    Story 5.6): a fireless or past date stores inertly. Raises
+    UnknownCandybarError and ValueError (a non-`date` day, incl. `datetime`).
+    """
+    _require_date(day)
+    if await session.get(Candybar, candybar_id) is None:
+        raise UnknownCandybarError(str(candybar_id))
+    skip_id = rest_of_day_skip_id(candybar_id, day)
+    stmt = (
+        pg_insert(Skip)
+        .values(
+            id=skip_id,
+            candybar_id=candybar_id,
+            kind=SKIP_REST_OF_DAY,
+            fire_time=None,
+            day=day,
+            reason=reason,
+            created_at=datetime.now(UTC),
+        )
+        .on_conflict_do_nothing(index_elements=[Skip.id])
+        .returning(Skip.id)
+    )
+    try:
+        created = (await session.execute(stmt)).scalar_one_or_none() is not None
+    except IntegrityError as exc:  # the candybar was deleted under us
+        if "skips_candybar_id_fkey" in str(exc):
+            raise UnknownCandybarError(str(candybar_id)) from exc
+        raise
+    row = await session.get(Skip, skip_id, populate_existing=True)
+    return _skip_entry(row), created
+
+
 async def list_skips(session: AsyncSession, start: datetime, end: datetime) -> list[SkipEntry]:
-    """Occurrence skips with `start <= fire_time < end`, oldest fire first."""
+    """Operator skips relevant to the UTC window `start <= t < end`.
+
+    Occurrence rows with `start <= fire_time < end` (Story 2.3) plus
+    rest-of-day rows whose date intersects the window (Story 2.4): fires in
+    the window have dates in `[start.date(), (end - 1m).date()]`, and a day
+    row matters iff its `day` is in that range. Ordered by fire_time then
+    candybar id; day rows (NULL fire_time) sort last.
+    """
     _require_tick_minute(start, "window start")
     _require_tick_minute(end, "window end")
     result = await session.scalars(
         select(Skip)
         .where(
-            Skip.kind == SKIP_OCCURRENCE,
-            Skip.fire_time >= start,
-            Skip.fire_time < end,
+            or_(
+                and_(
+                    Skip.kind == SKIP_OCCURRENCE,
+                    Skip.fire_time >= start,
+                    Skip.fire_time < end,
+                ),
+                and_(
+                    Skip.kind == SKIP_REST_OF_DAY,
+                    Skip.day >= start.date(),
+                    Skip.day <= (end - timedelta(minutes=1)).date(),
+                ),
+            )
         )
         .order_by(Skip.fire_time, Skip.candybar_id)
     )

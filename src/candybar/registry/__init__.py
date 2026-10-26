@@ -16,6 +16,7 @@ from .manifest import (
 from .models import (
     SKIP_KINDS,
     SKIP_OCCURRENCE,
+    SKIP_REST_OF_DAY,
     Base,
     Candybar,
     DispatchCursor,
@@ -30,6 +31,7 @@ from .store import (
     TerminalInvocation,
     UnknownCandybarError,
     add_occurrence_skip,
+    add_rest_of_day_skip,
     advance_dispatch_cursor,
     create_registry_engine,
     database_url,
@@ -45,6 +47,7 @@ from .store import (
     normalize_dsn,
     occurrence_skip_id,
     record_terminal_invocation,
+    rest_of_day_skip_id,
     session_scope,
 )
 
@@ -53,6 +56,7 @@ __all__ = [
     "MANIFEST_FILENAME",
     "SKIP_KINDS",
     "SKIP_OCCURRENCE",
+    "SKIP_REST_OF_DAY",
     "SLUG_RE",
     "Base",
     "Candybar",
@@ -67,6 +71,7 @@ __all__ = [
     "TerminalInvocation",
     "UnknownCandybarError",
     "add_occurrence_skip",
+    "add_rest_of_day_skip",
     "advance_dispatch_cursor",
     "create_registry_engine",
     "database_url",
@@ -83,6 +88,7 @@ __all__ = [
     "normalize_dsn",
     "occurrence_skip_id",
     "record_terminal_invocation",
+    "rest_of_day_skip_id",
     "session_scope",
     "uuid7",
 ]
