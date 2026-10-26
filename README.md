@@ -136,6 +136,58 @@ skipped day costs one step, not one per fire. Budget: under 50 ms (in-memory)
 and under 100 ms (real Postgres) for 200 candybars. You get a 404 problem when
 nothing will fire: the registry is empty, or no schedule fires again.
 
+### Live updates (SSE, Story 5.4)
+
+```bash
+curl -N 'https://candybar.delo.sh/schedule/stream?from=2026-10-26T00:00:00Z&to=2026-10-27T00:00:00Z'
+# retry: 3000
+#
+# id: 3f9c1a7e02b4-0
+# event: ready
+# data: {"type":"ready","seq":0,"cut":"...","current":{...row...}}
+#
+# id: 3f9c1a7e02b4-1
+# event: current.advanced
+# data: {"type":"current.advanced","seq":1,"key":"current","at":"...","cut":"...","current":{...row...}}
+```
+
+One SSE channel, fed by the bus. The api role reads every `bloodbank.evt.cron.*`
+fact through an ephemeral, ordered JetStream consumer, with no durable and no
+acks. It dedupes ticks on `tick_id`, and turns each fact into events that carry
+`/schedule` rows:
+
+| Event | When | Payload (besides `type`, `seq`, `key`, `at`) |
+|---|---|---|
+| `invocation.started` | `invoked` | `candybarId`, `invocationId`, `trigger`, `row` |
+| `invocation.completed` | `completed` / `failed` | the same, plus `result`; `row.lastResult` |
+| `skip.applied` | `skipped` | `candybarId`, `reason`, `row` (`skipped` only for operator skips) |
+| `definition.changed` | `created` / `updated` | `change`, `definition`, `changes`; `rows` with a window |
+| `current.advanced` | a tick or definition change moves the current row | `cut`, `current` (a row, or null) |
+
+A manual run has no schedule row, so its invocation events carry `row: null`
+and the key `invocation:<id>`.
+
+Patch rule for a consumer:
+- On `current.advanced`, rows with `fireTime < cut` become `past`, the row
+  matching `current` becomes `current`, and the rest become `upcoming`.
+- A row event replaces the row at its key, `<candybarId>@<fireTime>`.
+- `definition.changed` sets `name`, `schedule` and `noise` on that candybar's
+  rows. With a window, it replaces those rows with `rows` instead.
+
+The `from`/`to` window is optional: give both or neither, with the same limits
+as `/schedule`. Row events outside the window arrive as id-only frames, which
+move the client's cursor and dispatch nothing.
+
+Every payload is absolute, so applying one twice changes nothing.
+
+Ids are `<boot>-<n>`, and the last 1,024 events are kept. A reconnect whose
+`Last-Event-ID` is still in that buffer replays exactly the missed events. Any
+other id gets a `reset`: refetch `/schedule`. So does an api restart, which
+changes the boot.
+
+Each tick sends a `: keepalive` comment, so there is no timer of its own. Stop
+closes every stream, so the role still stops inside docker's grace.
+
 ## Run a candybar now
 
 ```bash

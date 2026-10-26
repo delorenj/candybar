@@ -223,8 +223,11 @@ jobs:
       # which are both up by this point in the job. Story 1.9 adds the
       # fast-stop proof (roles stop inside docker's 10s SIGTERM grace).
       # Story 4.1 adds the python-SDK example firing off a scheduled tick.
-      - name: "Integration tests (executor + manual invoke + fast stop + python/node/rust SDK: live NATS + Postgres)"
-        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py tests/test_manual_invoke_integration.py tests/test_fast_stop_integration.py tests/test_sdk_python_integration.py tests/test_node_sdk_integration.py tests/test_sdk_rust_integration.py -q
+      # Story 5.4 adds the SSE live stream over real HTTP (isolated test
+      # stream; patched == refetch; Last-Event-ID resume) and the api role's
+      # fast stop with an open stream. It runs last: its fixture downgrades.
+      - name: "Integration tests (executor + manual invoke + fast stop + python/node/rust SDK + SSE stream: live NATS + Postgres)"
+        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py tests/test_manual_invoke_integration.py tests/test_fast_stop_integration.py tests/test_sdk_python_integration.py tests/test_node_sdk_integration.py tests/test_sdk_rust_integration.py tests/test_schedule_stream_integration.py -q
         env:
           NATS_URL: nats://127.0.0.1:4222
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
