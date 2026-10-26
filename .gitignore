@@ -1,0 +1,6 @@
+# CommonProject repository contract
+.env
+.env.*
+!.env.op
+/.agents/local.json
+/.agents/skills

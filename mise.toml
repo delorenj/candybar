@@ -1,0 +1,98 @@
+# mise configuration for candybar
+# https://mise.jdx.dev/configuration.html
+
+[env]
+_.path = [".mise/scripts", "agents/hermes/pm"]
+_.file = [".env"]
+
+# This block will handle the linking of
+# agent files to the main AGENTS.md file.
+#
+# TODO: Ensure this works for all levels of nesting.
+# i.e. All linked agent files MUST be siblings at
+# any given level of nesting.
+#
+# NOTE: every managed script is handed config_root EXPLICITLY. A mise enter
+# hook runs with cwd set to the directory you cd'd into -- including a PARENT
+# config's hook -- so a script that reads its subject from cwd reshapes
+# whichever nested repo you entered. config_root locates the file; the
+# argument locates the subject. The scripts refuse to run without it.
+#
+# NOTE: hooks are an array of [[hooks.enter]] tables (NOT enter = [ ... ]) and
+# every  path is single-quoted so it survives a space in the
+# project path — mise runs each `run` via `sh -c`. (`run`, not `script`: mise
+# deprecated `script` for spawned hook commands and removes it in 2027.3.0.)
+[[hooks.enter]]
+run = "'{{config_root}}/.mise/scripts/link-agentfiles.sh' '{{config_root}}'"
+[[hooks.enter]]
+# Atomic (PJAN-24/PJAN-57): shell complexity lives in the managed script so
+# mise never interpolates temporary variables. The script uses mktemp, traps
+# cleanup, and replaces .env only after op inject succeeds.
+run = "'{{config_root}}/.mise/scripts/materialize-env.sh'"
+[[hooks.enter]]
+run = "[ -f '{{config_root}}/.mise/scripts/codegraph.sh' ] && '{{config_root}}/.mise/scripts/codegraph.sh' || true"
+
+[[watch_files]]
+patterns = ["AGENTS.md"]
+task = "link:agentfiles"
+
+[[watch_files]]
+patterns = [".env.op"]
+task = "env:materialize"
+
+[tasks."link:agentfiles"]
+description = "Symlink all agent files to AGENTS.md"
+run = "'{{config_root}}/.mise/scripts/link-agentfiles.sh' '{{config_root}}'"
+
+[tasks."env:materialize"]
+description = "Inject .env.op into .env"
+run = "'{{config_root}}/.mise/scripts/materialize-env.sh'"
+
+[tasks."hindsight:setup"]
+description = "Provision this dev's shared project Hindsight key from 1Password into .env (op read; upserts those two keys, leaves the rest of .env intact)"
+run = "'{{config_root}}/.mise/scripts/hindsight-setup.sh'"
+
+# Core task (unconditional): snapshot recent project Markdown into the
+# Obsidian vault under Projects/<project_id>/<date> and open its index.
+#  is raw-escaped like the hooks above so mise, not Jinja,
+# expands it at task runtime (and sh -c keeps the space-safe quoting).
+[tasks."docs:sync"]
+description = "Copy recent Markdown from docs/, _bmad-output/ and the repo root to the dated project vault folder and open its Obsidian index"
+usage = '''
+flag "--hours <hours>" default="24" help="Copy Markdown modified within this many hours"
+flag "--vault <vault>" default="" help="Existing Obsidian vault (defaults to VAULT, OBSIDIAN_VAULT, or ~/code/DeLoDocs)"
+flag "--no-open" help="Copy without opening Obsidian"
+'''
+run = '''
+set -- --hours "$usage_hours"
+if [ -n "$usage_vault" ]; then set -- "$@" --vault "$usage_vault"; fi
+if [ "$usage_no_open" = true ]; then set -- "$@" --no-open; fi
+python3 "{{config_root}}/.mise/scripts/docs-sync.py" --root "{{config_root}}" "$@"
+'''
+
+# >>> mise-versioning >>>  (managed block — do not edit by hand; re-run init to update)
+[tasks."version"]
+description = "Print the current version (vX.Y.Z)"
+run = "'{{config_root}}/.mise/scripts/versioning.sh' current"
+
+[tasks."version:bump"]
+description = "Bump patch version: vX.Y.Z -> vX.Y.(Z+1)"
+alias = "version:bump-patch"
+run = "'{{config_root}}/.mise/scripts/versioning.sh' bump patch"
+
+[tasks."version:bump-minor"]
+description = "Bump minor version: vX.Y.Z -> vX.(Y+1).0"
+run = "'{{config_root}}/.mise/scripts/versioning.sh' bump minor"
+
+[tasks."version:bump-major"]
+description = "Bump major version: vX.Y.Z -> v(X+1).0.0"
+run = "'{{config_root}}/.mise/scripts/versioning.sh' bump major"
+
+[tasks."version:check"]
+description = "Verify every versioned file is in parity"
+run = "'{{config_root}}/.mise/scripts/versioning.sh' check"
+
+[tasks."version:sync"]
+description = "Force every versioned file up to the highest version"
+run = "'{{config_root}}/.mise/scripts/versioning.sh' sync"
+# <<< mise-versioning <<<

@@ -1,0 +1,31 @@
+{
+  "project_name": "candybar",
+  "project_description": "",
+  "project_id": "candybar",
+  "repo_path": "/home/delorenj/code/33GOD/candybar",
+  "ticket_provider": {
+    "type": "plane",
+    "workspace": "33god",
+    "identifier": "CAND",
+    "board_id": "",
+    "identifier_source": "proposed",
+    "state": "planned"
+  },
+  "agents": {},
+  "status": "active",
+  "source_artifacts": [],
+  "template": {
+    "commonproject": {
+      "enabled": true,
+      "primary_language": "python"
+    }
+  },
+  "created_at": "2026-10-26T01:05:46.727Z",
+  "updated_at": "2026-10-26T01:05:46.727Z",
+  "notebook": {
+    "binding": {
+      "state": "planned",
+      "notebook_name": "candybar"
+    }
+  }
+}
