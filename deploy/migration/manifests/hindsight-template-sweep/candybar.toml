@@ -1,0 +1,16 @@
+# Migrated from systemd:hindsight-template-sweep.timer (wave 7.10, AD-18/AD-21).
+# Applies the delonet-project template to Hindsight banks with no retain_mission.
+# native_failing: the job fails natively (op vault item 'Hypercharm' missing,
+# exit 1) — it verifies on result parity, not success. Wall-clock 04:30
+# America/New_York preserved; the 30m RandomizedDelaySec is dropped.
+# Rollback: ledger entry systemd:hindsight-template-sweep.timer.
+[candybar]
+name = "hindsight-template-sweep"
+description = "Daily sweep applying Hindsight project templates to unsteered banks (was systemd hindsight-template-sweep.timer)"
+tags = ["migrated", "hindsight", "wave-7-10"]
+schedule = "30 4 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "hindsight-template-sweep.service"

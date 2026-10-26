@@ -1636,3 +1636,187 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+- id: systemd:hindsight-capture-sweep.timer
+  wave: '7.10'
+  candybar:
+    name: hindsight-capture-sweep
+    description: Flush Hindsight session write-back buffers and the jot WAL (was systemd hindsight-capture-sweep.timer)
+    tags:
+    - migrated
+    - hindsight
+    - wave-7-10
+    schedule: '*/10 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: hindsight-capture-sweep.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=2min; OnUnitActiveSec=10min; AccuracySec=30s
+    jitter_s: 30
+    unit: hindsight-capture-sweep.timer
+    unit_file: /home/delorenj/code/33GOD/bloodbank/services/hook-hub/systemd/hindsight-capture-sweep.timer
+  deviations:
+  - AccuracySec=30s dropped
+  - OnBootSec=2min boot re-arm dropped
+  - interval kept (10 min); phase not preserved
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/bloodbank
+    path: services/hook-hub/systemd/hindsight-capture-sweep.timer
+    commit: be782321a009ca569c9e9e31cab135a874bee156
+  disable:
+  - systemctl --user disable --now hindsight-capture-sweep.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/33GOD/bloodbank/services/hook-hub/systemd/hindsight-capture-sweep.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:34.911012Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:hindsight-write-probe.timer
+  wave: '7.10'
+  candybar:
+    name: hindsight-write-probe
+    description: 'Hourly Hindsight write-path probe: retain, extraction and consolidation read-back, ntfy on failure'
+    tags:
+    - migrated
+    - hindsight
+    - wave-7-10
+    schedule: 4 * * * *
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: hindsight-write-probe.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=2min; OnActiveSec=2min; OnUnitActiveSec=1h; AccuracySec=1min; Persistent=true
+    jitter_s: 60
+    unit: hindsight-write-probe.timer
+    unit_file: /home/delorenj/.agents/hooks/hindsight/systemd/hindsight-write-probe.timer
+  deviations:
+  - AccuracySec=1min dropped
+  - OnBootSec/OnActiveSec boot re-arm dropped
+  - Persistent=true catch-up replaced by candybar misfire policy
+  - interval kept (1h) at minute :04; phase not preserved
+  - 'epics.md said the live dir is not the repo; correction: ~/.agents IS the delorenj/agents checkout and the unit is symlinked straight from it'
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/agents
+    path: hooks/hindsight/systemd/hindsight-write-probe.timer
+    commit: aa35242c1cfa7a6000fa44503ab53f032e33a527
+  disable:
+  - systemctl --user disable --now hindsight-write-probe.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.agents/hooks/hindsight/systemd/hindsight-write-probe.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:34.911012Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:hindsight-memory-analysis.timer
+  wave: '7.10'
+  candybar:
+    name: hindsight-memory-analysis
+    description: Daily Hindsight memory strategy performance analysis with retained summary and ntfy (was systemd hindsight-memory-analysis.timer)
+    tags:
+    - migrated
+    - hindsight
+    - wave-7-10
+    schedule: 0 5 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: hindsight-memory-analysis.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 05:00:00; RandomizedDelaySec=15m; Persistent=true
+    jitter_s: 900
+    unit: hindsight-memory-analysis.timer
+    unit_file: /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-memory-analysis.timer
+  deviations:
+  - RandomizedDelaySec=15m dropped (now fires exactly 05:00 local)
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/DeLoContainers
+    path: stacks/ai/hindsight/systemd/hindsight-memory-analysis.timer
+    commit: ec2767a10356a259274aee9160d92b027403f03b
+  disable:
+  - systemctl --user disable --now hindsight-memory-analysis.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-memory-analysis.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:34.911012Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:hindsight-template-sweep.timer
+  wave: '7.10'
+  candybar:
+    name: hindsight-template-sweep
+    description: Daily sweep applying Hindsight project templates to unsteered banks (was systemd hindsight-template-sweep.timer)
+    tags:
+    - migrated
+    - hindsight
+    - wave-7-10
+    schedule: 30 4 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: hindsight-template-sweep.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 04:30:00; RandomizedDelaySec=30m; Persistent=true
+    jitter_s: 1800
+    unit: hindsight-template-sweep.timer
+    unit_file: /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-template-sweep.timer
+  deviations:
+  - RandomizedDelaySec=30m dropped (now fires exactly 04:30 local)
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: true
+  source_of_truth:
+    repo: delorenj/DeLoContainers
+    path: stacks/ai/hindsight/systemd/hindsight-template-sweep.timer
+    commit: ec2767a10356a259274aee9160d92b027403f03b
+  disable:
+  - systemctl --user disable --now hindsight-template-sweep.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-template-sweep.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:34.911012Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer

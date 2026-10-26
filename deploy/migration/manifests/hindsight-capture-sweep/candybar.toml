@@ -1,0 +1,14 @@
+# Migrated from systemd:hindsight-capture-sweep.timer (wave 7.10, AD-18/AD-21).
+# Sweeps Hindsight session write-back buffers (session_capture.py) and the jot
+# WAL (jot_flush.py). The .service is unchanged and holds every directive; only
+# the timer retired. Rollback: ledger entry systemd:hindsight-capture-sweep.timer.
+[candybar]
+name = "hindsight-capture-sweep"
+description = "Flush Hindsight session write-back buffers and the jot WAL (was systemd hindsight-capture-sweep.timer)"
+tags = ["migrated", "hindsight", "wave-7-10"]
+schedule = "*/10 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "hindsight-capture-sweep.service"

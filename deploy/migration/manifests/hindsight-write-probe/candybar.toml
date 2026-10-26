@@ -1,0 +1,15 @@
+# Migrated from systemd:hindsight-write-probe.timer (wave 7.10, AD-18/AD-21).
+# Hourly synthetic write-path probe (retain + extraction + consolidation
+# read-back); the script keeps writing the stamp infra-doctor's 2h deadman
+# watches and pages ntfy on failure. Rollback: ledger entry
+# systemd:hindsight-write-probe.timer.
+[candybar]
+name = "hindsight-write-probe"
+description = "Hourly Hindsight write-path probe: retain, extraction and consolidation read-back, ntfy on failure"
+tags = ["migrated", "hindsight", "wave-7-10"]
+schedule = "4 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "hindsight-write-probe.service"

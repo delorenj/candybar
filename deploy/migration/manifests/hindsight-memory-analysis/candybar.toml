@@ -1,0 +1,16 @@
+# Migrated from systemd:hindsight-memory-analysis.timer (wave 7.10, AD-18/AD-21).
+# Daily memory strategy performance analysis: queries the hindsight Postgres via
+# op run + psql (the script itself shells out — the unit is unchanged, so the
+# secrets flow is preserved), retains a summary and sends ntfy. Wall-clock
+# 05:00 America/New_York preserved; the 15m RandomizedDelaySec is dropped.
+# Rollback: ledger entry systemd:hindsight-memory-analysis.timer.
+[candybar]
+name = "hindsight-memory-analysis"
+description = "Daily Hindsight memory strategy performance analysis with retained summary and ntfy (was systemd hindsight-memory-analysis.timer)"
+tags = ["migrated", "hindsight", "wave-7-10"]
+schedule = "0 5 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "hindsight-memory-analysis.service"
