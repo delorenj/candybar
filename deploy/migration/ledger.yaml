@@ -2871,9 +2871,9 @@ jobs:
   - systemctl --user disable --now dev-journal-reconcile.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/dev-journal-reconcile.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794f-1662-7820-9977-fa78c32e699e
+  cutover_at: '2026-10-26T17:43:09.180822Z'
   verification:
     invocation_id: null
     result: null
@@ -2884,6 +2884,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:43:09.180822Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794f-1662-7820-9977-fa78c32e699e enabled; first fire 2026-10-26T18:00:00Z
 - id: systemd:sync-daily-reports-to-s3
   wave: '7.15'
   candybar:
