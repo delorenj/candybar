@@ -1,0 +1,12 @@
+# Migrated from systemd:skillex-hermes-resync (wave 7.8); only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "skillex-hermes-resync"
+description = "Fallback resync of Skillex-only Hermes desks with the all-skills catalog (exits 1 by design when a desk needs a human)"
+tags = ["migrated", "33god", "skillex"]
+schedule = "7,22,37,52 * * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "skillex-hermes-resync.service"

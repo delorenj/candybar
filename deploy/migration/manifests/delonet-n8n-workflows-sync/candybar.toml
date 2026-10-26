@@ -1,0 +1,12 @@
+# Migrated from systemd:delonet-n8n-workflows-sync.timer (wave 7.8); only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "delonet-n8n-workflows-sync"
+description = "Export every n8n workflow from ~/.n8n/database.sqlite into git, commit and push"
+tags = ["migrated", "delonet", "n8n"]
+schedule = "*/15 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "delonet-n8n-workflows-sync.service"

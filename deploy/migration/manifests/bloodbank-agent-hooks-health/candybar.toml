@@ -1,0 +1,12 @@
+# Migrated from systemd:bloodbank-agent-hooks-health.timer (wave 7.8); only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "bloodbank-agent-hooks-health"
+description = "Agent-hooks health: validate deployed hook configs, cross-check live hook telemetry (Holocene)"
+tags = ["migrated", "33god", "bloodbank"]
+schedule = "*/5 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "bloodbank-agent-hooks-health.service"

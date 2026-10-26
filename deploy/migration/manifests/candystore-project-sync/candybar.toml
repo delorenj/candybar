@@ -1,0 +1,12 @@
+# Migrated from systemd:candystore-project-sync.timer (wave 7.8); only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "candystore-project-sync"
+description = "Hourly sync of the pjangler project registry into Candystore projects/aliases/dir-map"
+tags = ["migrated", "33god", "candystore"]
+schedule = "5 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "candystore-project-sync.service"

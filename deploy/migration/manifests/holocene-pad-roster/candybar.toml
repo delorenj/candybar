@@ -1,0 +1,12 @@
+# Migrated from systemd:holocene-pad-roster.timer (wave 7.8); only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "holocene-pad-roster"
+description = "Refresh the Agent Pad roster (routable agents, avatars) served at agent-pad.delo.sh/roster"
+tags = ["migrated", "33god", "holocene"]
+schedule = "*/2 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "holocene-pad-roster.service"

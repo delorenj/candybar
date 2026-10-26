@@ -1,0 +1,12 @@
+# Migrated from systemd:naipkins-registry-snapshot (wave 7.8); only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "naipkins-registry-snapshot"
+description = "Snapshot the pjangler project registry to the file the naipkins container reads"
+tags = ["migrated", "33god", "naipkins"]
+schedule = "*/5 * * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "naipkins-registry-snapshot.service"

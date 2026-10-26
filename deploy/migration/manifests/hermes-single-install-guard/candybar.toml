@@ -1,0 +1,12 @@
+# Migrated from systemd:hermes-single-install-guard.timer (wave 7.8); only the .timer retired.
+# Reversible cutover: deploy/migration/ledger.yaml.
+[candybar]
+name = "hermes-single-install-guard"
+description = "Hermes drift guard: every consumer resolves to one install and one history (infra-doctor watches its ok stamp)"
+tags = ["migrated", "33god", "hermes"]
+schedule = "*/15 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "hermes-single-install-guard.service"
