@@ -2,7 +2,7 @@
 title: 'Story 2.1: Effectively-once dispatch proven under fault injection'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'done'
 baseline_commit: '2f8504658e4d848b45efa2becdae5918ad3fc1b6'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -54,13 +54,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/candybar/events/vocabulary.py`, `builders.py`, `__init__.py` -- deterministic tick event id -- broker dedupe keyed on tick_id.
-- [ ] `src/candybar/executor/worker.py` -- synchronous key claim -- closes the concurrent double-execution race.
-- [ ] `src/candybar/dispatcher/role.py` -- `ACK_WAIT_SECONDS` constant -- test seam, same value.
-- [ ] `tests/test_events.py`, `tests/test_executor.py`, `tests/test_dispatcher_role.py` -- unit pins: tick id determinism; concurrent same-key yields one run; N role starts bind only `DURABLE` on `EVENT_STREAM` with matching `config.durable_name`, never `durable=None`; static guard that no other `src/candybar` module subscribes to tick subjects.
-- [ ] `tests/test_heartbeat_integration.py` -- unique msg ids for test-published ticks.
-- [ ] `tests/test_dispatch_fault_injection_integration.py` -- NEW live suite covering every matrix row against real roles, real scripts, and real rows.
-- [ ] `.github/workflows/ci.yml` -- run the suite.
+- [x] `src/candybar/events/vocabulary.py`, `builders.py`, `__init__.py` -- deterministic tick event id -- broker dedupe keyed on tick_id.
+- [x] `src/candybar/executor/worker.py` -- synchronous key claim -- closes the concurrent double-execution race.
+- [x] `src/candybar/dispatcher/role.py` -- `ACK_WAIT_SECONDS` constant -- test seam, same value.
+- [x] `tests/test_events.py`, `tests/test_executor.py`, `tests/test_dispatcher_role.py` -- unit pins: tick id determinism; concurrent same-key yields one run; N role starts bind only `DURABLE` on `EVENT_STREAM` with matching `config.durable_name`, never `durable=None`; static guard that no other `src/candybar` module subscribes to tick subjects.
+- [x] `tests/test_heartbeat_integration.py` -- unique msg ids for test-published ticks.
+- [x] `tests/test_dispatch_fault_injection_integration.py` -- NEW live suite covering every matrix row against real roles, real scripts, and real rows.
+- [x] `.github/workflows/ci.yml` -- run the suite.
 
 **Acceptance Criteria:**
 - Given the walking skeleton on throwaway NATS and Postgres, when the suite redelivers ticks, redelivers commands, and restarts the dispatcher mid-tick, then every `(candybar, tick)` and every manual UUID has exactly one child execution, one `invocations` row, and counters equal to the row count.
@@ -69,9 +69,33 @@ context:
 
 ## Implementation Notes
 
+Implemented directly in this session (no subagent-spawn tool available — same deviation as Stories 1.1–1.9). Commits on main: 758fe79 (code + tests), 6a3fe2f (CI step), d30fd6e (review patches).
+
+- The executor claim race was real and reproduced twice. With the claim moved back, the new unit test fails `assert 2 == 1`. The live suite also fails: the manual command that was published twice back to back ran more than once. With the fix, both pass.
+- The tick event id is now `uuid5(TICK_NAMESPACE, tick_id)`, and an explicit `event_id` still wins. Three heartbeat integration tests publish real-subject ticks for upcoming minutes. They now pass unique ids, so they cannot dedupe against a rerun or the live heartbeat's own tick.
+- Several agents share this working tree. Story 3.1's uncommitted edits sit in `builders.py` and `worker.py`, the same files as mine. For those two files I staged only my hunks: I built a blob from HEAD plus my edits (`git hash-object` + `update-index --cacheinfo`) and verified the staged tree in an exported copy. Their edits were left unstaged and untouched.
+- The live-bus guard keys on "foreign streams or non-cron subjects", not on "any traffic". CI's heartbeat step stores cron ticks on BLOODBANK_EVENTS before this step, and the live bus always carries foreign streams and subjects. The guard therefore keeps the suite off the live bus without depending on CI step order. Against the live bus (localhost:4222) it fails with `foreign stream 'GIB_EVENTS'` and touches nothing (1.02M messages and 18 consumers before and after).
+- Verified on throwaway nats:2.10.29 and postgres:17-alpine (cb21-*): unit 336 passed, ruff clean, and the full integration set 15 passed / 1 skipped (the 5-minute E2E). The fault suite passed 3 repeat runs in about 15s each. CI run 40278342676 reports the fault step at 2 passed.
+- Decisions where the spine is silent: ticks carry a deterministic CloudEvent id, which is the same fact under the same id. Production dispatcher ack_wait stays 120s, so a dispatcher that dies mid-tick republishes up to 2 minutes late, which is still correct. A hard kill of the executor mid-child is deferred (see Design Notes and deferred-work.md).
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+Review layers (blind-hunter, edge-case-hunter, verification-gap) ran inline. No subagent-spawn tool was available, the same deviation as 1.1–1.9. Diff: 758fe79 + 6a3fe2f, 40.4 kB, so the finding floor is N = min(floor(sqrt(40.4)+1), 10) = 7.
+
+- Dispatcher crash predicate matched any T2 command. A stray `* * * * *` row in a shared throwaway registry could take the crash, so neither A nor B would get the pre-crash run and the suite would time out. medium, patched (predicate scoped to A/B).
+- Executor restart in fault 3 could SIGTERM B's in-flight T3 into a `failed` row, which flakes the `total_successful == 3` assertion. medium, patched (wait for B's T3 row first).
+- The live-bus guard used `pytest.skip`. If CI ordering ever put foreign traffic first, the suite would go green unrun (broken verification). medium, patched to `pytest.fail`.
+- The guard's refusal branches had no test (verification gap). medium, patched with `tests/test_fault_suite_guard.py` (foreign stream, foreign subject, cron-only pass).
+- The concurrent-dispatcher live check used a fixed 2s sleep, so it could assert before the second role attached. low, patched (waits for `num_waiting >= 2` on the one durable).
+- The static subscription guard would break Epic 5's SSE subscriber with no explanation. low, patched (assert message says how a subscriber is admitted and that ticks stay dispatcher-only).
+- Claims check: the frozen intent says the suite refuses a bus whose streams "already carry traffic", but the code refuses only foreign streams or non-cron subjects. low, rejected. The live bus always carries foreign streams and subjects, so the purpose holds. The literal reading would make CI depend on step order. The live refusal was verified.
+- The executor's in-flight duplicate re-naks every 5s for the length of a long job. low, rejected: the behavior predates 1.6 (same nak(5)) and the load is one fetch every 5s.
+- A dispatcher that dies mid-tick republishes up to 120s late (ack_wait). low, rejected: correctness is unaffected, and shortening ack_wait does not apply to the existing live durable without a consumer update.
+- A hard executor kill mid-child re-runs the job after the 1h ack_wait. Real, but outside the AC fault set and it needs a pre-spawn claim row (it changes 1.6's accounting). Deferred.
+- A deterministic tick id makes all copies of a minute share one correlationid. false: the copies are the same fact, root lineage is unchanged, and `test_tick_event_id_is_a_pure_function_of_tick_id` pins self-correlation.
+- The `subjects` map might be unparsed by nats-py, which would make the subject guard vacuous. false: `StreamState.subjects` is parsed, and a live probe returned `{'bloodbank.evt.foo.bar.baz': 1}`.
 
 ## Design Notes
 

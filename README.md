@@ -16,7 +16,7 @@ and the daemon its only writer.
 src/candybar/        # the one deployable (roles: heartbeat, dispatcher, executor, api, cli, events, registry)
 sdks/python/         # candybar-sdk (pip)     — Story 4.1 (done)
 sdks/node/           # candybar-sdk (npm)     — Story 4.2
-sdks/rust/           # candybar-sdk (crate)   — Story 4.3
+sdks/rust/           # candybar-sdk (crate)   — Story 4.3 (done)
 deploy/              # container + Traefik labels, alembic env — Story 1.9
 schemas/             # draft JSON schemas to PR into bloodbank/schemas/ — Story 1.2
 ```
@@ -99,6 +99,19 @@ unhandled exception becomes `{status: "fail"}` with its message. The image
 ships the SDK, so jobs under the jobs mount can import it. See
 [`sdks/python/README.md`](sdks/python/README.md) and the
 [`hello` example](sdks/python/examples/hello) (`candybar register sdks/python/examples/hello`).
+
+## Write a candybar in Rust (SDK)
+
+`sdks/rust` is the crate `candybar-sdk` (zero dependencies, no NATS, Rust >=
+1.99.1). `fn main() -> ExitCode { candybar_sdk::run(job) }` runs your handler,
+which reports usage with `ctx.add_tokens(...)`/`ctx.add_cost(...)` and returns
+`()`, a message, an `Outcome`, or a `Result`. The SDK writes the AD-8 result
+file; an `Err` or a panic becomes `{status: "fail"}` with its message. Build
+the binary and register it with a normal `candybar.toml` whose `entrypoint`
+points at it. See [`sdks/rust/README.md`](sdks/rust/README.md) and the
+[`hello` example](sdks/rust/examples/hello) (`cargo build --release
+--manifest-path sdks/rust/examples/hello/Cargo.toml`, then
+`candybar register sdks/rust/examples/hello`).
 
 ## Run the daemon
 
