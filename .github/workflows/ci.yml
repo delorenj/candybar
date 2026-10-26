@@ -144,6 +144,17 @@ jobs:
         env:
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
 
+      # Story 2.1: effectively-once dispatch under fault injection — the
+      # production dispatcher + executor roles over the CI nats-server and
+      # Postgres, with tick redelivery, command redelivery and a dispatcher
+      # death mid-tick. It resets the BLOODBANK_* streams (throwaway bus only;
+      # it refuses foreign traffic) and leaves them empty for the steps below.
+      - name: "Integration tests (dispatch fault injection: live NATS + Postgres)"
+        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 CANDYBAR_TEST_FAULT=1 uv run pytest tests/test_dispatch_fault_injection_integration.py -q
+        env:
+          NATS_URL: nats://127.0.0.1:4222
+          DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
+
       # Executor end-to-end (story 1.6): real command off JetStream, real
       # script spawn, real registry rows + counters; story 1.8 adds the manual
       # invoke through the real API onto the same path. Needs both services,
