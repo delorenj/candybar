@@ -100,12 +100,27 @@ jobs:
           docker build -t candybar:ci .
           docker run --rm --entrypoint /app/.venv/bin/candybar candybar:ci --help >/dev/null
           docker run --rm --entrypoint node candybar:ci --version
+          # Story 4.2: a node-SDK candybar runs inside the image the way the
+          # executor spawns it (direct exec via shebang, AD-8 env in).
+          docker run --rm --entrypoint sh -v "$PWD/sdks/node:/sdk:ro" \
+            -e CANDYBAR_INVOCATION_ID=ci -e CANDYBAR_ID=ci -e CANDYBAR_TRIGGER=manual \
+            -e CANDYBAR_TICK_ID= -e CANDYBAR_RESULT_FILE=/tmp/result.json candybar:ci \
+            -c '/sdk/examples/hello-node/candybar.mjs && grep -q "\"status\":\"success\"" /tmp/result.json'
           # Story 4.1: SDK-authored python jobs import candybar_sdk from the image venv.
           docker run --rm --entrypoint python candybar:ci -c "import candybar_sdk"
 
       # CANDYBAR_REQUIRE_NODE: the node-SDK contract suite must run, never skip.
       - name: Unit tests
         run: CANDYBAR_REQUIRE_NODE=1 uv run pytest -q
+
+      # Story 3.1: real cgroup v2 canaries — a 64 MiB allocation must report a
+      # memory.peak inside the asserted band and a one-core busy loop a CPU
+      # load near 1.0. Root creates a cgroup under the runner hierarchy.
+      - name: Cgroup metering canaries (real cgroup v2, as root)
+        run: |
+          sudo mkdir -p /sys/fs/cgroup/candybar-ci
+          sudo env PYTHONDONTWRITEBYTECODE=1 CANDYBAR_TEST_CGROUP_ROOT=/sys/fs/cgroup/candybar-ci \
+            .venv/bin/python -m pytest -p no:cacheprovider -q -rs tests/test_cgroup_metering_integration.py
 
       # Story 1.7: the documented per-candybar PromQL (success/fail rate,
       # failure ratio, runtime) evaluated by promtool, pinned to the live
@@ -173,10 +188,12 @@ jobs:
       # above has already created the BLOODBANK_* streams the roles attach.
       - name: Container boot smoke (image vs CI services)
         run: |
+          # Privileged + private cgroupns, as deploy/compose.yml: the
+          # entrypoint must delegate the per-invocation scope tree (3.1).
           docker run -d --name candybar-ci --network host \
+            --privileged --cgroupns=private \
             -e NATS_URL=nats://127.0.0.1:4222 \
             -e DATABASE_URL=postgresql://candybar:candybar@127.0.0.1:5432/candybar_test \
-            -e CANDYBAR_CGROUP_ROOT= \
             candybar:ci
           healthy=0
           for i in $(seq 1 45); do
@@ -188,6 +205,8 @@ jobs:
             echo "container never became healthy" >&2
             exit 1
           fi
+          docker exec candybar-ci cat /sys/fs/cgroup/candybar/cgroup.subtree_control | tee /dev/stderr | grep -q memory
+          docker exec candybar-ci sh -c 'grep -q "^Uid:[[:space:]]*10001" /proc/1/status'
           START=$(date +%s%N); docker stop candybar-ci >/dev/null; END=$(date +%s%N)
           ELAPSED_MS=$(( (END - START) / 1000000 ))
           echo "docker stop took ${ELAPSED_MS}ms"

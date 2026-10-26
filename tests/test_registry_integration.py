@@ -221,6 +221,8 @@ def test_invocations_and_skips_shape(migrated_db: str) -> None:
             "runtime_ms",
             "stderr_tail",
             "token_spend",
+            "memory_peak_bytes",
+            "cpu_load",
             "started_at",
             "finished_at",
         } <= inv_cols
@@ -242,3 +244,61 @@ def test_invocations_and_skips_shape(migrated_db: str) -> None:
                     "'00000000-0000-7000-8000-000000000001', 'bogus', 'k1', now(), now())"
                 )
             )
+
+
+def test_resource_metering_round_trip_and_constraints(migrated_db: str) -> None:
+    """Story 3.1: measures persist through record_terminal_invocation (migration 0002)."""
+    import asyncio
+    from datetime import UTC, datetime
+
+    from candybar.registry import TerminalInvocation, record_terminal_invocation
+    from candybar.registry.models import Invocation
+
+    async def scenario() -> tuple[int, float, int, float]:
+        engine = create_registry_engine(migrated_db)
+        try:
+            async with session_scope(engine) as session:
+                row = await insert_candybar(
+                    session,
+                    CandybarManifest(
+                        name="metered", description="", tags=[], schedule="* * * * *",
+                        entrypoint="/bin/true",
+                    ),
+                )
+            now = datetime.now(UTC)
+            measured, legacy = uuid7(), uuid7()
+            async with session_scope(engine) as session:
+                await record_terminal_invocation(
+                    session,
+                    TerminalInvocation(
+                        invocation_id=measured, candybar_id=row.id, trigger="manual",
+                        tick_id=None, idempotency_key=f"candybar:{row.id}:manual:m",
+                        result="success", exit_code=0, runtime_ms=800, error_message=None,
+                        stderr_tail=None, token_spend=0, cost_usd=None, started_at=now,
+                        finished_at=now, memory_peak_bytes=64 * 1024 * 1024, cpu_load=0.9738,
+                    ),
+                )
+                await record_terminal_invocation(  # pre-3.1 caller: defaults
+                    session,
+                    TerminalInvocation(
+                        invocation_id=legacy, candybar_id=row.id, trigger="manual",
+                        tick_id=None, idempotency_key=f"candybar:{row.id}:manual:l",
+                        result="fail", exit_code=1, runtime_ms=5, error_message="x",
+                        stderr_tail=None, token_spend=0, cost_usd=None, started_at=now,
+                        finished_at=now,
+                    ),
+                )
+            async with session_scope(engine) as session:
+                m = await session.get(Invocation, measured)
+                lg = await session.get(Invocation, legacy)
+                assert m is not None and lg is not None
+                return m.memory_peak_bytes, m.cpu_load, lg.memory_peak_bytes, lg.cpu_load
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(scenario()) == (64 * 1024 * 1024, 0.9738, 0, 0.0)
+    with (
+        create_engine(migrated_db).connect() as conn,
+        pytest.raises(Exception, match="invocations_metering_nonnegative"),
+    ):
+        conn.execute(text("UPDATE invocations SET cpu_load = -1"))

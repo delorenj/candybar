@@ -150,11 +150,23 @@ class CandybarInvokedData(InvocationIdentity):
     pass
 
 
-class InvocationMetrics(BaseModel):
+class SelfReportedMetrics(BaseModel):
+    """What a candybar may report about itself in its AD-8 result file."""
+
     model_config = ConfigDict(extra="forbid")
 
     token_spend: int = Field(default=0, ge=0)
     cost_usd: float | None = Field(default=None, ge=0)
+
+
+class InvocationMetrics(SelfReportedMetrics):
+    """The per-invocation record on completed/failed events (AD-9).
+
+    Adds the executor-measured cgroup values (Story 3.1); 0 when unmeasured.
+    """
+
+    memory_peak_bytes: int = Field(default=0, ge=0)
+    cpu_load: float = Field(default=0.0, ge=0)
 
 
 class CandybarCompletedData(InvocationIdentity):
@@ -177,6 +189,7 @@ class CandybarFailedData(InvocationIdentity):
     exit_code: int | None
     runtime_ms: int | None = Field(default=None, ge=0)
     error: FailureDetail
+    metrics: InvocationMetrics = Field(default_factory=InvocationMetrics)
 
 
 class CandybarSkippedData(BaseModel):

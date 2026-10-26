@@ -204,6 +204,7 @@ def build_candybar_failed(
     runtime_ms: int | None = None,
     message: str | None = None,
     stderr: str = "",
+    metrics: InvocationMetrics | None = None,
     correlationid: UUID | None = None,
     causationid: UUID | None = None,
     event_id: UUID | None = None,
@@ -232,6 +233,7 @@ def build_candybar_failed(
             exit_code=exit_code,
             runtime_ms=runtime_ms,
             error=detail,
+            metrics=metrics or InvocationMetrics(),
         ),
     )
 

@@ -160,6 +160,9 @@ class TerminalInvocation:
     cost_usd: Decimal | None
     started_at: datetime
     finished_at: datetime
+    # Executor-measured (Story 3.1); 0 when unmeasured.
+    memory_peak_bytes: int = 0
+    cpu_load: float = 0.0
 
 
 async def record_terminal_invocation(session: AsyncSession, record: TerminalInvocation) -> None:
@@ -183,6 +186,8 @@ async def record_terminal_invocation(session: AsyncSession, record: TerminalInvo
         stderr_tail=record.stderr_tail,
         token_spend=record.token_spend,
         cost_usd=record.cost_usd,
+        memory_peak_bytes=record.memory_peak_bytes,
+        cpu_load=record.cpu_load,
         started_at=record.started_at,
         finished_at=record.finished_at,
         created_at=now,

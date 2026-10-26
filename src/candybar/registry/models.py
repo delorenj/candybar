@@ -14,7 +14,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Text
+from sqlalchemy import BigInteger, DateTime, Double, ForeignKey, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -60,6 +60,9 @@ class Invocation(Base):
     stderr_tail: Mapped[str | None] = mapped_column(Text)
     token_spend: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     cost_usd: Mapped[Decimal | None] = mapped_column()
+    # Executor-measured from the cgroup scope (Story 3.1, migration 0002).
+    memory_peak_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    cpu_load: Mapped[float] = mapped_column(Double, nullable=False, default=0.0)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

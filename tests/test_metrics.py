@@ -26,8 +26,11 @@ from prometheus_client.openmetrics.parser import text_string_to_metric_families
 from candybar.api.app import create_app
 from candybar.executor import EXECUTOR_METRICS, ExecutorMetrics
 from candybar.executor.metrics import (
+    CPU_LOAD_METRIC,
     EXEMPLAR_LABEL,
     INVOCATIONS_METRIC,
+    MEMORY_METRIC,
+    MEMORY_PEAK_METRIC,
     RUNTIME_METRIC,
     SERIES_LABELS,
 )
@@ -134,7 +137,13 @@ def test_cardinality_guard_label_sets_are_exactly_candybar_id_and_result() -> No
             runtime_ms=i * 100,
         )
     families = [f for f in m.registry.collect() if f.name.startswith("candybar_")]
-    assert {f.name for f in families} == {INVOCATIONS_METRIC, RUNTIME_METRIC}
+    assert {f.name for f in families} == {
+        INVOCATIONS_METRIC,
+        RUNTIME_METRIC,
+        MEMORY_PEAK_METRIC,
+        MEMORY_METRIC,
+        CPU_LOAD_METRIC,
+    }
     samples = [s for f in families for s in f.samples]
     assert samples
     for sample in samples:

@@ -202,6 +202,8 @@ def test_command_to_terminal_row_end_to_end(tmp_path: Path, monkeypatch) -> None
                 assert row is not None
                 assert row.result == "success" and row.exit_code == 0
                 assert row.runtime_ms is not None and row.runtime_ms >= 0
+                # Unscoped in this test: measures persist as the spine's zero.
+                assert row.memory_peak_bytes == 0 and row.cpu_load == 0.0
                 candybar = await session.get(Candybar, ok_id)
                 assert candybar.total_invoked == 1 and candybar.total_successful == 1
 

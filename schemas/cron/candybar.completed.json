@@ -81,6 +81,16 @@
               "type": ["number", "null"],
               "minimum": 0,
               "description": "Self-reported cost; null when unmeasured."
+            },
+            "memory_peak_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Executor-measured peak memory (cgroup v2 memory.peak) of the invocation's scope, in bytes; 0 when unmeasured."
+            },
+            "cpu_load": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Executor-measured average CPU load: cgroup cpu.stat usage_usec delta / wall runtime (1.0 = one busy core); 0 when unmeasured."
             }
           },
           "required": ["token_spend", "cost_usd"]

@@ -77,3 +77,49 @@ tests:
         exp_samples:
           - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a"}'
             value: 487.5
+
+  # Story 3.1: memory hogs and CPU burners per candybar.
+  - interval: 1m
+    input_series:
+      # Gauge = the latest invocation's memory.peak. A spikes to 300 MiB once.
+      - series: 'candybar_invocation_memory_peak_bytes{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success"}'
+        values: '104857600 314572800 125829120 104857600 104857600 104857600 104857600 104857600 104857600 104857600 104857600'
+      - series: 'candybar_invocation_memory_peak_bytes{candybar_id="0199a1b2-0000-7000-8000-00000000000b",result="success"}'
+        values: '52428800x10'
+      # CPU-load histogram: A averages half a core, B two cores.
+      - series: 'candybar_invocation_cpu_load_ratio_sum{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success"}'
+        values: '0+0.5x10'
+      - series: 'candybar_invocation_cpu_load_ratio_count{candybar_id="0199a1b2-0000-7000-8000-00000000000a",result="success"}'
+        values: '0+1x10'
+      - series: 'candybar_invocation_cpu_load_ratio_sum{candybar_id="0199a1b2-0000-7000-8000-00000000000b",result="success"}'
+        values: '0+2x10'
+      - series: 'candybar_invocation_cpu_load_ratio_count{candybar_id="0199a1b2-0000-7000-8000-00000000000b",result="success"}'
+        values: '0+1x10'
+
+    promql_expr_test:
+      # Worst memory peak per candybar over the window (bytes).
+      - expr: max by (candybar_id) (max_over_time(candybar_invocation_memory_peak_bytes[10m]))
+        eval_time: 10m
+        exp_samples:
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a"}'
+            value: 314572800
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000b"}'
+            value: 52428800
+
+      # The single biggest memory hog.
+      - expr: topk(1, max by (candybar_id) (max_over_time(candybar_invocation_memory_peak_bytes[10m])))
+        eval_time: 10m
+        exp_samples:
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a"}'
+            value: 314572800
+
+      # Average CPU load (busy cores) per candybar.
+      - expr: |
+          sum by (candybar_id) (rate(candybar_invocation_cpu_load_ratio_sum[10m]))
+            / sum by (candybar_id) (rate(candybar_invocation_cpu_load_ratio_count[10m]))
+        eval_time: 10m
+        exp_samples:
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000a"}'
+            value: 0.5
+          - labels: '{candybar_id="0199a1b2-0000-7000-8000-00000000000b"}'
+            value: 2

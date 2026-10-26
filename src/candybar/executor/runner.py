@@ -9,8 +9,11 @@ after each timeout slice.
 cgroup scoping is best-effort by design: when the cgroupfs root is missing,
 read-only, or undelegated (dev boxes, CI, unprivileged containers), the run
 proceeds unscoped with a warning — execution must not fail on missing cgroup
-privilege. Set CANDYBAR_CGROUP_ROOT="" to disable scoping outright. Epic 3
-reads memory.peak/cpu.stat from the same scope path.
+privilege. Set CANDYBAR_CGROUP_ROOT="" to disable scoping outright.
+
+Story 3.1 meters the scope (metering.py): the cpu.stat baseline is taken right
+after the child joins it, memory.peak and the cpu.stat delta right after the
+child exits and before the scope is removed. Unscoped runs meter as zero.
 """
 
 from __future__ import annotations
@@ -33,7 +36,8 @@ from uuid import UUID
 from pydantic import BaseModel, ValidationError
 
 from ..events.builders import STDERR_TAIL_MAX
-from ..events.envelope import InvocationMetrics
+from ..events.envelope import SelfReportedMetrics
+from . import metering
 
 log = logging.getLogger(__name__)
 
@@ -44,11 +48,15 @@ WAIT_SLICE_SECONDS = 25.0
 
 
 class ResultFile(BaseModel):
-    """The AD-8 result JSON. Unknown keys are ignored (reader generosity)."""
+    """The AD-8 result JSON. Unknown keys are ignored (reader generosity).
+
+    `metrics` accepts only what a child may self-report (token_spend,
+    cost_usd); memory/CPU are executor-measured and never taken from it.
+    """
 
     status: Literal["success", "fail"]
     message: str | None = None
-    metrics: InvocationMetrics = InvocationMetrics()
+    metrics: SelfReportedMetrics = SelfReportedMetrics()
 
 
 @dataclass(frozen=True)
@@ -64,6 +72,9 @@ class RunOutcome:
     scoped: bool  # whether the child ran inside its cgroup v2 scope
     started_at: datetime
     finished_at: datetime
+    # Executor-measured from the cgroup scope (Story 3.1); 0 when unmeasured.
+    memory_peak_bytes: int = 0
+    cpu_load: float = 0.0
 
 
 @dataclass
@@ -125,7 +136,9 @@ def _enter_scope(root: str, invocation_id: UUID, pid: int) -> Path | None:
         return None
     scope = Path(root) / str(invocation_id)
     try:
-        scope.mkdir(parents=True, exist_ok=True)
+        scope.parent.mkdir(parents=True, exist_ok=True)
+        metering.enable_controllers(scope.parent)
+        scope.mkdir(exist_ok=True)
         (scope / "cgroup.procs").write_text(str(pid))
     except OSError as exc:
         log.warning("cgroup scope %s unavailable (%s); running unscoped", scope, exc)
@@ -210,6 +223,7 @@ async def run_invocation(
             )
 
         scope = _enter_scope(scope_root, invocation_id, proc.pid)
+        cpu_baseline = metering.read_cpu_usage_usec(scope)
         if registry is not None:
             registry.procs.add(proc)
         try:
@@ -220,6 +234,9 @@ async def run_invocation(
                 if not communicate.done() and on_wait is not None:
                     await on_wait()
             stdout, stderr = communicate.result()
+            # The child has exited; the scope (still present) holds its totals.
+            memory_peak = metering.read_memory_peak(scope)
+            cpu_used = metering.read_cpu_usage_usec(scope) - cpu_baseline
             if stdout:
                 log.debug("invocation %s stdout tail: %s", invocation_id, stdout[-200:])
         finally:
@@ -239,6 +256,8 @@ async def run_invocation(
             scoped=scope is not None,
             started_at=started_at,
             finished_at=datetime.now(UTC),
+            memory_peak_bytes=memory_peak,
+            cpu_load=metering.cpu_load(cpu_used, runtime_ms),
         )
     finally:
         _leave_scope(scope)

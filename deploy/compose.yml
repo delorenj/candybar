@@ -44,9 +44,15 @@ services:
       NATS_URL: "nats://nats:4222"
       CANDYBAR_API_HOST: "0.0.0.0"
       CANDYBAR_API_PORT: "8700"
-      # Docker is the process isolation; the container cannot write the
-      # host cgroupfs, and scoping adds nothing inside a cgroup of its own.
-      CANDYBAR_CGROUP_ROOT: ""
+      # Per-invocation cgroup v2 scopes (AD-7) are what the executor meters
+      # memory.peak / cpu.stat from (AD-9, Story 3.1). The entrypoint
+      # delegates /sys/fs/cgroup/candybar as root, then drops to uid 10001.
+      # Set CANDYBAR_CGROUP_ROOT: "" here to run invocations unscoped.
+    # A writable, private cgroupfs is what lets the entrypoint delegate the
+    # scope tree; Docker only mounts cgroupfs read-write for privileged
+    # containers. Single-tenant homelab: accepted.
+    privileged: true
+    cgroup: private
     extra_hosts:
       # Registry: host system Postgres (the `candybar` database).
       - "host.docker.internal:host-gateway"

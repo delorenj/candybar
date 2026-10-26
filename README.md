@@ -126,6 +126,22 @@ series per candybar.
 |---|---|---|
 | `candybar_invocations_total` | counter | invocations |
 | `candybar_invocation_runtime_milliseconds` | histogram (10ms–1h buckets) | wall ms |
+| `candybar_invocation_memory_peak_bytes` | gauge (latest invocation's peak) | bytes |
+| `candybar_invocation_memory_bytes` | histogram (1 MiB–32 GiB buckets) | bytes |
+| `candybar_invocation_cpu_load_ratio` | histogram (0.01–32 buckets) | busy cores |
+
+Memory and CPU are measured by the executor from each invocation's cgroup v2
+scope (Story 3.1): memory is `memory.peak`, and CPU load is the `cpu.stat`
+`usage_usec` delta divided by wall runtime, so 1.0 means one core was busy the
+whole run. An unscoped run, or a host without the memory controller delegated,
+reports 0. The same values are stored on the `invocations` row
+(`memory_peak_bytes`, `cpu_load`) and carried in the `completed`/`failed` event
+`data.metrics`.
+
+OpenMetrics allows exemplars only on counters and histogram buckets. The
+memory gauge therefore carries no exemplar; its histogram twin does. The CPU
+load family is a histogram for the same reason: it gives the same `_sum`/`_count`
+a summary would, and can also carry the exemplar.
 
 Exemplars are only emitted in the OpenMetrics format, which the endpoint
 negotiates from the `Accept` header. Prometheus 3.x asks for it by default, but
@@ -139,6 +155,11 @@ sum by (candybar_id) (rate(candybar_invocations_total{result="fail"}[5m]))
   / sum by (candybar_id) (rate(candybar_invocations_total[5m]))
 # p95 runtime per candybar (ms)
 histogram_quantile(0.95, sum by (candybar_id, le) (rate(candybar_invocation_runtime_milliseconds_bucket[5m])))
+# memory hogs: worst peak per candybar over a day (bytes)
+topk(5, max by (candybar_id) (max_over_time(candybar_invocation_memory_peak_bytes[1d])))
+# CPU burners: average busy cores per candybar
+sum by (candybar_id) (rate(candybar_invocation_cpu_load_ratio_sum[1h]))
+  / sum by (candybar_id) (rate(candybar_invocation_cpu_load_ratio_count[1h]))
 ```
 
 These queries are unit-tested by promtool in CI
@@ -169,8 +190,13 @@ curl -s https://candybar.delo.sh/metrics | head   # Prometheus series
 - Registered entrypoints execute **inside** the container; put job scripts in
   `~/candybar/jobs` (bind-mounted at the same absolute path in the container,
   override with `CANDYBAR_JOBS_DIR`) and register them by that path.
-- cgroup scoping is disabled in the container (`CANDYBAR_CGROUP_ROOT=""`) —
-  the container itself is the isolation boundary.
+- Each invocation runs in its own cgroup v2 scope inside the container, which
+  is what memory/CPU metering reads. The container runs `privileged` with a
+  private cgroup namespace. As root, the entrypoint moves itself into
+  `/sys/fs/cgroup/daemon`, delegates `+memory +cpu` to
+  `/sys/fs/cgroup/candybar`, and then drops to uid 10001 with `setpriv`.
+  Without a writable cgroupfs it logs the fact and runs invocations unscoped,
+  with memory and CPU reported as 0. `CANDYBAR_CGROUP_ROOT=""` turns scoping off.
 - `docker stop` completes in ~1s when idle: both pull-consumer roles
   unsubscribe before draining. Restart/rejoin duplicates nothing —
   idempotency keys plus durable consumers make redelivery a republish from

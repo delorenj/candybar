@@ -31,6 +31,7 @@ from ..events.envelope import (
     CandybarInvokeCommand,
     Envelope,
     InvocationMetrics,
+    SelfReportedMetrics,
 )
 from ..registry.models import Invocation
 from ..registry.store import TerminalInvocation
@@ -53,7 +54,7 @@ class Resolved:
 
     success: bool
     message: str | None
-    metrics: InvocationMetrics
+    metrics: SelfReportedMetrics  # what the child reported; measures live on RunOutcome
 
 
 def _cap(message: str | None) -> str | None:
@@ -88,13 +89,20 @@ def resolve_outcome(outcome: RunOutcome, *, stopped: bool = False) -> Resolved:
     )
 
 
-def _metrics(outcome: RunOutcome) -> InvocationMetrics:
-    return outcome.result.metrics if outcome.result is not None else InvocationMetrics()
+def _metrics(outcome: RunOutcome) -> SelfReportedMetrics:
+    return outcome.result.metrics if outcome.result is not None else SelfReportedMetrics()
 
 
 def terminal_event_for(cmd: CandybarInvokeCommand, rec: TerminalInvocation) -> Envelope:
     """The completed/failed fact with its deterministic, republication-safe id."""
     event_id = lifecycle_event_id(rec.result, rec.invocation_id)
+    # The full per-invocation record rides on BOTH terminal facts (AD-9).
+    metrics = InvocationMetrics(
+        token_spend=rec.token_spend,
+        cost_usd=float(rec.cost_usd) if rec.cost_usd is not None else None,
+        memory_peak_bytes=rec.memory_peak_bytes,
+        cpu_load=rec.cpu_load,
+    )
     common = {
         "candybar_id": rec.candybar_id,
         "name": cmd.data.name,
@@ -110,10 +118,7 @@ def terminal_event_for(cmd: CandybarInvokeCommand, rec: TerminalInvocation) -> E
             **common,  # type: ignore[arg-type]
             exit_code=rec.exit_code if rec.exit_code is not None else 0,
             runtime_ms=rec.runtime_ms if rec.runtime_ms is not None else 0,
-            metrics=InvocationMetrics(
-                token_spend=rec.token_spend,
-                cost_usd=float(rec.cost_usd) if rec.cost_usd is not None else None,
-            ),
+            metrics=metrics,
         )
     return build_candybar_failed(
         **common,  # type: ignore[arg-type]
@@ -121,6 +126,7 @@ def terminal_event_for(cmd: CandybarInvokeCommand, rec: TerminalInvocation) -> E
         runtime_ms=rec.runtime_ms,
         message=rec.error_message,
         stderr=rec.stderr_tail or "",
+        metrics=metrics,
     )
 
 
@@ -141,6 +147,8 @@ def record_from_row(row: Invocation) -> TerminalInvocation:
         cost_usd=row.cost_usd,
         started_at=row.started_at,
         finished_at=row.finished_at or row.created_at,
+        memory_peak_bytes=row.memory_peak_bytes or 0,
+        cpu_load=row.cpu_load or 0.0,
     )
 
 
@@ -175,6 +183,8 @@ class Executor:
                 result=rec.result,
                 invocation_id=rec.invocation_id,
                 runtime_ms=rec.runtime_ms or 0,
+                memory_peak_bytes=rec.memory_peak_bytes,
+                cpu_load=rec.cpu_load,
             )
         except Exception:
             log.exception("metric recording failed for invocation %s", rec.invocation_id)
@@ -276,6 +286,8 @@ class Executor:
             cost_usd=resolved.metrics.cost_usd,
             started_at=outcome.started_at,
             finished_at=outcome.finished_at,
+            memory_peak_bytes=outcome.memory_peak_bytes,
+            cpu_load=outcome.cpu_load,
         )
         try:
             inserted = await self._record(rec)

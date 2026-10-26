@@ -55,7 +55,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
     CANDYBAR_API_HOST=0.0.0.0 \
     CANDYBAR_API_PORT=8700
 
-USER candybar
+# No USER: the entrypoint starts as root ONLY to delegate the per-invocation
+# cgroup v2 tree (Story 3.1, AD-7 — needs `privileged: true` in compose), then
+# drops to uid 10001 with setpriv before migrating and serving.
 EXPOSE 8700
 
 # Migrate-then-serve: the daemon is the registry's sole writer (AD-10), so
