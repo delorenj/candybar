@@ -984,6 +984,10 @@ jobs:
     action: cutover
     outcome: registered-disabled
     detail: registered candybar aperture-lane-beat (01a1793b-7e99-7b33-b53e-514014a99922) enabled=false
+  - at: '2026-10-26T17:21:50.284331Z'
+    action: cutover
+    outcome: pinned-external
+    detail: '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler external'
 - id: hermes:delodocs-pm:fc39bd8b33c8
   wave: '7.17'
   candybar:
@@ -1018,7 +1022,7 @@ jobs:
   rollback:
   - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler internal'
   status: planned
-  candybar_id: null
+  candybar_id: 01a1793b-951c-7dbb-8aff-0abcb26bdf90
   cutover_at: null
   verification:
     invocation_id: null
@@ -1030,6 +1034,14 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for hermes
+  - at: '2026-10-26T17:21:50.359455Z'
+    action: cutover
+    outcome: registered-disabled
+    detail: registered candybar delodocs-triage-second-pass (01a1793b-951c-7dbb-8aff-0abcb26bdf90) enabled=false
+  - at: '2026-10-26T17:22:10.035129Z'
+    action: cutover
+    outcome: pinned-external
+    detail: '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler external'
 - id: hermes:dumply:8aecd027dbd0
   wave: '7.17'
   candybar:
@@ -1064,7 +1076,7 @@ jobs:
   rollback:
   - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler internal'
   status: planned
-  candybar_id: null
+  candybar_id: 01a1793b-e235-7efd-8719-d316aba335b4
   cutover_at: null
   verification:
     invocation_id: null
@@ -1076,6 +1088,14 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for hermes
+  - at: '2026-10-26T17:22:10.096938Z'
+    action: cutover
+    outcome: registered-disabled
+    detail: registered candybar dumply-daily-story (01a1793b-e235-7efd-8719-d316aba335b4) enabled=false
+  - at: '2026-10-26T17:22:15.742822Z'
+    action: cutover
+    outcome: pinned-external
+    detail: '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler external'
 - id: hermes:peter-griffin:b240575fae0c
   wave: '7.17'
   candybar:
@@ -1110,7 +1130,7 @@ jobs:
   rollback:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler internal'
   status: planned
-  candybar_id: null
+  candybar_id: 01a1793b-f875-73c7-b1cd-4df0d7f28cbd
   cutover_at: null
   verification:
     invocation_id: null
@@ -1122,6 +1142,14 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for hermes
+  - at: '2026-10-26T17:22:15.794411Z'
+    action: cutover
+    outcome: registered-disabled
+    detail: registered candybar token-usage-report (01a1793b-f875-73c7-b1cd-4df0d7f28cbd) enabled=false
+  - at: '2026-10-26T17:22:20.529011Z'
+    action: cutover
+    outcome: pinned-external
+    detail: '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler external'
 - id: hermes:peter-griffin:3684c5aa8eac
   wave: '7.17'
   candybar:
@@ -1156,7 +1184,7 @@ jobs:
   rollback:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler internal'
   status: planned
-  candybar_id: null
+  candybar_id: 01a1793c-0b29-7ef2-ac1d-aa1bc158ce1c
   cutover_at: null
   verification:
     invocation_id: null
@@ -1168,3 +1196,11 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for hermes
+  - at: '2026-10-26T17:22:20.581352Z'
+    action: cutover
+    outcome: registered-disabled
+    detail: registered candybar token-optimization (01a1793c-0b29-7ef2-ac1d-aa1bc158ce1c) enabled=false
+  - at: '2026-10-26T17:22:23.770883Z'
+    action: cutover
+    outcome: pinned-external
+    detail: '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler external'
