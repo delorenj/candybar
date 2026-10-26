@@ -328,6 +328,8 @@ def test_patch_bad_body_is_422_no_event(rig: Rig, patch: dict[str, Any]) -> None
         {"tags": [""]},
         {"entrypoint": ""},
         {"entrypoint": "/nonexistent/run.sh"},
+        # Relative: refused even though it exists from pytest's CWD (repo root).
+        {"entrypoint": "pyproject.toml"},
     ],
 )
 def test_patch_invalid_merged_definition_is_422_no_event(

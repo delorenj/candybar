@@ -199,6 +199,27 @@ def test_register_nonexistent_entrypoint_422_no_row_no_event(rig: Any) -> None:
     assert rig.rows == [] and rig.sink.published == []
 
 
+def test_register_relative_entrypoint_422_even_when_it_exists_from_cwd(
+    rig: Any, tmp_path: Any, monkeypatch: Any
+) -> None:
+    """A relative entrypoint has no manifest dir to resolve against on the API.
+
+    It must be refused even when it happens to exist relative to the api
+    process's CWD: the executor would exec it from the entrypoint's own
+    parent dir (or via PATH), i.e. a different file or none at all.
+    """
+    script = tmp_path / "jobs" / "run.sh"
+    script.parent.mkdir()
+    script.write_text("#!/bin/sh\nexit 0\n")
+    monkeypatch.chdir(tmp_path)
+    for relative in ("jobs/run.sh", "./jobs/run.sh"):
+        resp = rig.client().post("/candybars", json={**VALID_BODY, "entrypoint": relative})
+        assert resp.status_code == 422, relative
+        assert resp.headers["content-type"] == "application/problem+json"
+        assert "absolute" in resp.json()["detail"]
+    assert rig.rows == [] and rig.sink.published == []
+
+
 def test_register_empty_entrypoint_422(rig: Any) -> None:
     resp = rig.client().post("/candybars", json={**VALID_BODY, "entrypoint": ""})
     assert resp.status_code == 422

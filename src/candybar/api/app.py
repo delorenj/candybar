@@ -146,8 +146,9 @@ class RegisterRequest(BaseModel):
     noise: bool = False
 
     def to_manifest(self) -> CandybarManifest:
-        # Reuses the manifest validators (slug name, 5-field cron); entrypoint
-        # existence is a CLI-side check — the API stores the resolved path.
+        # Reuses the manifest validators (slug name, 5-field cron); the
+        # route then requires an absolute, existing entrypoint
+        # (`entrypoint_problem`) — the CLI resolves relative paths first.
         return CandybarManifest.model_validate(self.model_dump())
 
 
@@ -218,6 +219,31 @@ def problem(status: int, title: str, detail: str) -> JSONResponse:
             "detail": detail,
         },
     )
+
+
+def entrypoint_problem(entrypoint: str) -> JSONResponse | None:
+    """422 unless `entrypoint` is an ABSOLUTE path to an existing file, else None.
+
+    The API has no manifest directory to resolve a relative path against
+    (the CLI resolves before sending). A relative path would be checked
+    against the api process's CWD here, then exec'd by the executor from the
+    entrypoint's own parent directory (or looked up on PATH when it has no
+    slash) — a different file, or none: a candybar that can never run.
+    """
+    path = Path(entrypoint)
+    if not path.is_absolute():
+        return problem(
+            422,
+            "Invalid candybar definition",
+            f"entrypoint must be an absolute path: {entrypoint!r}",
+        )
+    if not path.is_file():
+        return problem(
+            422,
+            "Invalid candybar definition",
+            f"entrypoint is not an existing file: {entrypoint!r}",
+        )
+    return None
 
 
 def candybar_detail_json(row: Any) -> dict[str, Any]:
@@ -321,12 +347,9 @@ def create_app(
             # pydantic wraps the field validators; keep the message readable.
             return problem(422, "Invalid candybar definition", str(exc)[:500])
 
-        if not Path(manifest.entrypoint).is_file():
-            return problem(
-                422,
-                "Invalid candybar definition",
-                f"entrypoint is not an existing file: {manifest.entrypoint!r}",
-            )
+        invalid_entrypoint = entrypoint_problem(manifest.entrypoint)
+        if invalid_entrypoint is not None:
+            return invalid_entrypoint
 
         try:
             async with session_factory() as session:
@@ -406,12 +429,10 @@ def create_app(
                     # Nothing differs from the stored row: no fact, no write.
                     return JSONResponse(content=candybar_detail_json(row))
 
-                if "entrypoint" in changes and not Path(merged.entrypoint).is_file():
-                    return problem(
-                        422,
-                        "Invalid candybar definition",
-                        f"entrypoint is not an existing file: {merged.entrypoint!r}",
-                    )
+                if "entrypoint" in changes:
+                    invalid_entrypoint = entrypoint_problem(merged.entrypoint)
+                    if invalid_entrypoint is not None:
+                        return invalid_entrypoint
                 if "name" in changes and await name_taken(session, merged.name):
                     return problem(
                         409, "Candybar name already registered", f"name {merged.name!r} is taken"
