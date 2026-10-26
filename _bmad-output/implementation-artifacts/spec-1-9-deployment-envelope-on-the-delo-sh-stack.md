@@ -2,7 +2,7 @@
 title: 'Deployment envelope on the delo.sh stack'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-review'
+status: 'done'
 baseline_commit: '5a8fdc4080da6b743d56298bb6830069b87997ea'
 route: 'dispatch'
 review_loop_iteration: 0
