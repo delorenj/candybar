@@ -3029,13 +3029,13 @@ jobs:
   rollback:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 9b5dadbd1e4d --scheduler internal'
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron resume 9b5dadbd1e4d'
-  status: cutover
+  status: verified
   candybar_id: 01a17950-506c-7218-bff4-c102e75c2c7e
   cutover_at: '2026-10-26T17:47:20.938641Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 0aa5d24a-2ca8-578e-baeb-c96c9592adc5
+    result: success
+    at: '2026-10-26T17:50:00.514308Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:40:26.870942Z'
@@ -3062,6 +3062,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17950-506c-7218-bff4-c102e75c2c7e enabled; first fire 2026-10-26T17:50:00Z
+  - at: '2026-10-26T17:50:29.073175Z'
+    action: verify
+    outcome: ok
+    detail: invocation 0aa5d24a-2ca8-578e-baeb-c96c9592adc5 (scheduled) success exit=0 runtime=290ms memory=16482304B cpu=0.659
 - id: systemd:ipm-metrics.timer
   wave: '7.14'
   candybar:
