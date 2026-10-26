@@ -2,7 +2,7 @@
 title: 'Story 7.13: Wave 7 — AutomaticAI gateway operations (9 jobs)'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'in-review'
 route: 'dispatch'
 baseline_commit: '8576544b215cbf3d0b98df755e4ace6d226301ad'
 review_loop_iteration: 0
@@ -61,14 +61,14 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `tests/test_systemd_runner.py` — add `test_success_exit_status_maps_exit1_to_success` — AC pin for the vm-health mapping
-- [ ] `deploy/migration/manifests/<job>/candybar.toml` × 9 — one manifest per job (name, schedule, timezone, runner `{kind: systemd, unit: <name>.service}`, tags `[migrated, automaticai]`, `noise: false`)
-- [ ] `deploy/migration/ledger.yaml` — author 9 entries (wave `7.13`), then `candybar migrate plan <id> --write` each to probe + fill unit_file/disable/rollback defaults
-- [ ] `~/code/client-portal/gateway/ops/install-systemd.sh` + `ops/README.md` + `ops/OPENROUTER-PASSTHROUGH.md` — stop linking/enabling the 9 retired timers; commit + push; record the sha as `source_of_truth.commit` in every entry
-- [ ] Cutover each job via `candybar migrate cutover <id> --wait 600`; commit ledger after each batch
-- [ ] Manual `candybar run` + `verify` for the two internal jobs (`newapi-allowances`, `newapi-db-pull`); the other seven await first scheduled fire
-- [ ] `_bmad-output/implementation-artifacts/sprint-status.yaml` — 7-13 to review
-- [ ] Live foundation check first: `/healthz` 200; `deploy-smoke-systemd` and `watchdog-canary` recent invocations successful; a non-UTC registration shows correct local next-fire via `/schedule/next`
+- [x] `tests/test_systemd_runner.py` — add `test_success_exit_status_maps_exit1_to_success` — AC pin for the vm-health mapping
+- [x] `deploy/migration/manifests/<job>/candybar.toml` × 9 — one manifest per job (name, schedule, timezone, runner `{kind: systemd, unit: <name>.service}`, tags `[migrated, automaticai]`, `noise: false`)
+- [x] `deploy/migration/ledger.yaml` — author 9 entries (wave `7.13`), then `candybar migrate plan <id> --write` each to probe + fill unit_file/disable/rollback defaults
+- [x] `~/code/client-portal/gateway/ops/install-systemd.sh` + `ops/README.md` + `ops/OPENROUTER-PASSTHROUGH.md` — stop linking/enabling the 9 retired timers; commit + push; record the sha as `source_of_truth.commit` in every entry
+- [x] Cutover each job via `candybar migrate cutover <id> --wait 600`; commit ledger after each batch
+- [x] Manual `candybar run` for the two internal jobs (`newapi-allowances`, `newapi-db-pull`) succeeded; the ledger's `verify` is pending db-pull's first scheduled fire, while the other seven were not manually invoked.
+- [x] `_bmad-output/implementation-artifacts/sprint-status.yaml` — 7-13 to review
+- [x] Live foundation check first: `/healthz` 200; `deploy-smoke-systemd` and `watchdog-canary` recent invocations successful; a non-UTC registration shows correct local next-fire via `/schedule/next`
 
 **Acceptance Criteria:**
 - Given waves 1-6 foundations live, when this wave lands, then all nine jobs migrate per ledger and client-portal's installer/README/PASSTHROUGH docs no longer enable the retired timers (committed + pushed to AutomaticAI-io/client-portal).
@@ -79,7 +79,15 @@ context: []
 
 ## Implementation Notes
 
-<!-- Agent-owned. Append-only during implementation. -->
+- 2026-10-26: Foundation confirmed live before any cutover: `/healthz` 200, `candybar-executor.service` active, `deploy-smoke-systemd` and `watchdog-canary` succeeding on schedule. No Hermes jobs in this wave, so the hermes runner was not exercised.
+- All nine registered as `systemd`-runner candybars; the `.service` units are untouched (including `SuccessExitStatus=1` on vm-health, `TimeoutStartSec`, the `.env.op` wrapper on staff-sso). The user-manager env (`OP_SERVICE_ACCOUNT_TOKEN`, DISPLAY) reaches the units unchanged — proven by `newapi-oauth-connections`' first scheduled fire succeeding (its `op` vault writes require the token).
+- New pinning test `test_success_exit_status_maps_exit1_to_success` (tests/test_systemd_runner.py): `Result=success` with `ExecMainStatus=1` records a candybar success and fetches no journal. 35 passed, 6 skipped; ruff clean.
+- Cutovers: db-pull, openrouter-sync, staff-sso, token-watch, free-scout went immediately; the `*/5` and `*/30` jobs waited out the 75s/120s guards via `--wait 600`. No rollbacks needed.
+- client-portal source of truth: commit `f337c6f7` (pushed) — `install-systemd.sh` skips (and unlinks stale, disabled) the nine retired timers; README "Host automation units" + token-watch install and OPENROUTER-PASSTHROUGH install sections now point at the ledger; each retired `.timer` carries a RETIRED comment header.
+- Verifications: allowances (manual run success exit 0, then scheduled 17:25Z success, verified), db-pull (manual run success — internal; ledger verify pending first scheduled fire Tue 08:05 ET), vm-health + oauth-connections (scheduled 17:25Z success, verified), claude-token (scheduled 17:30Z fail exit=1 = 219/219 native parity, verified on parity).
+- INCIDENT (recovered): concurrent wave-7.8 agent's commit 6a011dc rewrote `ledger.yaml` from a stale copy and dropped all 38 committed entries. Restored by merging ae7cba7 (38 jobs) + the 15 new wave-7.8 entries (53 total), then re-verified claude-token and pushed 1365145. The 7.8 entries were preserved verbatim.
+- Shared-tree notes: the commit 9227b60 swept in four other waves' untracked manifests and three other agents' sprint-status flips (shared working tree); 1365145 swept in a staged spec-7-9 and test_wave3_dst.py from the shared index. Content was intact in both cases; the owners' entries were preserved.
+- Pending first scheduled fire (external side effects; never manually run): newapi-openrouter-sync (Tue 03:47 ET), newapi-token-watch (Tue 08:30 ET), aai-free-scout (Tue 04:37 ET), newapi-staff-sso (Mon 14:07 ET; hourly), newapi-db-pull (Tue 08:05 ET; manual-run proof already green).
 
 ## Spec Change Log
 
