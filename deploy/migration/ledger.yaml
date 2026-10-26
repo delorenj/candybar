@@ -2594,13 +2594,13 @@ jobs:
   - systemctl --user disable --now hermes-single-install-guard.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/hermes-single-install-guard.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794a-6458-74f6-8a3a-9520331b09a9
   cutover_at: '2026-10-26T17:38:01.457890Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 6dfcb340-9451-528c-9e20-5b4b693bd9f8
+    result: success
+    at: '2026-10-26T17:45:01.206542Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:30:37.014264Z'
@@ -2611,6 +2611,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794a-6458-74f6-8a3a-9520331b09a9 enabled; first fire 2026-10-26T17:45:00Z
+  - at: '2026-10-26T17:45:08.558032Z'
+    action: verify
+    outcome: ok
+    detail: invocation 6dfcb340-9451-528c-9e20-5b4b693bd9f8 (scheduled) success exit=0 runtime=1007ms memory=16678912B cpu=0.3585
 - id: systemd:skillex-hermes-resync
   wave: '7.8'
   candybar:
@@ -2695,13 +2699,13 @@ jobs:
   - systemctl --user disable --now naipkins-registry-snapshot.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/naipkins/systemd/user/naipkins-registry-snapshot.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17947-e1db-7c60-b307-8d663fca0ed3
   cutover_at: '2026-10-26T17:35:16.957420Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 1146c109-c204-5495-b7e1-6fadc1599412
+    result: success
+    at: '2026-10-26T17:45:00.706109Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:30:37.055999Z'
@@ -2712,6 +2716,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17947-e1db-7c60-b307-8d663fca0ed3 enabled; first fire 2026-10-26T17:40:00Z
+  - at: '2026-10-26T17:45:07.915458Z'
+    action: verify
+    outcome: ok
+    detail: invocation 1146c109-c204-5495-b7e1-6fadc1599412 (scheduled) success exit=0 runtime=531ms memory=20385792B cpu=0.1465
 - id: systemd:delonet-n8n-workflows-sync.timer
   wave: '7.8'
   candybar:
@@ -2745,13 +2753,13 @@ jobs:
   - systemctl --user disable --now delonet-n8n-workflows-sync.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/delonet-n8n-workflows/systemd/delonet-n8n-workflows-sync.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17948-25e8-7bd3-934b-24a81c94ba43
   cutover_at: '2026-10-26T17:35:34.397979Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 8db145e7-efca-5ff9-8eb4-f1b7d4d8d734
+    result: success
+    at: '2026-10-26T17:45:00.704201Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:30:37.076650Z'
@@ -2762,6 +2770,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17948-25e8-7bd3-934b-24a81c94ba43 enabled; first fire 2026-10-26T17:45:00Z
+  - at: '2026-10-26T17:45:09.139849Z'
+    action: verify
+    outcome: ok
+    detail: invocation 8db145e7-efca-5ff9-8eb4-f1b7d4d8d734 (scheduled) success exit=0 runtime=548ms memory=14757888B cpu=0.1276
 - id: hermes:33god-pm:8da3f24263f9
   wave: '7.15'
   candybar:
