@@ -1,0 +1,14 @@
+# Migrated from systemd:dev-journal-reconcile.timer (wave 7.15). PRE-EXISTING
+# FAILURE: the job exits 3 (EXIT_UNMET) on invalid legacy dates — the ledger
+# entry carries native_failing: true and verifies on result parity.
+[candybar]
+name = "dev-journal-reconcile"
+description = "Hourly replay of unacknowledged Dev Journal completion events from the durable outbox to Bloodbank (was dev-journal-reconcile.timer)"
+tags = ["migrated", "dev-journal", "wave-7-15"]
+schedule = "0 * * * *"
+timezone = "America/New_York"
+noise = true
+
+[candybar.runner]
+kind = "systemd"
+unit = "dev-journal-reconcile.service"

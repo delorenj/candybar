@@ -1,0 +1,14 @@
+# Migrated from systemd:sync-daily-reports-to-s3 (wave 7.15). Only the .timer
+# retires; the systemd runner starts the service (AD-18). Internal side effect
+# (idempotent `mc mirror --overwrite`); verified by one manual run plus its
+# first scheduled 06:30 fire.
+[candybar]
+name = "sync-daily-reports-to-s3"
+description = "Mirror the DeLoDocs Daily Reports folder to s3.delo.sh (delo/daily-reports) every morning (was sync-daily-reports-to-s3.timer)"
+tags = ["migrated", "dev-journal", "wave-7-15"]
+schedule = "30 6 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "sync-daily-reports-to-s3.service"

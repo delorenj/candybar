@@ -1,0 +1,19 @@
+# Migrated from hermes:33god-pm:9b5dadbd1e4d (wave 7.15). No-agent script job
+# (AD-19: exec runner). The script branches on the local hour/minute, so TZ is
+# pinned in env; its failure_deliver=telegram is reproduced by on_failure.
+# Runs the versioned source copy in ~/.agents (the profile scripts/ copy was
+# an unversioned install.sh duplicate).
+[candybar]
+name = "jev-rollup-cadence"
+description = "Jev-Clairic roll-up sidecar: tick bloodbank turn events into the inbox every 10 min, roll into the vault at minutes 0-9, compose DAY.md at 06:0x local (was hermes 33god-pm:9b5dadbd1e4d)"
+tags = ["migrated", "jev-clairic", "wave-7-15"]
+schedule = "*/10 * * * *"
+timezone = "America/New_York"
+noise = true
+
+[candybar.runner]
+kind = "exec"
+argv = ["/home/delorenj/.agents/tools/jev-clairic/hermes/jev-rollup-cadence.sh"]
+env = { TZ = "America/New_York" }
+timeout_s = 300
+on_failure = ["/bin/sh", "-c", "\"$HOME/.local/bin/hermes\" send --to telegram:7564050286 --subject \"[candybar] jev-rollup-cadence failed\" -- \"$CANDYBAR_FAILURE_MESSAGE\" || true"]

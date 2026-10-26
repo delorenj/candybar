@@ -1,0 +1,14 @@
+# Migrated from systemd:dev-journal-ensure-nightly.timer (wave 7.15). Only the
+# .timer retires; the service keeps every directive and the systemd runner
+# starts it with `systemctl --user start --wait` (AD-18). External side
+# effects (generates and distributes a missed journal): first fire is the proof.
+[candybar]
+name = "dev-journal-ensure-nightly"
+description = "Recover a missed nightly Dev Journal at 06:15 Eastern (was dev-journal-ensure-nightly.timer)"
+tags = ["migrated", "dev-journal", "wave-7-15"]
+schedule = "15 6 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "dev-journal-ensure-nightly.service"

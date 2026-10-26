@@ -1,0 +1,15 @@
+# Migrated from hermes:33god-pm:8da3f24263f9 (wave 7.15). The Hermes job was a
+# no-agent script job (wrapper exec'd the infra script); per AD-19 it runs
+# directly under the exec runner. External side effects (vault, S3, Slack):
+# never `candybar run` it to test — the first scheduled 06:00 fire is the proof.
+[candybar]
+name = "dev-journal-nightly"
+description = "Nightly Dev Journal for yesterday (America/New_York): reportctl run+verify, then distribute to the vault, S3 and Slack (was hermes 33god-pm:8da3f24263f9)"
+tags = ["migrated", "dev-journal", "wave-7-15"]
+schedule = "0 6 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "exec"
+argv = ["/home/delorenj/code/infra/scripts/dev-journal-hermes-nightly.sh"]
+timeout_s = 3600
