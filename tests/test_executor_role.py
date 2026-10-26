@@ -134,3 +134,45 @@ def test_stop_terminates_inflight_children(monkeypatch: Any) -> None:
     asyncio.run(asyncio.wait_for(role.run_executor(stop), timeout=10))
     assert captured["terminated_during_run"] is True
     assert captured["disposed"] and captured["drained"]
+
+
+def test_unsubscribe_failure_does_not_mask_drain(monkeypatch: Any) -> None:
+    """nats-py unsubscribe raises on a dead/draining connection; the role must
+    still drain (Story 1.9 review: an unsubscribe raise in the finally block
+    would otherwise turn a graceful stop into a role crash)."""
+    captured: dict[str, Any] = {}
+    stop = asyncio.Event()
+    FakeEngine, _connect, FakeSink, FakeExecutor = _fake_infra(captured, stop)
+
+    import nats.errors
+
+    class ExplodingSub:
+        async def fetch(self, *_args: Any, **_kwargs: Any) -> list[Any]:
+            stop.set()
+            return []
+
+        async def unsubscribe(self) -> None:
+            raise nats.errors.ConnectionClosedError
+
+    class FakeJSExploding:
+        async def pull_subscribe(self, *_args: Any, **kwargs: Any) -> Any:
+            captured.update(kwargs)
+            return ExplodingSub()
+
+    class FakeNCExploding:
+        def jetstream(self) -> Any:
+            return FakeJSExploding()
+
+        async def drain(self) -> None:
+            captured["drained"] = True
+
+    async def connect_exploding(*_args: Any, **_kwargs: Any) -> Any:
+        return FakeNCExploding()
+
+    monkeypatch.setattr(role, "connect_nats", connect_exploding)
+    monkeypatch.setattr(role, "nats_url", lambda: "nats://test.delo.sh:4222")
+    monkeypatch.setattr(role, "create_registry_engine", FakeEngine)
+    monkeypatch.setattr(role, "NatsEventSink", FakeSink)
+    monkeypatch.setattr(role, "Executor", FakeExecutor)
+    asyncio.run(role.run_executor(stop))
+    assert captured["drained"] is True

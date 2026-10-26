@@ -68,6 +68,9 @@ def test_gate_fails_loudly_without_ripgrep(tmp_path: Path) -> None:
         ("DATABASE_URL=postgresql://candybar:hunter2hunter2@db:5432/db\n", "dsn-password"),
         ('api_key: "abc123def456"\n', "keyword-secret"),
         ('KEY="' + PEM_MARKER + '"\n', "private-key"),
+        # A sanctioned ref on the same line must not whitewash a co-located
+        # plaintext secret (span-strip, not line-whitelist).
+        ("A=op://DeLoSecrets/x/y password=hunter2hunter2\n", "mixed-line-secret"),
     ],
 )
 def test_gate_rejects_planted_violations(tmp_path: Path, line: str, label: str) -> None:

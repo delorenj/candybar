@@ -2,7 +2,7 @@
 title: 'Deployment envelope on the delo.sh stack'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: '5a8fdc4080da6b743d56298bb6830069b87997ea'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -83,9 +83,33 @@ context:
 - Live smoke evidence: register + `candybar run` through https://candybar.delo.sh (202, invocation row `manual|success|0`); scheduled fire landed `scheduled|success|0` off tick:29883209/...210; `docker restart` mid-schedule produced exactly one row per tick (no duplication); Prometheus `candybar` target up, series + fail-zero present, `query_exemplars` returned 3 invocation ids.
 - Left running intentionally: the `deploy-smoke` candybar (every-minute, noise=true) is the continuous-operation proof; its script lives at ~/candybar/jobs/deploy-smoke.sh.
 
+
+- Review patches (step-04, all inline): unsubscribe-failure guard in both roles + test; healthcheck port env; Dockerfile two-phase dep caching; gate span-strip + root guard + mixed-line control; .dockerignore `**/` pycache globs; CI container boot smoke. Post-patch: 273 unit + 3 focused integration pass, ruff clean, gate clean, image rebuilt clean, container redeployed healthy with the new healthcheck.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+Deviation: no subagent-spawn capability in this session — the three layers ran
+inline (same as stories 1.1-1.8). Blind-hunter floor: kB=48.2, N=floor(sqrt(48.2)+1)=7.
+
+Blind-hunter layer:
+- low -> PATCHED: compose healthcheck hardcoded 127.0.0.1:8700 while the port is env-configurable; a CANDYBAR_API_PORT override would silently break it. Healthcheck now reads the env var.
+- low -> PATCHED: Dockerfile copied src/ before `uv sync`, busting the dependency layer on every source edit (no uv cache mount). Now two-phase: `--no-install-project` sync of locked deps, then src + project sync.
+- medium -> PATCHED: the gate's line-level op:// / ${} whitelist whitewashed a plaintext secret co-located on the same line. Now strips sanctioned SPANS and re-matches the remainder; mixed-line positive control added to the pytest matrix.
+- low -> PATCHED: .dockerignore `__pycache__`/`*.pyc` were root-relative — host 3.14 bytecode shipped inside the 3.13 image (verified in the built image). Now `**/__pycache__` / `**/*.pyc`; rebuilt image clean.
+- low -> REJECTED: mutable tag pins on base/tool images (uv:0.9.5, python:3.13-slim). Repo convention is tag pins throughout (nats 2.10.29 tarball, prom/prometheus:v3.5.0, postgres:17-alpine); digest-pinning one image makes the posture inconsistent, no named harm beyond the accepted convention.
+- low -> REJECTED: fast-stop integration test attaches production durable/stream names, so against a live bus it could race the deployed container for real invoke commands. Requires deliberately aiming the env-gated test at the live bus mid-invoke; a stolen command still executes + acks through the identical code path (same rows/events); parameterizing stream names would add public surface for a test-only concern.
+- low -> REJECTED (rule: no findings whose fix edits this build's spec): the Verification section's `docker run candybar:ci candybar --help` predated the migrate-then-exec entrypoint. Corrected as routine agent-owned maintenance to the `--entrypoint` form CI uses.
+
+Edge-case-hunter layer:
+- medium -> PATCHED: `sub.unsubscribe()` raises ConnectionClosedError/ConnectionDrainingError/BadSubscriptionError on a dead/draining connection (verified in nats-py 2.16 source) — in the finally block that skipped `nc.drain()` and turned a graceful stop into a role crash. Both roles now catch the precise tuple, warn, and drain; new unit test `test_unsubscribe_failure_does_not_mask_drain`.
+- low -> PATCHED: hygiene script `cd "$ROOT"` failure (no arg outside a git repo) silently scanned the CWD — same vacuous-pass class as the missing-rg hole CI caught. Explicit root guard now exits 2.
+- Claims check: every Intent/Task claim verified against the live deployment (register + manual run + scheduled fire through https://candybar.delo.sh; restart rejoin with one row per tick; Prometheus target up with stored exemplars). Nothing falsified. Deletion check: nothing meaningful removed.
+
+Verification-gap layer:
+- gap -> PATCHED: the container's full boot path (entrypoint migration, all four roles connecting, /healthz, fast stop) was verified only locally — a broken entrypoint would have shipped green CI. New CI step boots `candybar:ci` against the job's postgres+nats on the host network, polls /healthz up to 45s, and asserts `docker stop` < 9500ms.
+- NOT A GAP (verified, no finding): durable survival across unsubscribe — nats-py `unsubscribe()` never deletes the consumer (source), and the live bus shows `candybar-executor-invoke` created 04:36 with cumulative delivered=22 across multiple stops using the new path.
 
 ## Design Notes
 
@@ -96,7 +120,7 @@ Compose networking: `bloodbank-network` (external) carries the `nats:4222` alias
 **Commands:**
 - `uv run pytest -q` -- all tests pass incl. new healthz/drain/hygiene tests
 - `uv run ruff check .` -- clean
-- `docker build -t candybar:ci .` -- succeeds; `docker run --rm candybar:ci candybar --help` exits 0
+- `docker build -t candybar:ci .` -- succeeds; `docker run --rm --entrypoint /app/.venv/bin/candybar candybar:ci --help` exits 0 (the entrypoint migrates first, so CLI smoke bypasses it)
 - `bash scripts/check-deploy-hygiene.sh` -- exit 0
 - `docker run --rm -v ~/code/33GOD/monitoring/prometheus:/etc/prometheus --entrypoint promtool prom/prometheus:v3.5.0 check config /etc/prometheus/prometheus.yml` -- SUCCESS
 

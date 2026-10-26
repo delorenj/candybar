@@ -5,6 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from nats.errors import (
+    BadSubscriptionError,
+    ConnectionClosedError,
+    ConnectionDrainingError,
+)
 from nats.errors import TimeoutError as NatsTimeoutError
 from nats.js.api import AckPolicy, ConsumerConfig, DeliverPolicy
 from nats.js.errors import NotFoundError
@@ -58,7 +63,12 @@ async def run_dispatcher(stop: asyncio.Event) -> None:
         await engine.dispose()
         # Unsubscribe the pull consumer before draining, same fast-stop
         # contract as the executor role (docker stop grace is 10s).
+        # Best-effort: unsubscribe raises on a dead/draining connection and
+        # must not mask the drain.
         if sub is not None:
-            await sub.unsubscribe()
+            try:
+                await sub.unsubscribe()
+            except (ConnectionClosedError, ConnectionDrainingError, BadSubscriptionError) as exc:
+                log.warning("unsubscribe during stop failed (%s); draining anyway", exc)
         await nc.drain()
         log.info("dispatcher role drained")

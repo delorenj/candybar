@@ -13,7 +13,10 @@ FROM python:3.13-slim AS build
 COPY --from=ghcr.io/astral-sh/uv:0.9.5 /uv /uvx /bin/
 
 WORKDIR /app
+# Deps first, project second: source edits must not bust the dependency
+# layer (no uv cache mount, so a busted layer re-downloads everything).
 COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-editable --no-install-project
 COPY src/ ./src/
 RUN uv sync --frozen --no-dev --no-editable
 

@@ -12,8 +12,8 @@ schemas
 !README.md
 **/.env
 **/.env.*
-__pycache__
-*.pyc
+**/__pycache__
+**/*.pyc
 .dockerignore
 Dockerfile
 .github

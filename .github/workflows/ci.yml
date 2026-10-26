@@ -133,3 +133,30 @@ jobs:
         env:
           NATS_URL: nats://127.0.0.1:4222
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
+
+      # Story 1.9: boot the real image end-to-end in CI — the entrypoint
+      # migrates, all four roles connect, /healthz answers, and docker stop
+      # completes inside the 10s grace. Runs last so the integration step
+      # above has already created the BLOODBANK_* streams the roles attach.
+      - name: Container boot smoke (image vs CI services)
+        run: |
+          docker run -d --name candybar-ci --network host \
+            -e NATS_URL=nats://127.0.0.1:4222 \
+            -e DATABASE_URL=postgresql://candybar:candybar@127.0.0.1:5432/candybar_test \
+            -e CANDYBAR_CGROUP_ROOT= \
+            candybar:ci
+          healthy=0
+          for i in $(seq 1 45); do
+            if curl -sf http://127.0.0.1:8700/healthz | grep -q ok; then healthy=1; break; fi
+            sleep 1
+          done
+          if [ "$healthy" != 1 ]; then
+            docker logs candybar-ci || true
+            echo "container never became healthy" >&2
+            exit 1
+          fi
+          START=$(date +%s%N); docker stop candybar-ci >/dev/null; END=$(date +%s%N)
+          ELAPSED_MS=$(( (END - START) / 1000000 ))
+          echo "docker stop took ${ELAPSED_MS}ms"
+          docker rm candybar-ci >/dev/null
+          [ "$ELAPSED_MS" -lt 9500 ]

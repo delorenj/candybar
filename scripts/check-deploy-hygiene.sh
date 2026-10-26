@@ -25,8 +25,11 @@ if ! command -v rg >/dev/null 2>&1; then
     exit 2
 fi
 
-ROOT="${1:-$(git rev-parse --show-toplevel)}"
-cd "$ROOT"
+ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+if [[ -z "$ROOT" ]] || ! cd "$ROOT"; then
+    echo "check-deploy-hygiene: ERROR: no such repo root: '${ROOT:-<unset>}' (pass one, or run inside a git repo)" >&2
+    exit 2
+fi
 
 TARGETS=()
 for path in Dockerfile .dockerignore deploy src; do
@@ -71,20 +74,22 @@ report "LAN IP" \
 report "private key block" \
     '\-BEGIN [A-Z ]*PRIVATE KEY\-'
 
-# Secret-shaped assignments, line-filtered: op:// references, shell ${...}
-# interpolation and empty values are the sanctioned shapes.
+# Secret-shaped assignments. op:// references and shell ${...} interpolation
+# are the sanctioned shapes — strip those SPANS and re-check the remainder,
+# so a plaintext secret co-located on the same line still trips the gate.
 SECRET_HITS=$(rg --no-heading -n -i \
     '(password|passwd|secret|api[_-]?key|access[_-]?token)["'"'"']?\s*[:=]\s*["'"'"']?[A-Za-z0-9_/+.@-]{8,}' \
     -- "${TARGETS[@]}")
 [[ $? -eq 2 ]] && { echo "check-deploy-hygiene: ERROR: rg failed during secret scan" >&2; exit 2; }
 while IFS= read -r line; do
     [[ -z "$line" ]] && continue
-    case "$line" in
-        *op://*|*'${'*) continue ;;
-    esac
-    echo "check-deploy-hygiene: FAIL (plaintext secret)" >&2
-    echo "$line" >&2
-    FAIL=1
+    stripped=$(printf '%s' "$line" | sed -e 's|op://[^ "'"'"']*||g' -e 's|\${[^}]*}||g')
+    if printf '%s' "$stripped" | rg -q -i \
+        '(password|passwd|secret|api[_-]?key|access[_-]?token)["'"'"']?\s*[:=]\s*["'"'"']?[A-Za-z0-9_/+.@-]{8,}'; then
+        echo "check-deploy-hygiene: FAIL (plaintext secret)" >&2
+        echo "$line" >&2
+        FAIL=1
+    fi
 done <<< "$SECRET_HITS"
 
 # DSN userinfo passwords (scheme://user:PASSWORD@host). op:// references are

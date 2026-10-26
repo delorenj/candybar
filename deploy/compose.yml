@@ -72,11 +72,12 @@ services:
       - "traefik.http.services.candybar.loadbalancer.server.port=8700"
       - "traefik.docker.network=proxy"
     healthcheck:
-      # python:slim ships neither wget nor curl.
+      # python:slim ships neither wget nor curl. Honor CANDYBAR_API_PORT so a
+      # port override doesn't silently break the healthcheck.
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8700/healthz', timeout=3)\"",
+          "python -c \"import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('CANDYBAR_API_PORT','8700') + '/healthz', timeout=3)\"",
         ]
       interval: 30s
       timeout: 3s

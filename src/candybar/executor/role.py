@@ -11,6 +11,11 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from nats.errors import (
+    BadSubscriptionError,
+    ConnectionClosedError,
+    ConnectionDrainingError,
+)
 from nats.errors import TimeoutError as NatsTimeoutError
 from nats.js.api import AckPolicy, ConsumerConfig, DeliverPolicy
 from nats.js.errors import NotFoundError
@@ -109,7 +114,12 @@ async def run_executor(stop: asyncio.Event) -> None:
         # Detach the durable pull consumer BEFORE draining: nats-py otherwise
         # waits the full drain timeout (~30s) for the pull subscription, and
         # `docker stop`'s 10s default grace would SIGKILL us mid-drain.
+        # Best-effort: on a dead or draining connection unsubscribe raises
+        # (ConnectionClosedError et al.) and must not mask the drain.
         if sub is not None:
-            await sub.unsubscribe()
+            try:
+                await sub.unsubscribe()
+            except (ConnectionClosedError, ConnectionDrainingError, BadSubscriptionError) as exc:
+                log.warning("unsubscribe during stop failed (%s); draining anyway", exc)
         await nc.drain()
         log.info("executor role drained")
