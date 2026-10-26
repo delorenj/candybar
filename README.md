@@ -96,6 +96,37 @@ or read-only keys and `null` → 422; unknown id → 404; name taken → 409; bu
 down → 503 with the row unchanged. `createdAt` is always UTC. The executor's
 `entrypoint` is accepted on writes but never echoed.
 
+### Noise collection (Story 5.5)
+
+```bash
+curl -X PUT    https://candybar.delo.sh/candybars/<id>/noise   # 200, single shape, noise: true
+curl -X DELETE https://candybar.delo.sh/candybars/<id>/noise   # 200, single shape, noise: false
+curl -X PUT    https://candybar.delo.sh/noise/batch -H 'content-type: application/json' \
+  -d '{"ids":["<id>","<id>"]}'                                 # 200, {"ids": [...]} the collection
+```
+
+`PUT /noise/batch` replaces the collection. Afterwards exactly the given ids
+are noise, and every other candybar is not. So send the whole set you want:
+`[]` clears it, and duplicate ids count once. The answer lists the resulting
+collection, oldest candybar first.
+
+Each candybar whose flag actually changes gets one
+`bloodbank.cron.candybar.updated` fact with `changes: {"noise": ...}`. The
+fact goes out first, then the row is written. A call that changes nothing (the
+flag already has that value) publishes nothing. `/schedule` rows,
+`GET /candybars` and the stream's `definition.changed` all show the new flag.
+
+The batch is all or nothing. Any unknown id → 422 naming it, and nothing
+changes. A bus failure → 503, and no flag is written. Facts already sent for
+earlier candybars stand until you retry, and a retry of the same batch
+converges. A database failure rolls the whole batch back. A bad body (missing
+or null `ids`, a malformed id, extra keys, more than 10,000 ids) → 422. On the
+single routes: unknown id → 404, bus down → 503 with the row unchanged.
+
+candybar stores only the explicit collection. Marking crons that repeat more
+often than every 10 minutes is the view's job, computed from the cron string;
+a minutely job stays `noise: false` until someone adds it.
+
 ## Schedule window (CAP-8, Story 5.2)
 
 ```bash
