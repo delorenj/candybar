@@ -1,5 +1,9 @@
 """In-container metering smoke (Story 3.1): run as the daemon's uid inside the image.
 
+HISTORICAL since Story 7.2 (AD-17): the container no longer runs the executor, so
+its entrypoint-delegated scope tree is gone. Host metering is proven by
+tests/test_cgroup_metering_integration.py and the live deploy-smoke series.
+
     docker cp scripts/container-metering-smoke.py <ctr>:/tmp/smoke.py
     docker exec -u candybar <ctr> python /tmp/smoke.py
 

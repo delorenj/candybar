@@ -12,3 +12,9 @@ from __future__ import annotations
 import os
 
 os.environ.setdefault("CANDYBAR_NVIDIA_SMI", "")
+# Story 7.2 (AD-17): the host executor serves /metrics on a real port and
+# refuses to consume on an alembic-head mismatch. Neither belongs in the unit
+# suite by default: no port contention, no database to compare against.
+# tests/test_executor_host.py drives both explicitly.
+os.environ.setdefault("CANDYBAR_EXECUTOR_METRICS_PORT", "")
+os.environ.setdefault("CANDYBAR_SCHEMA_GUARD", "off")

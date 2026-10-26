@@ -1,0 +1,54 @@
+# Candybar executor, host role (AD-17, Story 7.2).
+#
+# The container runs heartbeat + dispatcher + api; THIS unit runs the executor
+# on the host so jobs can use systemctl --user, op, the docker socket, ~/,
+# zellij and the hermes CLI. One executor, one `candybar-executor-invoke`
+# durable, no host/container routing field.
+#
+# Install / pair-deploy: deploy/host/install.sh, deploy/README.md.
+# Linked (not copied) into ~/.config/systemd/user, so this file stays the
+# source of truth.
+
+[Unit]
+Description=Candybar executor (host role, AD-17)
+Documentation=file://%h/code/33GOD/candybar/deploy/README.md
+# NATS and Postgres are system/docker services a user unit cannot order
+# against; the executor retries the bus forever and its schema guard waits on
+# the registry. Deliberately no Requires=/BindsTo=: a container redeploy must
+# not bounce it.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/33GOD/candybar
+# DATABASE_URL (a resolved op:// reference), rendered by install.sh; mode 600,
+# outside the repo. Required: a missing file fails the start loudly.
+EnvironmentFile=%h/.config/candybar/executor.env
+Environment=NATS_URL=nats://localhost:4222
+Environment=PYTHONUNBUFFERED=1
+# The executor's own scrape endpoint; 0.0.0.0 so the Prometheus container
+# reaches it through host.docker.internal (single-tenant homelab).
+Environment=CANDYBAR_EXECUTOR_METRICS_HOST=0.0.0.0
+Environment=CANDYBAR_EXECUTOR_METRICS_PORT=8701
+# %t/candybar is the runtime dir below: per-invocation work dirs live here, and
+# story 7.3's systemd-runner drop-in env files use %t/candybar/inv.
+Environment=CANDYBAR_WORK_ROOT=%t/candybar/work
+# The jobs' PATH: the repo venv first (python + candybar_sdk), mise shims
+# (node, python, ...), then the user manager's usual tail.
+Environment=PATH=%h/code/33GOD/candybar/.venv/bin:%h/.local/share/mise/shims:%h/.local/bin:%h/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RuntimeDirectory=candybar
+ExecStart=%h/code/33GOD/candybar/deploy/host/run-executor.sh
+# Per-invocation cgroup v2 scopes are created under this unit's cgroup (AD-7).
+# DelegateSubgroup keeps the daemon itself in <unit>/main so the unit cgroup
+# has no internal processes and can delegate memory/cpu to the scopes.
+Delegate=yes
+DelegateSubgroup=main
+Restart=always
+RestartSec=3
+# SIGTERM goes to the executor only: it terminates its children and records
+# them `failed` before exiting. Whatever is left after the timeout is killed.
+KillMode=mixed
+TimeoutStopSec=60
+
+[Install]
+WantedBy=default.target

@@ -395,13 +395,15 @@ def test_metrics_endpoint_defaults_to_process_registry() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Daemon: executor-only processes warn that /metrics is unexposed
+# Daemon: an executor-only process no longer warns (Story 7.2 closed the gap)
 # ---------------------------------------------------------------------------
 
 
-def test_daemon_warns_when_executor_runs_without_api(
+def test_daemon_executor_without_api_is_not_a_metrics_gap(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """AD-17: the host executor serves its own /metrics (tests/test_executor_host.py),
+    so running it without the api role is the normal shape, not a warning."""
     from candybar import daemon
 
     async def noop(stop: asyncio.Event) -> None:
@@ -409,9 +411,6 @@ def test_daemon_warns_when_executor_runs_without_api(
 
     monkeypatch.setattr(daemon, "ROLES", {"api": noop, "executor": noop})
     asyncio.run(daemon.run_daemon(["executor"], asyncio.Event()))
-    assert "/metrics is not exposed" in caplog.text
-    caplog.clear()
-    asyncio.run(daemon.run_daemon(["api", "executor"], asyncio.Event()))
     assert "/metrics is not exposed" not in caplog.text
 
 

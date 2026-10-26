@@ -51,10 +51,9 @@ def resolve_roles(requested: str) -> list[str]:
 
 async def run_daemon(roles: list[str], stop: asyncio.Event) -> None:
     """Run the selected roles concurrently until `stop` is set or one crashes."""
-    if "executor" in roles and "api" not in roles:
-        # /metrics rides the api role's server (Story 1.7): an executor-only
-        # process records series nobody can scrape.
-        log.warning("executor role running without api role: /metrics is not exposed")
+    # An executor-only process (the host unit, AD-17) serves its own /metrics
+    # (port 8701); with the api role in the same process the series are also
+    # on the api's /metrics. Either way they are scrapeable.
     async with asyncio.TaskGroup() as tg:
         for role in roles:
             tg.create_task(ROLES[role](stop), name=f"candybar-role-{role}")

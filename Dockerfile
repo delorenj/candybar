@@ -1,8 +1,10 @@
 # Candybar daemon image (AD-15 deployment envelope).
 #
-# One image, all roles: the entrypoint applies the registry migrations and
-# execs `candybar daemon` (default role composition: heartbeat + dispatcher +
-# executor + api). Built locally by deploy/compose.yml (`candybar:local`) —
+# One image, the control-plane roles: the entrypoint applies the registry
+# migrations and execs `candybar daemon`; compose pins `--roles
+# heartbeat,dispatcher,api`. The executor is NOT run from this image (AD-17,
+# Story 7.2): it is a host systemd --user unit running from the repo checkout's
+# .venv, because jobs need the host. Built locally by deploy/compose.yml (`candybar:local`) —
 # the homelab pulls nothing from a registry. Base is python:3.13-slim to
 # match the CI floor (the spine pins >=3.13; the host toolchain is 3.14).
 
@@ -19,11 +21,6 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-editable --no-install-project
 COPY src/ ./src/
 RUN uv sync --frozen --no-dev --no-editable
-# Story 4.1: candybar-sdk (zero deps, stdlib only) goes into the same venv,
-# whose bin/ leads PATH — so a job's `#!/usr/bin/env python3` can
-# `import candybar_sdk`. The daemon itself never imports it.
-COPY sdks/python/ ./sdks/python/
-RUN uv pip install --python /app/.venv/bin/python --no-deps --no-cache ./sdks/python
 
 FROM python:3.13-slim
 
@@ -32,13 +29,6 @@ FROM python:3.13-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libpq5 \
     && rm -rf /var/lib/apt/lists/*
-
-# Node runtime for node-SDK candybars (Story 4.2): the executor spawns every
-# candybar inside this container (AD-7), so `#!/usr/bin/env node` entrypoints
-# need node here. Only the binary — jobs bring their own node_modules
-# (candybar-sdk has zero runtime deps). Pinned to the spine's Node 24 LTS.
-COPY --from=node:24.22.1-slim /usr/local/bin/node /usr/local/bin/node
-RUN node --version
 
 RUN useradd --create-home --uid 10001 candybar
 WORKDIR /app

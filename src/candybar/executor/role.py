@@ -22,6 +22,7 @@ from nats.js.errors import NotFoundError
 
 from ..bus import NatsEventSink, connect_nats, nats_url
 from ..registry.models import Invocation
+from ..registry.schema_guard import SchemaGate, guard_enabled, own_head
 from ..registry.store import (
     DuplicateInvocationError,
     InvocationClaim,
@@ -35,7 +36,9 @@ from ..registry.store import (
     session_scope,
 )
 from .gpu import GPU_SAMPLER
+from .metrics_server import start_metrics_server
 from .runner import ProcessRegistry
+from .schema_guard import sleep_or_stop
 from .worker import RETRY_ON_ABANDON_TAG, Executor
 
 log = logging.getLogger(__name__)
@@ -49,10 +52,24 @@ ACK_WAIT_SECONDS = 3600
 
 async def run_executor(stop: asyncio.Event) -> None:
     """Connect, attach the workqueue durable, and execute commands until stop."""
+    # The scrape endpoint comes up first and stays up through a bus outage or a
+    # closed schema guard: those are exactly the moments worth observing.
+    metrics_server = await start_metrics_server()
+    try:
+        await _run_executor(stop)
+    finally:
+        if metrics_server is not None:
+            await metrics_server.close()
+
+
+async def _run_executor(stop: asyncio.Event) -> None:
+    # Fail closed on an unknowable own-head before touching the bus (AD-17).
+    expected_head = own_head() if guard_enabled() else None
     nc = await connect_nats(nats_url(), name="candybar-executor", stop=stop, log=log)
     if nc is None:
         return
     engine = create_registry_engine()
+    gate = SchemaGate(engine, expected_head) if expected_head is not None else None
     tasks: set[asyncio.Task[None]] = set()
     registry = ProcessRegistry()
     sub = None
@@ -112,6 +129,11 @@ async def run_executor(stop: asyncio.Event) -> None:
             retry_abandoned=retry_abandoned,
         )
         while not stop.is_set():
+            if gate is not None and not await gate.open():
+                # Registry and checkout disagree on the schema (AD-17): consume
+                # nothing, leave the commands on the stream, look again soon.
+                await sleep_or_stop(stop, 1)
+                continue
             try:
                 messages = await sub.fetch(1, timeout=1)
             except (NatsTimeoutError, TimeoutError):

@@ -1,11 +1,16 @@
 # Candybar deployment envelope (AD-15, Story 1.9).
 #
-# ONE container composing all daemon roles (heartbeat + dispatcher + executor
-# + api), fronted by Traefik at https://candybar.delo.sh, scraped by the
+# ONE container composing the control-plane roles (heartbeat + dispatcher +
+# api), fronted by Traefik at https://candybar.delo.sh, scraped by the
 # existing Prometheus on the `proxy` network, talking to the existing
 # Bloodbank NATS (`nats:4222` on `bloodbank-network`) and the existing host
 # Postgres (`host.docker.internal:5432`, `candybar` database). Zero new
 # infrastructure.
+#
+# The EXECUTOR is not here (AD-17, Story 7.2): it runs on the host as the
+# `candybar-executor` systemd --user unit (deploy/host/), because the jobs need
+# the host (systemctl --user, op, docker socket, ~/, zellij, hermes CLI). A
+# deploy is a pair: rebuild this container, then restart that unit.
 #
 # Secrets: DATABASE_URL is materialized into deploy/.env (gitignored, mode
 # 600) from deploy/.env.template by the stack op-inject helper:
@@ -40,38 +45,25 @@ services:
     env_file:
       # Resolved op:// references live here (never committed).
       - .env
+    # Control plane only (AD-17): the executor runs on the host. The explicit
+    # role list is what keeps an executor out of this container — `candybar
+    # daemon` with no --roles would start all four.
+    command: ["--roles", "heartbeat,dispatcher,api"]
     environment:
       NATS_URL: "nats://nats:4222"
       CANDYBAR_API_HOST: "0.0.0.0"
       CANDYBAR_API_PORT: "8700"
-      # Per-invocation cgroup v2 scopes (AD-7) are what the executor meters
-      # memory.peak / cpu.stat from (AD-9, Story 3.1). The entrypoint
-      # delegates /sys/fs/cgroup/candybar as root, then drops to uid 10001.
-      # Set CANDYBAR_CGROUP_ROOT: "" here to run invocations unscoped.
-      # compute: CUDA candybars can use the GPU; utility: nvidia-smi for
-      # the GPU sampler. CANDYBAR_NVIDIA_SMI: "" turns GPU metering off.
-      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
-    # A writable, private cgroupfs is what lets the entrypoint delegate the
-    # scope tree; Docker only mounts cgroupfs read-write for privileged
-    # containers. Single-tenant homelab: accepted.
-    privileged: true
-    cgroup: private
-    # GPU load per invocation (AD-9, Story 3.2): the executor samples
-    # `nvidia-smi pmon`, which the NVIDIA runtime injects with the GPU. pmon
-    # reports HOST pids, so the container shares the host pid namespace;
-    # otherwise no invocation's process could be matched and GPU load would
-    # always meter 0. On a GPU-less host, drop `gpus` and GPU load reads 0.
-    gpus: all
-    pid: host
+      # No invocations run here, so there is no cgroup tree to delegate.
+      CANDYBAR_CGROUP_ROOT: ""
     extra_hosts:
       # Registry: host system Postgres (the `candybar` database).
       - "host.docker.internal:host-gateway"
     volumes:
-      # Registered entrypoints run INSIDE this container (executor-owns-
-      # execution, AD-7). The jobs dir is bind-mounted at the same absolute
-      # path on both sides so a path registered through the API resolves
-      # identically in the container.
-      - "${CANDYBAR_JOBS_DIR:-/home/delorenj/candybar/jobs}:${CANDYBAR_JOBS_DIR:-/home/delorenj/candybar/jobs}"
+      # The API validates that a registered `entrypoint` is an existing file
+      # (422 otherwise) against ITS OWN filesystem, while the host executor
+      # runs the same absolute path. Mounted read-only at the same path so
+      # both see one jobs tree; nothing executes here (AD-17).
+      - "${CANDYBAR_JOBS_DIR:-/home/delorenj/candybar/jobs}:${CANDYBAR_JOBS_DIR:-/home/delorenj/candybar/jobs}:ro"
     ports:
       # Local CLI access without the Traefik round-trip; remote access goes
       # through candybar.delo.sh (edge-only auth posture per the spine).

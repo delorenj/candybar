@@ -80,7 +80,7 @@ development_status:
 
   epic-7: in-progress
   7-1-per-candybar-iana-timezone: review
-  7-2-host-executor: backlog
+  7-2-host-executor: review
   7-3-runner-kinds-exec-and-systemd: backlog
   7-4-hermes-runner: backlog
   7-5-migration-ledger-rollback-and-the-migrate-cli: backlog
