@@ -1,0 +1,12 @@
+# Migrated from systemd:gruvato-acoustid-check.timer (wave 7.11). The .service unit remains the
+# execution source of truth; only its .timer retired. Cutover/rollback: deploy/migration/ledger.yaml.
+[candybar]
+name = "gruvato-acoustid-check"
+description = "Check whether Gruvato AcoustID quota alert is open"
+tags = ["migrated", "gruvato"]
+schedule = "7 */3 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "gruvato-acoustid-check.service"

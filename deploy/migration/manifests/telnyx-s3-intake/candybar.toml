@@ -1,0 +1,12 @@
+# Migrated from systemd:telnyx-s3-intake (wave 7.11). The .service unit remains the
+# execution source of truth; only its .timer retired. Cutover/rollback: deploy/migration/ledger.yaml.
+[candybar]
+name = "telnyx-s3-intake"
+description = "Copy completed native Telnyx S3 call recordings into the Wax inbox"
+tags = ["migrated", "heyma"]
+schedule = "* * * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "telnyx-s3-intake.service"

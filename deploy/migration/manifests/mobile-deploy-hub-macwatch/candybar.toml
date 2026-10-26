@@ -1,0 +1,12 @@
+# Migrated from systemd:mobile-deploy-hub-macwatch.timer (wave 7.11). The .service unit remains the
+# execution source of truth; only its .timer retired. Cutover/rollback: deploy/migration/ledger.yaml.
+[candybar]
+name = "mobile-deploy-hub-macwatch"
+description = "Cancel stale iPad/Mac deploy CI jobs after queue limit"
+tags = ["migrated", "mobile-deploy-hub"]
+schedule = "1-59/2 * * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "mobile-deploy-hub-macwatch.service"
