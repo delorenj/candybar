@@ -62,7 +62,7 @@ context: []
 - [x] `~/code/srvls/srvls` + `README.md` — candybar collector + unit-snippet pointer to infra; commit+push — inventory must not under-report after cutover
 - [x] `deploy/migration/ledger.yaml` — 10 entries via `plan --write`; commit+push — the cutover record
 - [x] cutover ×10, manual run ×10, rollback demo on zellij-ark, verify fast jobs — the wave itself
-- [ ] `_bmad-output/implementation-artifacts/sprint-status.yaml` + this spec — status updates; commit+push
+- [x] `_bmad-output/implementation-artifacts/sprint-status.yaml` + this spec — status updates; commit+push
 
 **Acceptance Criteria:**
 - Given stories 7.1-7.6 done, when this wave lands, then every listed job has a ledger entry and runs under candybar with the inventory's cron + tz, its unit file unchanged apart from the runner drop-in, its timer disabled and removed from timers.target.wants
