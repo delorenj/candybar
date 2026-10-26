@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-25-2026 21:37
-last_updated: 10-26-2026 02:43
+last_updated: 10-26-2026 02:49
 project: candybar
 project_key: NOKEY
 tracking_system: file-system
@@ -57,7 +57,7 @@ development_status:
   epic-3: in-progress
   3-1-memory-peak-and-average-cpu-load-per-invocation: review
   3-2-average-gpu-load-per-invocation-nvidia-smi-or-zero: review
-  3-3-token-spend-counter-and-full-exemplar-coverage: backlog
+  3-3-token-spend-counter-and-full-exemplar-coverage: in-progress
   epic-3-retrospective: optional
 
   epic-4: in-progress
