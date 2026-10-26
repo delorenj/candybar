@@ -168,6 +168,20 @@ test("accumulated tokens that overflow the safe range fail instead of corrupting
   assert.deepEqual(res.metrics, { token_spend: Number.MAX_SAFE_INTEGER });
 });
 
+test("accumulated cost that overflows to Infinity fails instead of rejecting", async () => {
+  // Review finding: only the increment was checked, so the sum reached
+  // Infinity and toResult threw inside the failure path — candybar() rejected
+  // and no result file was written.
+  const h = await harness();
+  const res = await candybar(async (ctx) => {
+    ctx.addCost(1e308);
+    ctx.addCost(1e308);
+  }, h.opts);
+  assert.equal(res.status, "fail");
+  assert.match(res.message, /accumulated cost_usd must be a finite non-negative number/);
+  assert.deepEqual((await h.read()).metrics, { token_spend: 0, cost_usd: 1e308 });
+});
+
 test("messages are capped at the executor's 500-char limit", async () => {
   const h = await harness();
   const res = await candybar(async () => {
@@ -176,6 +190,28 @@ test("messages are capped at the executor's 500-char limit", async () => {
   assert.equal(res.message.length, MESSAGE_MAX);
   assert.equal((await h.read()).message.length, 500);
 });
+
+test("the cap counts code points and never splits a surrogate pair", async () => {
+  // Review finding: a UTF-16 slice at 500 left a lone surrogate, which the
+  // registry's Postgres write rejects (UnicodeEncodeError -> nak -> re-run).
+  const h = await harness();
+  const res = await candybar(async () => {
+    throw new Error("x".repeat(499) + "\u{1F600}" + "tail");
+  }, h.opts);
+  const points = Array.from(res.message);
+  assert.equal(points.length, MESSAGE_MAX);
+  assert.equal(points.at(-1), "\u{1F600}");
+  assert.ok(res.message.isWellFormed());
+  assert.ok((await h.read()).message.isWellFormed());
+});
+
+test("lone surrogates in an author message are replaced, not written", async () => {
+  const h = await harness();
+  const res = await candybar(async () => ({ status: "fail", message: "bad \uD83D data" }), h.opts);
+  assert.equal(res.message, "bad � data");
+  assert.ok(!JSON.stringify(await h.read()).includes("\\ud83d"));
+});
+
 
 test("manual trigger: empty tick id becomes null", async () => {
   const h = await harness({ CANDYBAR_TRIGGER: "manual", CANDYBAR_TICK_ID: "" });

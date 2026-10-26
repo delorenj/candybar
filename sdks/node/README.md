@@ -42,6 +42,11 @@ The context (`ctx`) is frozen and holds `invocationId`, `candybarId`,
 `trigger` (`scheduled` | `manual` | `misfire`), `tickId` (`tick:<epoch_minute>`,
 or `null` for manual runs) and `resultFile`.
 
+Once the result is written the invocation is over. If an open handle (an
+interval, a database pool, a keep-alive socket) still holds the event loop two
+seconds later, the SDK exits the process with the verdict's exit code, so a
+leaked handle can never keep an invocation running forever.
+
 Token and cost spend are reported **on failures too**, because a failed LLM
 call still spent tokens. `token_spend` is a non-negative integer and
 `cost_usd` is a finite non-negative number; the executor rejects anything else.

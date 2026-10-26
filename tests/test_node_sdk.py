@@ -181,3 +181,18 @@ def test_every_sdk_shape_parses_under_the_daemon_result_model() -> None:
         assert parsed.metrics.token_spend == raw["metrics"]["token_spend"]
     assert len(shapes[2]["message"]) == 500
     assert "cost_usd" not in shapes[0]["metrics"]
+
+
+def test_capped_failure_message_is_storable_utf8(tmp_path: Path) -> None:
+    """Review finding: an emoji straddling the 500-char cap used to leave a lone
+    surrogate that Postgres rejects on the terminal write (-> nak -> re-run)."""
+    job = _job(
+        tmp_path,
+        'import { candybar } from "__SDK__";\n'
+        'await candybar(async () => { throw new Error("x".repeat(499) + "\\u{1F600}tail"); });\n',
+    )
+    _, verdict = _run(job)
+    assert verdict.success is False
+    assert verdict.message is not None
+    verdict.message.encode("utf-8")  # strict: raises on a lone surrogate
+    assert len(verdict.message) == 500 and verdict.message.endswith("\U0001f600")

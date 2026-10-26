@@ -17,6 +17,9 @@ export const EXIT_PROTOCOL = 2;
 /** The executor caps failure messages at 500 chars; never write more. */
 export const MESSAGE_MAX = 500;
 
+/** How long open handles may keep the process alive after the result is written. */
+const EXIT_GRACE_MS = 2000;
+
 export const ENV = Object.freeze({
   invocationId: "CANDYBAR_INVOCATION_ID",
   candybarId: "CANDYBAR_ID",
@@ -72,8 +75,12 @@ function checkCost(value, label) {
 
 function capMessage(message) {
   if (message === undefined || message === null) return undefined;
-  const text = String(message);
-  return text.length > MESSAGE_MAX ? text.slice(0, MESSAGE_MAX) : text;
+  // Well-formed first, then cap by CODE POINT (Python's str semantics, as the
+  // executor counts). A UTF-16 slice can split a surrogate pair; the lone
+  // surrogate survives JSON into the registry write, which Postgres rejects —
+  // the executor then naks and re-executes the invocation forever.
+  const points = Array.from(String(message).toWellFormed());
+  return points.length > MESSAGE_MAX ? points.slice(0, MESSAGE_MAX).join("") : points.join("");
 }
 
 function errorMessage(err) {
@@ -96,8 +103,8 @@ function makeMeter() {
       tokens = checkTokens(next, "accumulated token_spend");
     },
     addCost(usd) {
-      checkCost(usd, "addCost(usd)");
-      cost = (cost ?? 0) + usd;
+      const next = (cost ?? 0) + checkCost(usd, "addCost(usd)");
+      cost = checkCost(next, "accumulated cost_usd"); // e.g. 1e308 + 1e308 = Infinity
     },
     get tokens() {
       return tokens;
@@ -179,12 +186,24 @@ function settle(value, meter) {
  * resolves the written result, or `null` when the env contract is unmet (the
  * handler is then never called).
  */
-export async function candybar(handler, options = {}) {
-  const env = options.env ?? process.env;
-  const stderr = options.stderr ?? process.stderr;
-  const setExit = options.setExitCode ?? true;
+export async function candybar(handler, options) {
+  const opts = options ?? {};
+  const env = opts.env ?? process.env;
+  const stderr = opts.stderr ?? process.stderr;
+  const setExit = opts.setExitCode ?? true;
   const exit = (code) => {
-    if (setExit) process.exitCode = code;
+    if (!setExit) return;
+    process.exitCode = code;
+    // The verdict is final once written. A handle the handler left open (an
+    // interval, a DB pool, a keep-alive socket) would otherwise keep the
+    // process — and the executor's invocation — alive forever. The timer is
+    // unref'd: it only fires if something else is still holding the loop.
+    setTimeout(() => {
+      stderr.write(
+        `candybar-sdk: open handles kept the process alive ${EXIT_GRACE_MS}ms after the result was written; exiting\n`,
+      );
+      process.exit(code);
+    }, EXIT_GRACE_MS).unref();
   };
 
   if (typeof handler !== "function") {

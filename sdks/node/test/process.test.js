@@ -86,6 +86,46 @@ test("unwritable result path exits 1 so the exit-code fallback marks it failed",
   assert.match(proc.stderr, /could not write result file/);
 });
 
+test("open handles cannot keep the invocation alive past the exit grace", async () => {
+  // Review finding: a leaked interval/pool/socket kept the process (and the
+  // executor's invocation) alive forever after the result was written.
+  for (const [body, code, status] of [
+    [`setInterval(() => {}, 1000); return "done";`, 0, "success"],
+    [`setInterval(() => {}, 1000); throw new Error("x");`, 1, "fail"],
+  ]) {
+    const script = await writeScript(`
+      import { candybar } from "__SDK__";
+      await candybar(async () => { ${body} });
+    `);
+    const t0 = Date.now();
+    const { proc, result } = await spawnCandybar(script);
+    const elapsed = Date.now() - t0;
+    assert.equal(proc.status, code, proc.stderr);
+    assert.equal(result.status, status);
+    assert.ok(elapsed >= 1500 && elapsed < 10000, `exited after ${elapsed}ms`);
+    assert.match(proc.stderr, /open handles kept the process alive 2000ms/);
+  }
+});
+
+test("a clean handler exits immediately, without the grace notice", async () => {
+  const t0 = Date.now();
+  const { proc } = await spawnCandybar(example);
+  assert.equal(proc.status, 0);
+  assert.ok(Date.now() - t0 < 1500);
+  assert.doesNotMatch(proc.stderr, /open handles/);
+});
+
+test("null options are treated as defaults, never a rejection", async () => {
+  const script = await writeScript(`
+    import { candybar } from "__SDK__";
+    const res = await candybar(async () => "ok", null);
+    console.log(JSON.stringify(res));
+  `);
+  const { proc, result } = await spawnCandybar(script);
+  assert.equal(proc.status, 0, proc.stderr);
+  assert.equal(result.message, "ok");
+});
+
 test("pending output flushes: the SDK sets exitCode instead of exiting", async () => {
   const script = await writeScript(`
     import { candybar } from "__SDK__";

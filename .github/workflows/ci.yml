@@ -106,6 +106,12 @@ jobs:
             -e CANDYBAR_INVOCATION_ID=ci -e CANDYBAR_ID=ci -e CANDYBAR_TRIGGER=manual \
             -e CANDYBAR_TICK_ID= -e CANDYBAR_RESULT_FILE=/tmp/result.json candybar:ci \
             -c '/sdk/examples/hello-node/candybar.mjs && grep -q "\"status\":\"success\"" /tmp/result.json'
+          # Story 4.2: a node-SDK candybar runs inside the image the way the
+          # executor spawns it (direct exec via shebang, AD-8 env in).
+          docker run --rm --entrypoint sh -v "$PWD/sdks/node:/sdk:ro" \
+            -e CANDYBAR_INVOCATION_ID=ci -e CANDYBAR_ID=ci -e CANDYBAR_TRIGGER=manual \
+            -e CANDYBAR_TICK_ID= -e CANDYBAR_RESULT_FILE=/tmp/result.json candybar:ci \
+            -c '/sdk/examples/hello-node/candybar.mjs && grep -q "\"status\":\"success\"" /tmp/result.json'
           # Story 4.1: SDK-authored python jobs import candybar_sdk from the image venv.
           docker run --rm --entrypoint python candybar:ci -c "import candybar_sdk"
 
