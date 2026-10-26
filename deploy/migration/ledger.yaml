@@ -2857,9 +2857,9 @@ jobs:
   - systemctl --user disable --now dev-journal-ensure-nightly.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/dev-journal-ensure-nightly.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17951-5b9a-7ce8-8bc5-e379b3d434fd
+  cutover_at: '2026-10-26T17:45:38.022507Z'
   verification:
     invocation_id: null
     result: null
@@ -2870,6 +2870,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:45:38.022507Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17951-5b9a-7ce8-8bc5-e379b3d434fd enabled; first fire 2026-10-27T10:15:00Z
 - id: systemd:dev-journal-reconcile.timer
   wave: '7.15'
   candybar:
