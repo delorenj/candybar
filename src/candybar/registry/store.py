@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
@@ -182,14 +182,24 @@ async def record_terminal_invocation(session: AsyncSession, record: TerminalInvo
         finished_at=record.finished_at,
         created_at=now,
     )
-    session.add(row)
-    candybar = await session.get(Candybar, record.candybar_id)
-    if candybar is None:
+    # Atomic in-database increment: concurrent executions of one candybar run
+    # as parallel tasks, and an ORM read-modify-write (`+= 1` on a loaded row)
+    # loses updates under READ COMMITTED. The UPDATE also row-locks the
+    # candybar until commit; a duplicate-key rollback below undoes it.
+    bumped = await session.execute(
+        update(Candybar)
+        .where(Candybar.id == record.candybar_id)
+        .values(
+            total_invoked=Candybar.total_invoked + 1,
+            total_successful=Candybar.total_successful
+            + (1 if record.result == "success" else 0),
+            updated_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if bumped.rowcount == 0:
         raise KeyError(f"unknown candybar: {record.candybar_id}")
-    candybar.total_invoked += 1
-    if record.result == "success":
-        candybar.total_successful += 1
-    candybar.updated_at = now
+    session.add(row)
     try:
         await session.flush()
     except IntegrityError as exc:
