@@ -999,13 +999,13 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler internal'
-  status: cutover
+  status: verified
   candybar_id: 01a1793b-7e99-7b33-b53e-514014a99922
   cutover_at: '2026-10-26T17:28:03.172945Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 593f6318-f11a-5483-b658-bc2bfcd33cc4
+    result: success
+    at: '2026-10-26T18:00:04.030333Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:44.858083Z'
@@ -1024,6 +1024,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793b-7e99-7b33-b53e-514014a99922 enabled after the batched hermes-gateway-restart; pin active
+  - at: '2026-10-26T18:00:23.766844Z'
+    action: verify
+    outcome: ok
+    detail: invocation 593f6318-f11a-5483-b658-bc2bfcd33cc4 (scheduled) success exit=0 runtime=3881ms memory=104865792B cpu=0.9623
 - id: hermes:delodocs-pm:fc39bd8b33c8
   wave: '7.17'
   candybar:
