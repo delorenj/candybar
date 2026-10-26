@@ -2,7 +2,7 @@
 title: 'Story 4.3: Rust SDK (sdks/rust)'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'done'
 baseline_commit: 'e3b2e62e9fc8624e419ca0df884f2962f361da8a'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -56,13 +56,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `sdks/rust/Cargo.toml`, `Cargo.lock`, `src/lib.rs` -- crate with `run`, `invoke` (testable core over an env lookup, returns the exit code), `Context`, `Trigger`, `Outcome`, `MetricError`, `ProtocolError`, `EXIT_*`, hand-rolled JSON encoder, atomic write; unit tests over every matrix row; `#![forbid(unsafe_code)]`, docs.
-- [ ] `sdks/rust/examples/outcomes.rs` -- probe binary selecting each outcome by env, for the cross-language tests.
-- [ ] `sdks/rust/examples/hello/{Cargo.toml,Cargo.lock,src/main.rs,candybar.toml}` -- standalone author-style crate on `candybar-sdk` (path dep) that reports token spend; schedule `* * * * *`, `noise = true`.
-- [ ] `sdks/rust/README.md` -- author guide, protocol, decisions (async, `panic=abort`, glibc/musl deploy note).
-- [ ] `tests/test_sdk_rust.py` -- builds via cargo; runs probes through the real `run_invocation` + `resolve_outcome` and `ResultFile`; `cargo metadata` proves zero deps and no `nats`; shipped manifest loads. Skips without cargo unless `CANDYBAR_REQUIRE_RUST=1`.
-- [ ] `tests/test_sdk_rust_integration.py` -- NATS+PG: register the example, dispatch a matching tick with the real `Dispatcher`, run the real `Executor`, and expect a row `scheduled|success` with SDK `token_spend`/`cost_usd`, counters and `candybar_invocations_total` +1, and a completed event carrying the metrics. A panicking probe lands `fail` with its message.
-- [ ] `.github/workflows/ci.yml`, `mise.toml`, `.gitignore`, `README.md` -- Rust 1.99.1 toolchain + fmt/clippy/test, require-rust flag, `target/` ignore, rust pin, docs link.
+- [x] `sdks/rust/Cargo.toml`, `Cargo.lock`, `src/lib.rs` -- crate with `run`, `invoke` (testable core over an env lookup, returns the exit code), `Context`, `Trigger`, `Outcome`, `MetricError`, `ProtocolError`, `EXIT_*`, hand-rolled JSON encoder, atomic write; unit tests over every matrix row; `#![forbid(unsafe_code)]`, docs.
+- [x] `sdks/rust/examples/outcomes.rs` -- probe binary selecting each outcome by env, for the cross-language tests.
+- [x] `sdks/rust/examples/hello/{Cargo.toml,Cargo.lock,src/main.rs,candybar.toml}` -- standalone author-style crate on `candybar-sdk` (path dep) that reports token spend; schedule `* * * * *`, `noise = true`.
+- [x] `sdks/rust/README.md` -- author guide, protocol, decisions (async, `panic=abort`, glibc/musl deploy note).
+- [x] `tests/test_sdk_rust.py` -- builds via cargo; runs probes through the real `run_invocation` + `resolve_outcome` and `ResultFile`; `cargo metadata` proves zero deps and no `nats`; shipped manifest loads. Skips without cargo unless `CANDYBAR_REQUIRE_RUST=1`.
+- [x] `tests/test_sdk_rust_integration.py` -- NATS+PG: register the example, dispatch a matching tick with the real `Dispatcher`, run the real `Executor`, and expect a row `scheduled|success` with SDK `token_spend`/`cost_usd`, counters and `candybar_invocations_total` +1, and a completed event carrying the metrics. A panicking probe lands `fail` with its message.
+- [x] `.github/workflows/ci.yml`, `mise.toml`, `.gitignore`, `README.md` -- Rust 1.99.1 toolchain + fmt/clippy/test, require-rust flag, `target/` ignore, rust pin, docs link.
 
 **Acceptance Criteria:**
 - Given the hello example registered from its `candybar.toml`, when the real daemon's heartbeat fires a matching minute, then one invocation row records `scheduled|success` with the SDK-reported `token_spend`/`cost_usd`, counters move, and `/metrics` shows the success sample.
@@ -70,9 +70,49 @@ context:
 
 ## Implementation Notes
 
+I implemented this inline because this session has no subagent-spawn tool (same as 1.1–1.9). The g33 preflight passed (krebs-enrollment WARN: legacy adapter, as before), and ecosystem-route pointed only at the Bloodbank naming contract. No new event types were added.
+
+The crate is zero-dependency and 1.1k lines, most of them tests. `run(handler)` → `invoke` (the testable core over any env lookup) → `Context` (Send + Sync: an `AtomicU64` token counter and a `Mutex<Option<f64>>` cost, so scoped threads can report spend) → `catch_unwind` → `IntoOutcome`. `IntoOutcome` covers `()`, `&str`/`String`, `Outcome`, and `Result<T: Into<Outcome>, E: Display>`. The JSON encoder is hand-rolled, and the write is atomic (a temp file plus a rename). `fetch_update` is deprecated on 1.99 and was replaced by `Atomic::update`. The executor, dispatcher and registry needed no change.
+
+Verification:
+- `cargo fmt --check`, `cargo clippy --locked --all-targets -D warnings`, and `cargo test --locked` pass on the SDK and the hello crate: 27 unit tests and 3 doctests.
+- `tests/test_sdk_rust.py` passes (20 tests): the probe runs through the real `run_invocation` + `ResultFile` + `resolve_outcome` in every mode, and `cargo metadata --locked` shows the SDK's only package is itself.
+- `tests/test_sdk_rust_integration.py` passes on throwaway nats:2.10.29 + postgres:17-alpine. It checks the shipped `candybar.toml` → real `Dispatcher` → isolated JetStream stream → real `Executor` path: hello lands `scheduled|success|1545|0.0042`, the panic probe lands `fail` with `panic: kaboom` and spend 13, counters and metrics move by one, and the completed and failed events are correct.
+- `uv run ruff check .` is clean.
+
+The AC was checked against a real daemon in a throwaway smoke. I ran `candybar daemon` with all four roles on throwaway NATS and Postgres, with the production-shaped BLOODBANK_EVENTS and BLOODBANK_COMMANDS streams, then ran `candybar register sdks/rust/examples/hello`. At 06:17:00 UTC the real heartbeat published `tick:29883257`, the dispatcher dispatched it, and the executor ran the Rust binary in 1 ms. The results:
+- Registry row: `scheduled|tick:29883257|success|1545|0.0042`. Counters 1/1.
+- `candybar run <id>` exited 0, and its row is `manual||success|1545|0.0042`.
+- `/metrics` (OpenMetrics): `candybar_invocations_total{result="success"} 2.0` with an `invocation_id` exemplar, and `{result="fail"} 0.0`.
+- BLOODBANK_EVENTS holds created, then invoked and completed twice. Both completed events carry `token_spend:1545, cost_usd:0.0042`.
+
+Everything was torn down afterwards, and SIGTERM drained all roles in under 1 s. The release binary also runs inside `candybar:local`: it needs only `GLIBC_2.34`, and the image has glibc 2.41. CI now proves this on every push.
+
+Shared working tree: four agents worked in the same checkout at once. Two other agents' plain `git commit`s swept up my staged README and CI hunks (74068d3, d64338b). The 4.2 agent then restored the CI hunks to my working tree (8a1f2af), and I committed them in 4da4116. From then on I committed every file with a single add-and-commit limited to my paths. CI briefly failed on a543576 and b37ce64: the runner's preinstalled cargo was 1.99.0, and `rust-version = "1.99.1"` correctly refused it. That was fixed once the pinned-toolchain CI step landed.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+I ran the review inline because no subagent-spawn tool was available (same deviation as 1.1–1.9). It applied the blind, edge-case (path tracing plus claims), and verification-gap checks to `/tmp/story-4-3-diff.vJlHm7.txt`, which holds only this story's paths and hunks (82.7 kB). Finding floor N = min(floor(sqrt(82.7) + 1), 10) = 10.
+
+- Blind/Edge (same root cause): a NUL in a handler's message became `\u0000` in the result file, and the stderr failure line echoed it raw (and uncapped). The executor stores `error_message` and `stderr_tail` in Postgres text columns, which reject 0x00. The terminal write would then fail, and the nak'd command would re-run on every redelivery. The 4.1 and 4.2 SDKs found the same issue. Verdict: high. Patched in `a49ca6b`: `clean_message` caps the text and replaces NUL with U+FFFD, matching Python, in both the result file and the stderr line. It is pinned by a Rust unit test and the cross-language `nul` probe test.
+- Edge: the default panic hook still prints a panic payload verbatim, so a `panic!` whose text contains NUL can reach `stderr_tail`. Verdict: low. Deferred: the root cause is the pre-existing executor stderr path, which 4.1 already deferred. An SDK-side fix needs a custom panic hook (new behavior and complexity).
+- Blind: `Outcome` lacked `#[must_use]`, so `Outcome::fail("x");` dropped without returning compiles silently. Verdict: low. Patched as a direct one-attribute correction.
+- Edge: the unanchored `target/` in `.gitignore` ignores any directory named `target` anywhere in the repo. Verdict: low. Patched: it is now anchored to `sdks/**/target/`.
+- Edge: with `CARGO_TARGET_DIR` set, `cargo build --release` puts the binary somewhere the example's `entrypoint` does not point, so `candybar register` fails with "entrypoint is not an existing file". Verdict: low. Patched with a doc line in the toml and the README; the tests pass `--target-dir` explicitly.
+- Verification gap: the hello crate was never checked by `cargo fmt --check` locally, because `cargo fmt` in `sdks/rust` does not reach a separate package. CI run 40278987452 failed on it. Verdict: medium. Patched: the crate is now formatted, and the local verification runs fmt on both manifests.
+- Verification gap: the floor pin was unproven on CI. CI runs on a543576 and b37ce64 failed in Unit tests with "rustc 1.99.0 is not supported" (the runner's preinstalled cargo), before the `Set up Rust` step landed. Verdict: false as a defect: this is the MSRV guard working. It is resolved by the pinned `rustup toolchain install 1.99.1` step.
+- Blind: `MetricError` derives `PartialEq` over `f64`, so a NaN rejection compares unequal to itself. Verdict: low. Rejected: nothing compares `MetricError`s, and the fix would add a manual impl.
+- Blind: the public `encode_result` silently drops an invalid `cost_usd` instead of erroring. Verdict: low. Rejected: it is documented, `Context` never produces an invalid cost, and the filter is the last guard that keeps the file valid for the executor.
+- Blind: `add_tokens` uses `Relaxed` ordering, so the final read could miss thread updates. Verdict: false. `thread::scope` (and any join) establishes happens-before, the read happens after the handler returns, and `threads_can_report_spend_through_a_shared_context` pins it.
+- Blind: the temp name `.result.json.<pid>.tmp` could collide across processes. Verdict: false. `run_invocation` mkdtemps a fresh work directory per invocation (`runner.py`), and the pid makes the name unique within it.
+- Blind: `catch_unwind` cannot catch `panic = "abort"` or a double panic. Verdict: low. Rejected: it is documented in the README, and the executor still records `failed` from the signal exit code.
+- Edge: a non-UTF-8 `CANDYBAR_TICK_ID` is a protocol error even though the var is optional. Verdict: low. Rejected: the executor builds tick ids as ASCII `tick:<int>`, so failing loudly on a corrupt value is correct.
+- Edge: with `CANDYBAR_RESULT_FILE` unset, nothing is written and the executor sees only exit 2. Verdict: false as a defect: it is the frozen matrix row "Outside executor". With no path there is nowhere to write.
+- Claims check: every Intent, Always/Never, matrix, Tasks and AC claim was checked against the code and the run evidence, and none was falsified. Both ACs are proven: the real-heartbeat smoke at 06:17:00 UTC (see Implementation Notes) and `test_crate_has_no_nats_or_any_other_dependency`.
+
+Zero intent_gap or bad_spec entries, so no loopback was needed. One entry was deferred (the panic-hook NUL path).
 
 ## Design Notes
 
@@ -87,6 +127,15 @@ fn main() -> std::process::ExitCode {
     })
 }
 ```
+
+Decisions where the spine is silent:
+- **Zero dependencies.** The JSON is hand-encoded (status, message, metrics in canonical order) rather than pulled in through serde. This keeps the no-NATS guarantee structural, so `cargo metadata` lists one package, and it needs no crates.io access to build. The cross-language tests parse every output with the daemon's own `ResultFile`.
+- **Metrics live only on `Context`.** `Outcome` carries no metrics, so spend cannot be counted twice and is kept on `Err` and panic. `token_spend` saturates at `i64::MAX`, the registry's BIGINT. `add_cost` returns `Result<(), MetricError>` (idiomatic `?`) and does not panic.
+- **`IntoOutcome` trait.** A handler may return `()`, `&str`/`String` (success with message), `Outcome`, or `Result<T: Into<Outcome>, E: Display>`. An `Err` keeps its `Display` text (like Node). A panic becomes `panic: <payload>`.
+- **Exit codes** are 0, 1 and 2. An unwritable result file exits 1 (like Node; Python uses 2). The executor maps both to `failed`, and 4.2 deferred the cross-SDK conformance fixture.
+- **`Context` is `Send + Sync`** (an atomic counter and a mutex), so threads spawned by a handler can report spend.
+- **Floor pinning.** `rust-version = "1.99.1"` acts as the MSRV guard, `mise.toml` sets `rust = "1.99.1"`, and CI runs `rustup toolchain install 1.99.1`. `publish = false` until distribution is decided (spine Deferred).
+- **The example schedule is `* * * * *` with `noise = true`**, so the real-heartbeat smoke fires within a minute. The siblings use `*/5`.
 
 ## Verification
 
