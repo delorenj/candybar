@@ -2332,13 +2332,13 @@ jobs:
   - systemctl --user disable --now delodocs-inbox-cleanup.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/delodocs-inbox-cleanup.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794c-7f05-7a88-85b1-015808a818b8
   cutover_at: '2026-10-26T17:40:19.359974Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: b38a621e-de8e-5ab0-8048-4b0626ad3643
+    result: success
+    at: '2026-10-26T17:50:00.782291Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:20:00Z'
@@ -2353,6 +2353,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794c-7f05-7a88-85b1-015808a818b8 enabled; first fire 2026-10-26T17:50:00Z
+  - at: '2026-10-26T17:50:08.449666Z'
+    action: verify
+    outcome: ok
+    detail: invocation b38a621e-de8e-5ab0-8048-4b0626ad3643 (scheduled) success exit=0 runtime=536ms memory=10428416B cpu=0.1158
 - id: crontab:22
   wave: '7.9'
   candybar:
