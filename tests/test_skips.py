@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -61,6 +61,7 @@ class Row:
     candybar_id: UUID
     fire_time: datetime | None
     kind: str = SKIP_OCCURRENCE
+    day: date | None = None  # protocol parity with SkipRow (Story 2.4)
 
 
 class Message:

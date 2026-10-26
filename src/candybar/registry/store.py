@@ -284,8 +284,9 @@ async def list_skips(session: AsyncSession, start: datetime, end: datetime) -> l
     Occurrence rows with `start <= fire_time < end` (Story 2.3) plus
     rest-of-day rows whose date intersects the window (Story 2.4): fires in
     the window have dates in `[start.date(), (end - 1m).date()]`, and a day
-    row matters iff its `day` is in that range. Ordered by fire_time then
-    candybar id; day rows (NULL fire_time) sort last.
+    row matters iff its `day` is in that range. Ordered by fire_time, then
+    day, then candybar id; day rows (NULL fire_time) sort last, oldest date
+    first — every key can tie, so the triple keeps the order deterministic.
     """
     _require_tick_minute(start, "window start")
     _require_tick_minute(end, "window end")
@@ -305,7 +306,7 @@ async def list_skips(session: AsyncSession, start: datetime, end: datetime) -> l
                 ),
             )
         )
-        .order_by(Skip.fire_time, Skip.candybar_id)
+        .order_by(Skip.fire_time, Skip.day, Skip.candybar_id)
     )
     return [_skip_entry(row) for row in result]
 

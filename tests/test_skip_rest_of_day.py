@@ -286,8 +286,8 @@ def test_a_skip_for_another_date_is_inert():
     h.tick(at(10, 10))
     assert [c.data.tick_id for c in h.commands()] == [tid(at(10, 10))]
     assert h.skipped() == []
-    # The day row WAS read (the window covers the 26th, the row is the 25th —
-    # no; a 25th row does not intersect the 26th window). Window contract:
+    # The window for the tick covers only the 26th, so the 25th's row is not
+    # even read: list_skips's day-intersection contract.
     assert h.windows == [(at(10, 10), at(10, 11))]
 
 
