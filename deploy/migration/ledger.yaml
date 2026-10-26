@@ -2272,7 +2272,7 @@ jobs:
   - systemctl --user disable --now ifvault-nightly.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/ifvault-nightly.timer
-  status: cutover
+  status: rolled-back
   candybar_id: 01a1794a-aaf6-7d74-9978-64c569f0cff2
   cutover_at: '2026-10-26T17:38:19.561984Z'
   verification:
@@ -2293,6 +2293,14 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794a-aaf6-7d74-9978-64c569f0cff2 enabled; first fire 2026-10-27T05:40:00Z
+  - at: '2026-10-26T17:45:47.380765Z'
+    action: rollback
+    outcome: ok
+    detail: 'native scheduler restored: first candybar manual run failed: restic forget --prune requires backend connection limit >=2; restore native timer per wave policy despite pre-existing rclone failure'
+  - at: '2026-10-26T17:45:47.518307Z'
+    action: rollback
+    outcome: ok
+    detail: candybar 01a1794a-aaf6-7d74-9978-64c569f0cff2 disabled
 - id: systemd:delodocs-inbox-cleanup.timer
   wave: '7.9'
   candybar:
@@ -3420,3 +3428,179 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794f-0892-771f-8913-9184703c932a enabled; first fire 2026-10-27T08:23:00Z
+- id: systemd:telnyx-s3-intake
+  wave: '7.11'
+  candybar:
+    name: telnyx-s3-intake
+    description: Copy completed native Telnyx S3 call recordings into the Wax inbox
+    tags:
+    - migrated
+    - heyma
+    schedule: '* * * * *'
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: telnyx-s3-intake.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* *:*:00; OnBootSec=60s; Persistent=true; RandomizedDelaySec=5s; AccuracySec=1s
+    jitter_s: 5
+    unit: telnyx-s3-intake.timer
+    unit_file: /home/delorenj/.config/systemd/user/telnyx-s3-intake.timer
+  deviations:
+  - RandomizedDelaySec=5s dropped
+  - OnBootSec=60s boot trigger dropped
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/HeyMa
+    path: components/telnyx-s3-intake/README.md
+    commit: fe19f9f900d25b29fe325e16f5e07839eddc7dc8
+  disable:
+  - systemctl --user disable --now telnyx-s3-intake.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/telnyx-s3-intake.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:45:36.576134Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:gruvato-acoustid-check.timer
+  wave: '7.11'
+  candybar:
+    name: gruvato-acoustid-check
+    description: Check whether Gruvato AcoustID quota alert is open
+    tags:
+    - migrated
+    - gruvato
+    schedule: 7 */3 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: gruvato-acoustid-check.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 00/3:07:00; RandomizedDelaySec=120; Persistent=true
+    jitter_s: 120
+    unit: gruvato-acoustid-check.timer
+    unit_file: /home/delorenj/code/gruvato/deploy/gruvato-acoustid-check.timer
+  deviations:
+  - RandomizedDelaySec=120s dropped
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/gruvato
+    path: deploy/gruvato-acoustid-check.service
+    commit: b3346622926fb6010a8da3300decbafce288f415
+  disable:
+  - systemctl --user disable --now gruvato-acoustid-check.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/gruvato/deploy/gruvato-acoustid-check.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:45:36.597188Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:mobile-deploy-hub-catchup.timer
+  wave: '7.11'
+  candybar:
+    name: mobile-deploy-hub-catchup
+    description: Install pending app builds on the Android S26 over wireless adb
+    tags:
+    - migrated
+    - mobile-deploy-hub
+    schedule: '*/2 * * * *'
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: mobile-deploy-hub-catchup.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*:0/2; Persistent=true; AccuracySec=15s
+    jitter_s: 0
+    unit: mobile-deploy-hub-catchup.timer
+    unit_file: /home/delorenj/.config/systemd/user/mobile-deploy-hub-catchup.timer
+  deviations:
+  - Persistent=true catch-up replaced by candybar misfire policy
+  - AccuracySec=15s dropped; candybar fires on the minute
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/mobile-deploy-hub
+    path: tools/catchup/units/install.sh
+    commit: 403dc4c39b3697533c2475e7b17f6dff2818c41e
+  disable:
+  - systemctl --user disable --now mobile-deploy-hub-catchup.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/mobile-deploy-hub-catchup.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:45:36.614187Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:mobile-deploy-hub-macwatch.timer
+  wave: '7.11'
+  candybar:
+    name: mobile-deploy-hub-macwatch
+    description: Cancel stale iPad/Mac deploy CI jobs after queue limit
+    tags:
+    - migrated
+    - mobile-deploy-hub
+    schedule: 1-59/2 * * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: mobile-deploy-hub-macwatch.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*:1/2; Persistent=false; AccuracySec=15s
+    jitter_s: 0
+    unit: mobile-deploy-hub-macwatch.timer
+    unit_file: /home/delorenj/.config/systemd/user/mobile-deploy-hub-macwatch.timer
+  deviations:
+  - AccuracySec=15s dropped; candybar fires on the minute
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/mobile-deploy-hub
+    path: tools/catchup/units/install.sh
+    commit: 403dc4c39b3697533c2475e7b17f6dff2818c41e
+  disable:
+  - systemctl --user disable --now mobile-deploy-hub-macwatch.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/mobile-deploy-hub-macwatch.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:45:36.634277Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
