@@ -1,0 +1,13 @@
+# Migrated from systemd:docker-prune.timer (wave 7.7). The .service unit stays exactly as it is
+# in ~/code/infra/systemd/user/; only its timer retired. Cutover record:
+# deploy/migration/ledger.yaml.
+[candybar]
+name = "docker-prune"
+description = "Daily Docker sweep of old unused images, build cache and anonymous volumes (migrated from docker-prune.timer)"
+tags = ["migrated", "infra"]
+schedule = "41 5 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "docker-prune.service"

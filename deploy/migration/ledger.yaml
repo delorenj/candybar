@@ -1204,3 +1204,435 @@ jobs:
     action: cutover
     outcome: pinned-external
     detail: '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler external'
+- id: systemd:cache-prune-codex-tmp.timer
+  wave: '7.7'
+  candybar:
+    name: cache-prune-codex-tmp
+    description: Hourly sweep of the codex app-server .tmp/git-* scratch dirs (migrated from cache-prune-codex-tmp.timer)
+    tags:
+    - migrated
+    - infra
+    schedule: 17 * * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: cache-prune-codex-tmp.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* *:17:00; Persistent=true; RandomizedDelaySec=3min
+    jitter_s: 180
+    unit: cache-prune-codex-tmp.timer
+    unit_file: /home/delorenj/code/infra/systemd/user/cache-prune-codex-tmp.timer
+  deviations:
+  - RandomizedDelaySec=3min dropped
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/cache-prune-codex-tmp.timer
+    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
+  disable:
+  - systemctl --user disable --now cache-prune-codex-tmp.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune-codex-tmp.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:13.764467Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:cache-prune-daily.timer
+  wave: '7.7'
+  candybar:
+    name: cache-prune-daily
+    description: Daily age-based sweep of trash, updater leftovers, runner _work and Rust incremental builds (migrated from cache-prune-daily.timer)
+    tags:
+    - migrated
+    - infra
+    schedule: 23 5 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: cache-prune-daily.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 05:23:00; Persistent=true; RandomizedDelaySec=10min
+    jitter_s: 600
+    unit: cache-prune-daily.timer
+    unit_file: /home/delorenj/code/infra/systemd/user/cache-prune-daily.timer
+  deviations:
+  - RandomizedDelaySec=10min dropped
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/cache-prune-daily.timer
+    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
+  disable:
+  - systemctl --user disable --now cache-prune-daily.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune-daily.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:13.802102Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:cache-prune.timer
+  wave: '7.7'
+  candybar:
+    name: cache-prune
+    description: Weekly sweep of uv/bun/npx/mise/pnpm/go caches, HF models, stale Rust targets, venvs and node_modules (migrated from cache-prune.timer)
+    tags:
+    - migrated
+    - infra
+    schedule: 7 5 * * 0
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: cache-prune.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=Sun *-*-* 05:07:00; Persistent=true; RandomizedDelaySec=15min
+    jitter_s: 900
+    unit: cache-prune.timer
+    unit_file: /home/delorenj/code/infra/systemd/user/cache-prune.timer
+  deviations:
+  - RandomizedDelaySec=15min dropped
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/cache-prune.timer
+    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
+  disable:
+  - systemctl --user disable --now cache-prune.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:13.841635Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:docker-prune.timer
+  wave: '7.7'
+  candybar:
+    name: docker-prune
+    description: Daily Docker sweep of old unused images, build cache and anonymous volumes (migrated from docker-prune.timer)
+    tags:
+    - migrated
+    - infra
+    schedule: 41 5 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: docker-prune.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 05:41:00; Persistent=true; RandomizedDelaySec=10min
+    jitter_s: 600
+    unit: docker-prune.timer
+    unit_file: /home/delorenj/code/infra/systemd/user/docker-prune.timer
+  deviations:
+  - RandomizedDelaySec=10min dropped
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/docker-prune.timer
+    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
+  disable:
+  - systemctl --user disable --now docker-prune.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/docker-prune.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:13.881150Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:state-maintain
+  wave: '7.7'
+  candybar:
+    name: state-maintain
+    description: Daily retention and VACUUM for host state SQLite DBs plus zstd compression of agent transcripts older than 30 days (migrated from state-maintain.timer)
+    tags:
+    - migrated
+    - infra
+    schedule: 40 5 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: state-maintain.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 05:40:00; Persistent=true; RandomizedDelaySec=15min
+    jitter_s: 900
+    unit: state-maintain.timer
+    unit_file: /home/delorenj/code/infra/systemd/user/state-maintain.timer
+  deviations:
+  - RandomizedDelaySec=15min dropped
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/state-maintain.timer
+    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
+  disable:
+  - systemctl --user disable --now state-maintain.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/state-maintain.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:13.918852Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:user-logrotate
+  wave: '7.7'
+  candybar:
+    name: user-logrotate
+    description: Daily user-level log rotation (logrotate plus generated Hermes include) and age-based log sweep (migrated from user-logrotate.timer)
+    tags:
+    - migrated
+    - infra
+    schedule: 17 5 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: user-logrotate.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 05:17:00; Persistent=true; RandomizedDelaySec=10min
+    jitter_s: 600
+    unit: user-logrotate.timer
+    unit_file: /home/delorenj/code/infra/systemd/user/user-logrotate.timer
+  deviations:
+  - RandomizedDelaySec=10min dropped
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/user-logrotate.timer
+    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
+  disable:
+  - systemctl --user disable --now user-logrotate.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/user-logrotate.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:13.954908Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:zellij-ark
+  wave: '7.7'
+  candybar:
+    name: zellij-ark
+    description: Moves zellij servers and pane workloads out of GNOME graphical-session scopes into the ark slices, so agents survive gdm restarts and logout (migrated from zellij-ark.timer)
+    tags:
+    - migrated
+    - infra
+    schedule: '*/2 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: zellij-ark-adopt.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=1min; OnUnitActiveSec=2min; AccuracySec=15s (not Persistent)
+    jitter_s: 15
+    unit: zellij-ark.timer
+    unit_file: /home/delorenj/code/infra/systemd/user/zellij-ark.timer
+  deviations:
+  - interval timer (OnUnitActiveSec=2min) becomes cron */2; phase not preserved
+  - OnBootSec=1min boot start dropped (first candybar fire within 2 min of executor start)
+  - AccuracySec=15s wakeup coalescing dropped
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/zellij-ark.timer
+    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
+  disable:
+  - systemctl --user disable --now zellij-ark.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/zellij-ark.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:13.992832Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:gnome-shell-restart.timer
+  wave: '7.7'
+  candybar:
+    name: gnome-shell-restart
+    description: Hourly check that restarts GNOME Shell when it holds more than 100k open file handles (migrated from gnome-shell-restart.timer)
+    tags:
+    - migrated
+    - infra
+    schedule: 0 * * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: gnome-shell-restart.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=hourly; Persistent=true
+    jitter_s: 0
+    unit: gnome-shell-restart.timer
+    unit_file: /home/delorenj/code/infra/systemd/user/gnome-shell-restart.timer
+  deviations: []
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/gnome-shell-restart.timer
+    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
+  disable:
+  - systemctl --user disable --now gnome-shell-restart.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/gnome-shell-restart.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:14.032768Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:srvls-metrics
+  wave: '7.7'
+  candybar:
+    name: srvls-metrics
+    description: Writes the host background-task inventory as Prometheus textfile metrics every 5 minutes (migrated from srvls-metrics.timer)
+    tags:
+    - migrated
+    - infra
+    schedule: '*/5 * * * *'
+    timezone: UTC
+    runner:
+      kind: systemd
+      unit: srvls-metrics.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=2min; OnUnitActiveSec=5min; RandomizedDelaySec=20 (not Persistent)
+    jitter_s: 20
+    unit: srvls-metrics.timer
+    unit_file: /home/delorenj/code/infra/systemd/user/srvls-metrics.timer
+  deviations:
+  - interval timer (OnUnitActiveSec=5min) becomes cron */5; phase not preserved
+  - OnBootSec=2min boot start dropped
+  - RandomizedDelaySec=20s dropped
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/srvls-metrics.timer
+    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
+  disable:
+  - systemctl --user disable --now srvls-metrics.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/srvls-metrics.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:14.070856Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
+- id: systemd:srvls-snapshot
+  wave: '7.7'
+  candybar:
+    name: srvls-snapshot
+    description: Nightly markdown inventory snapshot of every host background task, committed locally to ~/code/infra/docs/inventory (migrated from srvls-snapshot.timer)
+    tags:
+    - migrated
+    - infra
+    schedule: 10 4 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: srvls-snapshot.service
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 04:10:00; Persistent=true
+    jitter_s: 0
+    unit: srvls-snapshot.timer
+    unit_file: /home/delorenj/code/infra/systemd/user/srvls-snapshot.timer
+  deviations: []
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/user/srvls-snapshot.timer
+    commit: cc7383805549e7ec4af3c428150109cef85ff1fc
+  disable:
+  - systemctl --user disable --now srvls-snapshot.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/srvls-snapshot.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-26T17:23:14.110431Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer

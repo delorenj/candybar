@@ -1,0 +1,13 @@
+# Migrated from systemd:srvls-snapshot (wave 7.7). The .service unit stays exactly as it is
+# in ~/code/infra/systemd/user/; only its timer retired. Cutover record:
+# deploy/migration/ledger.yaml.
+[candybar]
+name = "srvls-snapshot"
+description = "Nightly markdown inventory snapshot of every host background task, committed locally to ~/code/infra/docs/inventory (migrated from srvls-snapshot.timer)"
+tags = ["migrated", "infra"]
+schedule = "10 4 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "srvls-snapshot.service"

@@ -1,0 +1,12 @@
+# Migrated from systemd:cache-prune-codex-tmp.timer (wave 7.7). The .service unit stays exactly as it is
+# in ~/code/infra/systemd/user/; only its timer retired. Cutover record: deploy/migration/ledger.yaml.
+[candybar]
+name = "cache-prune-codex-tmp"
+description = "Hourly sweep of the codex app-server .tmp/git-* scratch dirs (migrated from cache-prune-codex-tmp.timer)"
+tags = ["migrated", "infra"]
+schedule = "17 * * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "cache-prune-codex-tmp.service"

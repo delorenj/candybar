@@ -1,0 +1,13 @@
+# Migrated from systemd:cache-prune.timer (wave 7.7). The .service unit stays exactly as it is
+# in ~/code/infra/systemd/user/; only its timer retired. Cutover record:
+# deploy/migration/ledger.yaml.
+[candybar]
+name = "cache-prune"
+description = "Weekly sweep of uv/bun/npx/mise/pnpm/go caches, HF models, stale Rust targets, venvs and node_modules (migrated from cache-prune.timer)"
+tags = ["migrated", "infra"]
+schedule = "7 5 * * 0"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "cache-prune.service"

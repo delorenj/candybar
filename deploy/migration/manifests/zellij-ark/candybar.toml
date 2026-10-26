@@ -1,0 +1,13 @@
+# Migrated from systemd:zellij-ark (wave 7.7). The .service unit stays exactly as it is
+# in ~/code/infra/systemd/user/; only its timer retired. Cutover record:
+# deploy/migration/ledger.yaml.
+[candybar]
+name = "zellij-ark"
+description = "Moves zellij servers and pane workloads out of GNOME graphical-session scopes into the ark slices, so agents survive gdm restarts and logout (migrated from zellij-ark.timer)"
+tags = ["migrated", "infra"]
+schedule = "*/2 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "zellij-ark-adopt.service"

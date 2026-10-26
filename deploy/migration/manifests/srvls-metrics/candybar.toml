@@ -1,0 +1,13 @@
+# Migrated from systemd:srvls-metrics (wave 7.7). The .service unit stays exactly as it is
+# in ~/code/infra/systemd/user/; only its timer retired. Cutover record:
+# deploy/migration/ledger.yaml.
+[candybar]
+name = "srvls-metrics"
+description = "Writes the host background-task inventory as Prometheus textfile metrics every 5 minutes (migrated from srvls-metrics.timer)"
+tags = ["migrated", "infra"]
+schedule = "*/5 * * * *"
+timezone = "UTC"
+
+[candybar.runner]
+kind = "systemd"
+unit = "srvls-metrics.service"

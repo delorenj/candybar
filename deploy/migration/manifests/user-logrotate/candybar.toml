@@ -1,0 +1,13 @@
+# Migrated from systemd:user-logrotate (wave 7.7). The .service unit stays exactly as it is
+# in ~/code/infra/systemd/user/; only its timer retired. Cutover record:
+# deploy/migration/ledger.yaml.
+[candybar]
+name = "user-logrotate"
+description = "Daily user-level log rotation (logrotate plus generated Hermes include) and age-based log sweep (migrated from user-logrotate.timer)"
+tags = ["migrated", "infra"]
+schedule = "17 5 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "user-logrotate.service"

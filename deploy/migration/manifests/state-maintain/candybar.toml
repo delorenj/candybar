@@ -1,0 +1,13 @@
+# Migrated from systemd:state-maintain (wave 7.7). The .service unit stays exactly as it is
+# in ~/code/infra/systemd/user/; only its timer retired. Cutover record:
+# deploy/migration/ledger.yaml.
+[candybar]
+name = "state-maintain"
+description = "Daily retention and VACUUM for host state SQLite DBs plus zstd compression of agent transcripts older than 30 days (migrated from state-maintain.timer)"
+tags = ["migrated", "infra"]
+schedule = "40 5 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "systemd"
+unit = "state-maintain.service"
