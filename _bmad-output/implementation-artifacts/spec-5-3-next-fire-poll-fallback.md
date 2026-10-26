@@ -2,7 +2,7 @@
 title: 'Story 5.3: Next-fire poll fallback'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: 'd974adb1d6f3ff5f7ae5efcd252985fc6fa8d5d3'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -105,6 +105,23 @@ context:
 
 ## Review Triage Log
 
+The layers ran inline because this session has no subagent tool: blind-hunter, edge-case-hunter (with the deletion and claims checks) and verification-gap. The blind-hunter floor was N = min(floor(sqrt(40.1) + 1), 10) = 7. Verification-gap reported no gaps: each changed behavior has a test that fails on its smallest regression. That covers the day-jump (brute-force parametrized tests, step count), the open-ended `list_skips` (a live store assertion and the 2-statement count), `window_rows`'s current (5.2's 33 tests plus the randomized test) and the route (matrix tests, default clock, live test).
+
+| # | Layer | Finding | Verdict | Evidence / route |
+|---|-------|---------|---------|------------------|
+| 1 | edge-case-hunter (claims) | The Tasks line says the equivalence test uses `[cut, cut+31d)` windows; the test uses 6-hour windows at random offsets, and only 40 of its 80 trials contained the next fire. | low | Real: half the trials asserted only "no current". Patched: every trial with a next fire also builds a window that contains it and asserts that window's `current` is that row. The 6-hour windows stay, because they cover the future-window case. Not 31 days, since a minutely candybar is 44,640 rows. |
+| 2 | blind-hunter | The README hard-codes measured latencies (about 13 ms and 20 ms), which go stale on other machines. | low | Patched with a one-sentence deletion. The measurements stay in the Implementation Notes. |
+| 3 | blind-hunter | The poll endpoint sends no `Cache-Control: no-store`, so an intermediary could serve a stale `current`. | false | Cloudflare caches by file extension by default, and `/schedule/next` has none. Traefik does not cache. With no `Last-Modified`, browsers have nothing to compute heuristic freshness from. `/schedule` has the same headers. |
+| 4 | blind-hunter | `window_rows` now runs `global_next` even for an all-past window, where no row can be current. | low | Real, but the cost is one lookup per candybar per request (about 45 µs each). Skipping it would add a branch. Rejected. |
+| 5 | blind-hunter | The "nothing will fire" 404 has the same status as an unknown route. | low | The two are distinguishable by the problem `title` ("No upcoming fire" vs "Not Found"). 404 is a frozen-intent decision. Rejected. |
+| 6 | blind-hunter | Wall-clock latency assertions in the default suite can flake on a loaded runner. | low | The AC requires "asserted under a stated latency budget". The median of 5 runs with about 4× headroom (12.6 ms against 50 ms; 20 ms against 100 ms). The deterministic step count is the real boundedness proof. Rejected. |
+| 7 | blind-hunter + edge-case-hunter | The clock is read before the DB read, so a slow DB can return a fire that has just passed. | low | Same ordering and exposure as `/schedule` (5.2). The window is only the DB latency, and the next poll corrects it. Rejected. |
+| 8 | blind-hunter | The open-ended skip read grows without bound. | false | Only skips at or after `cut` are read, so history never grows it. Future skips are operator-written, and no write API exists yet (5.6). |
+| 9 | blind-hunter | `next_fire_of` swallows `OverflowError` with no log. | false | Unreachable. `cut` comes from the wall clock, and croniter raises `CroniterBadDateError` (→ None) for a never-firing schedule long before year 9999. |
+| 10 | blind-hunter | The tests import `Rig` from `test_api_schedule.py`, which couples the two files. | low | Developer-only. A change to `Rig` fails loudly in both files. The same precedent exists: `migrated_db` and `contract_shapes` are imported the same way. Rejected. |
+| 11 | edge-case-hunter | The `next_fire` day-jump on 9999-12-31 raises `OverflowError` (date + 1 day) instead of returning None. | false | Its only production caller, `next_fire_of`, catches it, and no wall-clock `cut` reaches year 9999. |
+| 12 | edge-case-hunter (deletion) | The removed `earlier` scan and index-based `current` in `window_rows`, and `_fires_in` losing its `skips` parameter. | false | Both are re-established through `global_next`. The equivalence is argued in its docstring and pinned by the randomized test, using window-bounded skip reads. `_fires_in` has no other caller in `src/` or `tests/`. 5.2's 33 tests pass unchanged. |
+| 13 | edge-case-hunter (claims) | Other claims checked: one definition of current; two statements; no window walk; future skips only; lookup cost O(1 + skips); 404/500 problem bodies; work off the loop; no migration, event or write. | — | None falsified except #1. |
 ## Verification
 
 **Commands:**

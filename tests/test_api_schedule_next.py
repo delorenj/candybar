@@ -361,6 +361,17 @@ def test_next_row_equals_the_window_current_and_the_brute_force_definition() -> 
         else:
             assert current == [], trial
 
+        if row is not None:
+            # And a window built to contain the fire always marks it current,
+            # however far skips pushed it (half the random windows miss it).
+            lo = max(cut - timedelta(hours=1), row.fire_time - timedelta(hours=2))
+            hi = row.fire_time + timedelta(minutes=30)
+            around = window_rows(
+                candybars, lo, hi, now=now,
+                skips=group_skips(skips_in(entries, min(lo, cut), hi)), limit=10**6,
+            )
+            assert [r for r in around if r.state == STATE_CURRENT] == [row], trial
+
 
 def test_default_clock_is_the_utc_wall_clock(rig: Rig) -> None:
     rig.add("alpha", "* * * * *")
