@@ -993,8 +993,8 @@ jobs:
   native_failing: false
   source_of_truth:
     repo: delorenj/agents
-    path: tools/jev-clairic/hermes/aperture-lane-monitor.sh
-    commit: 03761d6d036425d71f9087f5a2f126ccac83518c
+    path: tools/jev-clairic/hermes/cron-jobs.json
+    commit: e4988580ecdfa561d10a645e50ff605879bd0cda
   disable:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler external'
   rollback:
@@ -2509,13 +2509,13 @@ jobs:
   - systemctl --user disable --now candystore-project-sync.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/33GOD/candystore/ops/systemd/candystore-project-sync.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794c-ef7e-74e7-8084-c8d82bf70093
   cutover_at: '2026-10-26T17:40:48.148580Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 78e74741-868d-5002-8bef-79a1adc38853
+    result: success
+    at: '2026-10-26T18:05:05.634700Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:30:36.971121Z'
@@ -2526,6 +2526,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794c-ef7e-74e7-8084-c8d82bf70093 enabled; first fire 2026-10-26T18:05:00Z
+  - at: '2026-10-26T18:05:13.286199Z'
+    action: verify
+    outcome: ok
+    detail: invocation 78e74741-868d-5002-8bef-79a1adc38853 (scheduled) success exit=0 runtime=5494ms memory=70053888B cpu=0.0625
 - id: systemd:holocene-pad-roster.timer
   wave: '7.8'
   candybar:
