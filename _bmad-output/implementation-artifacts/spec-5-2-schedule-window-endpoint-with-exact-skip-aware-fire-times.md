@@ -2,7 +2,7 @@
 title: 'Story 5.2: Schedule window endpoint with exact skip-aware fire times'
 type: 'feature'
 created: '2026-10-26'
-status: 'in-review'
+status: 'done'
 route: 'dispatch'
 baseline_commit: '598721d5254b1b776a9340bbc7a7bbbccde46c85'
 review_loop_iteration: 0
@@ -95,7 +95,7 @@ context:
   - New `registry.fire_results`.
   - `vocabulary.scheduled_idempotency_key` is now used by `build_candybar_invoke`, with the same key format and the same error.
   - The contract parser now covers optional fields, quoted unions and the `noise` row extension.
-  - Tests: 31 unit tests in `tests/test_api_schedule.py` and a live test in `tests/test_schedule_window_integration.py` (CI live-Postgres step). README updated.
+  - Tests: 33 unit tests (after review patch `5af7e2d`) in `tests/test_api_schedule.py` and a live test in `tests/test_schedule_window_integration.py` (CI live-Postgres step). README updated.
 - Numbers I measured:
   - croniter costs about 10 µs per fire. About 18,700 rows take 167 ms to compute in the worker thread.
   - The work that stays on the loop (keys, results, JSON) takes about 40 ms. That is why only `window_rows` goes through `asyncio.to_thread`.
