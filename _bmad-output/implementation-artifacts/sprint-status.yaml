@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-25-2026 21:37
-last_updated: 10-26-2026 14:10
+last_updated: 10-26-2026 15:30
 project: candybar
 project_key: NOKEY
 tracking_system: file-system
@@ -77,3 +77,23 @@ development_status:
 
   epic-6: backlog
   epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-per-candybar-iana-timezone: backlog
+  7-2-host-executor: backlog
+  7-3-runner-kinds-exec-and-systemd: backlog
+  7-4-hermes-runner: backlog
+  7-5-migration-ledger-rollback-and-the-migrate-cli: backlog
+  7-6-off-candybar-self-watchdog: backlog
+  7-7-wave-1-infra-housekeeping: backlog
+  7-8-wave-2-33god-platform-sweeps: backlog
+  7-9-wave-3-backups-and-vault: backlog
+  7-10-wave-4-hindsight-pipeline: backlog
+  7-11-wave-5-product-pollers: backlog
+  7-12-wave-6-intelliforia-operations: backlog
+  7-13-wave-7-automaticai-gateway-operations: backlog
+  7-14-wave-8-james-brennan-ipm: backlog
+  7-15-wave-9-dev-journal-and-reporting: backlog
+  7-16-wave-10-personal-llm-jobs: backlog
+  7-17-wave-11-hermes-agent-jobs: backlog
+  epic-7-retrospective: optional
