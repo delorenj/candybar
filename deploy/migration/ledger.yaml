@@ -2096,7 +2096,7 @@ jobs:
   - systemctl --user disable --now backup-drill.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/backup-drill.timer
-  status: cutover
+  status: rolled-back
   candybar_id: 01a17948-223b-7507-9eb4-2664bf0e787c
   cutover_at: '2026-10-26T17:35:33.452250Z'
   verification:
@@ -2117,6 +2117,14 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17948-223b-7507-9eb4-2664bf0e787c enabled; first fire 2026-11-01T14:00:00Z
+  - at: '2026-10-26T17:44:20.700290Z'
+    action: rollback
+    outcome: ok
+    detail: 'native scheduler restored: first candybar manual run failed: excluded junk present in archive and restic check FAILED (existing backup integrity problem); restore native timer per wave policy'
+  - at: '2026-10-26T17:44:20.830139Z'
+    action: rollback
+    outcome: ok
+    detail: candybar 01a17948-223b-7507-9eb4-2664bf0e787c disabled
 - id: systemd:restic-dbdumps
   wave: '7.9'
   candybar:
@@ -2202,7 +2210,7 @@ jobs:
   - systemctl --user disable --now milkshake-ledger-backup.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/milkshake-ledger-backup.timer
-  status: cutover
+  status: rolled-back
   candybar_id: 01a1794a-a6ad-77ae-9993-72cdf80a0f62
   cutover_at: '2026-10-26T17:38:18.438810Z'
   verification:
@@ -2223,6 +2231,14 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794a-a6ad-77ae-9993-72cdf80a0f62 enabled; first fire 2026-10-27T06:30:00Z
+  - at: '2026-10-26T17:44:40.036258Z'
+    action: rollback
+    outcome: ok
+    detail: 'native scheduler restored: first candybar manual run failed: restic forget --prune reports backend connection limit of at least two; restore native timer per wave policy'
+  - at: '2026-10-26T17:44:40.179594Z'
+    action: rollback
+    outcome: ok
+    detail: candybar 01a1794a-a6ad-77ae-9993-72cdf80a0f62 disabled
 - id: systemd:ifvault-nightly.timer
   wave: '7.9'
   candybar:
@@ -2981,9 +2997,9 @@ jobs:
   rollback:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 9b5dadbd1e4d --scheduler internal'
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron resume 9b5dadbd1e4d'
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a17950-506c-7218-bff4-c102e75c2c7e
+  cutover_at: '2026-10-26T17:44:35.652779Z'
   verification:
     invocation_id: null
     result: null
@@ -2998,6 +3014,10 @@ jobs:
     action: plan
     outcome: amended
     detail: 'wave 7.15 override: pin alone is inert on the pre-7.17 ticker, so disable also pauses (and rollback resumes after unpinning) per the story 7.15 spec'
+  - at: '2026-10-26T17:44:35.652779Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17950-506c-7218-bff4-c102e75c2c7e enabled; first fire 2026-10-26T17:50:00Z
 - id: systemd:ipm-metrics.timer
   wave: '7.14'
   candybar:
@@ -3029,9 +3049,9 @@ jobs:
   - systemctl --user disable --now ipm-metrics.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/ipm-metrics.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794f-2891-7b02-aad7-ea8971e0c95a
+  cutover_at: '2026-10-26T17:43:13.846779Z'
   verification:
     invocation_id: null
     result: null
@@ -3042,6 +3062,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:43:13.846779Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794f-2891-7b02-aad7-ea8971e0c95a enabled; first fire 2026-10-26T17:45:00Z
 - id: systemd:ipm-internal-dashboard.timer
   wave: '7.14'
   candybar:
@@ -3074,9 +3098,9 @@ jobs:
   - systemctl --user disable --now ipm-internal-dashboard.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/ipm-internal-dashboard.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794f-2d49-7198-9039-57a6bbc85e42
+  cutover_at: '2026-10-26T17:43:15.065398Z'
   verification:
     invocation_id: null
     result: null
@@ -3087,6 +3111,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:43:15.065398Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794f-2d49-7198-9039-57a6bbc85e42 enabled; first fire 2026-10-26T17:46:00Z
 - id: systemd:james-brennan-billing-ledger.timer
   wave: '7.14'
   candybar:
@@ -3118,9 +3146,9 @@ jobs:
   - systemctl --user disable --now james-brennan-billing-ledger.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-billing-ledger.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794e-f599-791a-8124-8b1be3c81de7
+  cutover_at: '2026-10-26T17:43:00.814762Z'
   verification:
     invocation_id: null
     result: null
@@ -3131,6 +3159,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:43:00.814762Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794e-f599-791a-8124-8b1be3c81de7 enabled; first fire 2026-10-27T10:17:00Z
 - id: systemd:sync-jim-dropbox
   wave: '7.14'
   candybar:
@@ -3162,9 +3194,9 @@ jobs:
   - systemctl --user disable --now sync-jim-dropbox.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/sync-jim-dropbox.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794f-e281-7276-ba6a-cd58a1050dd5
+  cutover_at: '2026-10-26T17:44:01.452943Z'
   verification:
     invocation_id: null
     result: null
@@ -3175,6 +3207,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:44:01.452943Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794f-e281-7276-ba6a-cd58a1050dd5 enabled; first fire 2026-10-26T17:50:00Z
 - id: systemd:activity-report@james-brennan.timer
   wave: '7.14'
   candybar:
@@ -3207,15 +3243,19 @@ jobs:
   - systemctl --user disable --now activity-report@james-brennan.timer
   rollback:
   - systemctl --user enable --now activity-report@james-brennan.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794e-fa97-7ce1-ba2e-728f2f612795
+  cutover_at: '2026-10-26T17:43:02.114445Z'
   verification:
     invocation_id: null
     result: null
     at: null
   disable_pending: false
-  history: []
+  history:
+  - at: '2026-10-26T17:43:02.114445Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794e-fa97-7ce1-ba2e-728f2f612795 enabled; first fire 2026-10-27T07:30:00Z
 - id: systemd:james-brennan-nightly-suite.timer
   wave: '7.14'
   candybar:
@@ -3247,9 +3287,9 @@ jobs:
   - systemctl --user disable --now james-brennan-nightly-suite.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-nightly-suite.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794e-ff4b-76df-8851-99231980004b
+  cutover_at: '2026-10-26T17:43:03.272612Z'
   verification:
     invocation_id: null
     result: null
@@ -3260,6 +3300,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:43:03.272612Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794e-ff4b-76df-8851-99231980004b enabled; first fire 2026-10-27T07:11:00Z
 - id: systemd:james-brennan-daily-update.timer
   wave: '7.14'
   candybar:
@@ -3291,9 +3335,9 @@ jobs:
   - systemctl --user disable --now james-brennan-daily-update.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-daily-update.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794f-0409-7e1b-9f3d-243f63edf8da
+  cutover_at: '2026-10-26T17:43:04.512620Z'
   verification:
     invocation_id: null
     result: null
@@ -3304,6 +3348,10 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:43:04.512620Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794f-0409-7e1b-9f3d-243f63edf8da enabled; first fire 2026-10-27T07:00:00Z
 - id: systemd:james-brennan-nightly-fix.timer
   wave: '7.14'
   candybar:
@@ -3335,9 +3383,9 @@ jobs:
   - systemctl --user disable --now james-brennan-nightly-fix.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-nightly-fix.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a1794f-0892-771f-8913-9184703c932a
+  cutover_at: '2026-10-26T17:43:05.641604Z'
   verification:
     invocation_id: null
     result: null
@@ -3348,3 +3396,7 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-26T17:43:05.641604Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794f-0892-771f-8913-9184703c932a enabled; first fire 2026-10-27T08:23:00Z
