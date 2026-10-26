@@ -1,0 +1,15 @@
+[package]
+name = "candybar-hello"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+description = "Example candybar authored with candybar-sdk (Rust)."
+publish = false
+
+[dependencies]
+# An author outside this repo would use a git dependency instead:
+# candybar-sdk = { git = "https://github.com/delorenj/candybar" }
+candybar-sdk = { path = "../.." }
+
+# A standalone package, never a member of a parent workspace.
+[workspace]

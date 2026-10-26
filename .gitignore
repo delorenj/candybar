@@ -17,3 +17,6 @@ dist/
 # Node SDK (story 4.2): installed deps and npm pack output
 node_modules/
 *.tgz
+
+# Rust SDK (story 4.3): cargo build output (sdks/rust and its example crates)
+target/

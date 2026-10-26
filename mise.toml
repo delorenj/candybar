@@ -6,6 +6,8 @@
 python = "3.14"
 # Node SDK (sdks/node) floor: 24 LTS per the architecture spine.
 node = "24"
+# Rust SDK (sdks/rust) floor: 1.99.1 per the architecture spine (CI pins the same).
+rust = "1.99.1"
 
 [env]
 _.path = [".mise/scripts", "agents/hermes/pm"]

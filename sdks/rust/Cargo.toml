@@ -1,0 +1,25 @@
+[package]
+name = "candybar-sdk"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+description = "Author candybar cron jobs in Rust: the AD-8 process protocol (context in via CANDYBAR_* env vars, result JSON out)."
+repository = "https://github.com/delorenj/candybar"
+readme = "README.md"
+keywords = ["cron", "candybar", "scheduler", "33god"]
+categories = ["command-line-utilities"]
+# crates.io distribution is deferred (architecture spine: SDK publish
+# mechanics are code-owned packaging detail). Depend on it by path or git.
+publish = false
+
+[lib]
+name = "candybar_sdk"
+
+# Intentionally empty. The SDK is a process-protocol harness (AD-8): it must
+# never acquire a bus client or become a second executor. tests/test_sdk_rust.py
+# pins this with `cargo metadata` (the only package is candybar-sdk itself).
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
