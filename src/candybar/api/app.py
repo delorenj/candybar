@@ -41,6 +41,14 @@ collection atomically. Each changed candybar gets one `updated` fact
 (`changes: {noise}`) FIRST, then the rows commit in one transaction, as on
 PATCH. candybar stores only the explicit collection: there is no `<10m`
 auto-classification here (that is the view's).
+Story 5.6 adds the skip operations (contract "Skip operations"):
+`POST /candybars/{id}/skip` `{fireTime}` stores one occurrence skip and
+`POST /candybars/{id}/skip-rest-of-day` `{date}` stores one rest-of-day skip.
+A target the schedule never produces is a 404. Each NEW skip publishes one
+`bloodbank.cron.candybar.skipped` fact FIRST (reason = the skip kind), then
+the row is stored in the same request flow; the dispatcher's per-tick skip
+read honors it, and the SSE hub's existing `_on_skipped` turns the fact into
+`skip.applied` with no stream changes.
 All errors are RFC 7807 problem+json. Epic 5 adds the rest of the CAP-8 read surface.
 """
 
@@ -50,7 +58,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID, uuid4
@@ -68,12 +76,18 @@ from candybar.dispatcher.schedule import group_skips
 from candybar.events.builders import (
     build_candybar_created,
     build_candybar_invoke,
+    build_candybar_skipped,
     build_candybar_updated,
 )
+from candybar.events.vocabulary import tick_id_for_minute
 from candybar.registry import (
     INVOCATION_LIST_MAX,
+    SKIP_OCCURRENCE,
+    SKIP_REST_OF_DAY,
     CandybarManifest,
     DuplicateNameError,
+    add_occurrence_skip,
+    add_rest_of_day_skip,
     fire_results,
     get_candybar,
     get_invocation,
@@ -84,6 +98,8 @@ from candybar.registry import (
     lock_candybar,
     lock_noise_batch,
     name_taken,
+    occurrence_skip_id,
+    rest_of_day_skip_id,
     update_candybar,
     uuid7,
 )
@@ -92,7 +108,9 @@ from .schedule import (
     WindowCandybar,
     WindowError,
     attach_results,
+    fires_on_day,
     first_tick_after,
+    is_fire_of,
     next_row,
     past_keys,
     skip_read_start,
@@ -161,6 +179,31 @@ class NoiseBatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ids: list[UUID] = Field(max_length=NOISE_BATCH_MAX)
+
+
+class SkipRequest(BaseModel):
+    """POST /candybars/{id}/skip body (contract: `{ fireTime: <ts> }`).
+
+    AwareDatetime refuses a naive timestamp (422); any offset is converted
+    to UTC. An off-minute fireTime is refused by the route below.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fireTime: AwareDatetime
+
+
+class SkipDayRequest(BaseModel):
+    """POST /candybars/{id}/skip-rest-of-day body (contract: `{ date: <YYYY-MM-DD> }`).
+
+    pydantic's `date` accepts only the ISO date form — a datetime string or
+    "2026-13-40" is a 422 — and arrives as a plain `date`, never a
+    `datetime` (the store refuses those).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
 
 
 def problem(status: int, title: str, detail: str) -> JSONResponse:
@@ -482,6 +525,102 @@ def create_app(
             )
             result = {"ids": [str(row.id) for row in members]}
         return JSONResponse(content=result)
+
+    async def _store_skip(
+        candybar_id: UUID,
+        *,
+        fire_time: datetime | None,
+        day: date | None,
+    ) -> JSONResponse:
+        """One skip write (Story 5.6): 404 check, fact FIRST, then the row.
+
+        Shared by both skip routes: `fire_time` is set for an occurrence skip,
+        `day` for a rest-of-day skip (exactly one is set). The 404 rule names
+        only targets the schedule never produces; a real fire that already
+        passed stores inertly (the Epic 2 precedent). The published fact is
+        the same `skipped` fact the dispatcher emits for the fire — the SSE
+        hub turns it into `skip.applied` with no stream changes — and its id
+        is the store's deterministic skip id, so a retried POST broker-dedupes
+        against its own first publish. A repeat of a stored skip publishes
+        nothing and keeps the first row.
+        """
+        async with session_factory() as session:
+            row = await get_candybar(session, candybar_id)
+            if row is None:
+                return problem(
+                    404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                )
+            candybar = WindowCandybar.of(row)
+            if fire_time is not None:
+                assert day is None
+                fire = fire_time.astimezone(UTC)
+                if fire.second or fire.microsecond:
+                    return problem(
+                        422, "Invalid fireTime", "fireTime must be aligned to a whole minute"
+                    )
+                if not await asyncio.to_thread(is_fire_of, candybar, fire):
+                    return problem(
+                        404,
+                        "No such fire",
+                        f"{row.name} never fires at {utc_iso(fire)}",
+                    )
+                kind = SKIP_OCCURRENCE
+                target = fire
+                skip_id = occurrence_skip_id(candybar_id, fire)
+            else:
+                assert day is not None
+                first = await asyncio.to_thread(fires_on_day, candybar, day)
+                if first is None:
+                    return problem(
+                        404,
+                        "No such fire",
+                        f"{row.name} never fires on {day.isoformat()}",
+                    )
+                kind = SKIP_REST_OF_DAY
+                target = first
+                skip_id = rest_of_day_skip_id(candybar_id, day)
+            event = build_candybar_skipped(
+                candybar_id=candybar_id,
+                name=row.name,
+                tick_id=tick_id_for_minute(int(target.timestamp()) // 60),
+                reason=kind,
+                event_id=skip_id,
+            )
+            try:
+                await sink.publish(event)
+            except BUS_ERRORS as exc:
+                log.error("failed to publish candybar.skipped (%s) for %s: %s", kind, candybar_id, exc)
+                return problem(
+                    503,
+                    "Event bus unavailable",
+                    "could not publish candybar.skipped; the skip is not stored, retry the request",
+                )
+            if fire_time is not None:
+                _entry, created = await add_occurrence_skip(session, candybar_id, fire)
+            else:
+                _entry, created = await add_rest_of_day_skip(session, candybar_id, day)
+            if not created:
+                # The skip was already stored: the first row and note stand.
+                # The fact went out for this request too (the route cannot
+                # know beforehand), but it carries the deterministic skip id,
+                # so the broker dedupes it against the first publish.
+                log.debug("skip already stored for %s (%s)", candybar_id, kind)
+            body: dict[str, Any] = {"skipped": True}
+            if fire_time is not None:
+                body["fireTime"] = utc_iso(fire)
+            else:
+                body["date"] = day.isoformat()
+        return JSONResponse(content=body)
+
+    @app.post("/candybars/{candybar_id}/skip")
+    async def skip_occurrence(candybar_id: UUID, body: SkipRequest) -> JSONResponse:
+        """Skip one occurrence of a candybar: the fire `fireTime` never dispatches."""
+        return await _store_skip(candybar_id, fire_time=body.fireTime, day=None)
+
+    @app.post("/candybars/{candybar_id}/skip-rest-of-day")
+    async def skip_rest_of_day(candybar_id: UUID, body: SkipDayRequest) -> JSONResponse:
+        """Skip the rest of a UTC date: no fire of that day dispatches."""
+        return await _store_skip(candybar_id, fire_time=None, day=body.date)
 
     @app.post("/candybars/{candybar_id}/invoke", status_code=202)
     async def invoke(candybar_id: UUID) -> JSONResponse:

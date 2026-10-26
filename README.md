@@ -127,6 +127,33 @@ candybar stores only the explicit collection. Marking crons that repeat more
 often than every 10 minutes is the view's job, computed from the cron string;
 a minutely job stays `noise: false` until someone adds it.
 
+### Skip operations (Story 5.6)
+
+```bash
+curl -X POST https://candybar.delo.sh/candybars/<id>/skip \
+  -H 'content-type: application/json' -d '{"fireTime":"2026-10-26T10:10:00Z"}'
+# 200 {"skipped":true,"fireTime":"2026-10-26T10:10:00+00:00"}
+
+curl -X POST https://candybar.delo.sh/candybars/<id>/skip-rest-of-day \
+  -H 'content-type: application/json' -d '{"date":"2026-10-26"}'
+# 200 {"skipped":true,"date":"2026-10-26"}
+```
+
+`POST /candybars/{id}/skip` skips the single fire `fireTime` (a UTC minute;
+any offset is converted). `POST /candybars/{id}/skip-rest-of-day` suppresses
+every fire of that UTC date — `date` covers the whole date, and the next UTC
+day dispatches normally. The dispatcher honors both on its next tick:
+`/schedule` rows for the suppressed fires read `skipped: true` with the
+upcoming times recomputed, and the stream's `skip.applied` event arrives with
+the write itself (the route publishes the `bloodbank.cron.candybar.skipped`
+fact first, then stores the row).
+
+Both routes are idempotent: repeating a call answers 200 and keeps the first
+row. A `fireTime` the schedule never produces, or a date the schedule never
+fires on, is a 404 (`{"title":"No such fire", ...}`) — as is an unknown id. A
+naive or off-minute `fireTime`, a non-date `date`, or extra body keys are a
+422. A bus failure answers 503 with nothing stored.
+
 ## Schedule window (CAP-8, Story 5.2)
 
 ```bash

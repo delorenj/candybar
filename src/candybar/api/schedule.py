@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -198,6 +198,22 @@ def is_fire_of(candybar: WindowCandybar, fire: datetime) -> bool:
     stream does not invent one either.
     """
     return fire >= _registered_floor(candybar) and matches_tick(candybar.schedule, fire)
+
+
+def fires_on_day(candybar: WindowCandybar, day: date) -> datetime | None:
+    """The candybar's first fire on the UTC date `day`, or None (Story 5.6).
+
+    None means the schedule never fires that day — the skip API's 404 for a
+    fireless `{date}`. The returned fire doubles as the day fact's tick: it
+    names one concrete row, so the stream's `_on_skipped` patches it
+    immediately. Fires are day-bounded, so one `fires_between` call over the
+    day answers both.
+    """
+    start = datetime.combine(day, time(0), tzinfo=UTC)
+    end = start + timedelta(days=1)
+    if end <= _registered_floor(candybar):
+        return None  # the whole day predates registration: no rows that day
+    return next(fires_between(candybar.schedule, max(start, _registered_floor(candybar)), end), None)
 
 
 def schedule_row(

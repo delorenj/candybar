@@ -199,3 +199,33 @@ def noise_batch_fields() -> dict[str, str | None]:
         assert m, f"unparseable batch body field {part!r}"
         out[m.group(1)] = "list" if m.group(2) else None
     return out
+
+
+# ---------------------------------------------------------------------------
+# Skip operations (Story 5.6): the write routes and their bodies, verbatim.
+
+
+def _skip_section() -> str:
+    text = CONTRACT.read_text(encoding="utf-8")
+    return text.split("### Skip operations", 1)[1].split("\n### ", 1)[0]
+
+
+def skip_routes() -> set[tuple[str, str]]:
+    """Every `METHOD /path` route the contract's Skip operations section names."""
+    return {(method, path) for method, path in WRITE_ROUTE_RE.findall(_skip_section())}
+
+
+def skip_body_fields() -> dict[str, dict[str, str]]:
+    """Body field name -> placeholder per skip route, from `with `{ ... }``."""
+    out: dict[str, dict[str, str]] = {}
+    for line in _skip_section().splitlines():
+        route = re.search(r"`(POST|PUT|DELETE|PATCH) (/[^`\s]+)`", line)
+        body = re.search(r"with `\{([^}]*)\}`", line)
+        if route and body:
+            fields: dict[str, str] = {}
+            for part in body.group(1).split(","):
+                m = re.match(r"\s*([A-Za-z]+)\s*:\s*(<[^>]*>)", part)
+                assert m, f"unparseable skip body field {part!r}"
+                fields[m.group(1)] = m.group(2)
+            out[route.group(2)] = fields
+    return out
