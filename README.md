@@ -32,7 +32,45 @@ uv run candybar --help
 ```
 
 CI runs ruff + pytest on GitHub-hosted runners on every push to `main`,
-plus the heartbeat JetStream integration tests against a pinned nats-server.
+plus the heartbeat JetStream integration tests against a pinned nats-server
+and the registry integration tests against a pinned postgres:17-alpine.
+
+## Registry (Postgres, AD-10)
+
+The registry lives in the `candybar` database on the shared homelab Postgres;
+the daemon is its sole writer and all DB access is in `src/candybar/registry/`
+(enforced by a guard test). Migrations are alembic, run from the repo root:
+
+```bash
+export DATABASE_URL=postgresql://candybar:<password>@localhost:5432/candybar
+uv run alembic -c deploy/alembic.ini upgrade head
+```
+
+The role password lives in 1Password (`op://DeLoSecrets/Candybar Postgres Role/password`).
+Live-PG tests: `CANDYBAR_TEST_PG=1 DATABASE_URL=... uv run pytest tests/test_registry_integration.py`.
+
+## Register a candybar
+
+A candybar is a directory with a `candybar.toml` manifest (AD-8):
+
+```toml
+[candybar]
+name = "my-job"            # unique lowercase slug
+description = "what it does"
+tags = ["team-x"]
+schedule = "*/5 * * * *"   # standard 5-field cron, evaluated in UTC
+entrypoint = "./run.sh"    # resolved against the manifest dir; must exist
+noise = false              # optional
+```
+
+```bash
+uv run candybar daemon --roles api   # serves POST /candybars on 127.0.0.1:8700
+uv run candybar register ./my-job    # -> 201 + row + bloodbank.cron.candybar.created
+```
+
+Invalid cron/name → `application/problem+json` (422); duplicate name → 409;
+bus down → 503 and no row. API bind: `CANDYBAR_API_HOST`/`CANDYBAR_API_PORT`;
+CLI target: `CANDYBAR_API_URL`.
 
 ## Run the daemon
 

@@ -19,6 +19,22 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    services:
+      # Registry integration tests (story 1.4). postgres:17-alpine matches the
+      # live shared homelab Postgres (17.10).
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: candybar
+          POSTGRES_PASSWORD: candybar
+          POSTGRES_DB: candybar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U candybar -d candybar_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -67,3 +83,15 @@ jobs:
         run: CANDYBAR_TEST_NATS=1 uv run pytest tests/test_heartbeat_integration.py -q
         env:
           NATS_URL: nats://127.0.0.1:4222
+
+      # Registry migrations against the postgres service — proven in CI on
+      # every push, not just locally.
+      - name: Alembic upgrade head (registry schema)
+        run: uv run alembic -c deploy/alembic.ini upgrade head
+        env:
+          DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
+
+      - name: Integration tests (live Postgres)
+        run: CANDYBAR_TEST_PG=1 uv run pytest tests/test_registry_integration.py -q
+        env:
+          DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test

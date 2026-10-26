@@ -67,12 +67,17 @@ def test_role_package_importable(package: str) -> None:
 
 
 def _parse_pins() -> dict[str, str]:
-    """Parse project.dependencies into {name: version}, requiring exact == pins."""
+    """Parse project.dependencies into {name: version}, requiring exact == pins.
+
+    Extras (e.g. `sqlalchemy[asyncio]==2.1.6`) are stripped from the name:
+    the spine pins the package version, and an extra only pulls that same
+    package's own optional dependencies.
+    """
     parsed: dict[str, str] = {}
     for dep in _pyproject()["project"]["dependencies"]:
         name, sep, version = dep.partition("==")
         assert sep, f"runtime dependency is not exact-pinned with '==': {dep}"
-        parsed[name] = version
+        parsed[name.partition("[")[0]] = version
     return parsed
 
 

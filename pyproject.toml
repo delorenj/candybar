@@ -14,7 +14,7 @@ dependencies = [
     "nats-py==2.16.0",
     "croniter==6.2.4",
     "psycopg==3.3.6",
-    "sqlalchemy==2.1.6",
+    "sqlalchemy[asyncio]==2.1.6",
     "alembic==1.20.1",
     "prometheus-client==0.26.0",
     "pydantic==2.14.1",
@@ -28,6 +28,7 @@ candybar = "candybar.cli.main:app"
 dev = [
     "pytest>=8.3",
     "ruff>=0.8",
+    "httpx2>=0.28",  # FastAPI TestClient transport; never a runtime dep (spine pins stay exact)
 ]
 
 [tool.hatch.build.targets.wheel]
