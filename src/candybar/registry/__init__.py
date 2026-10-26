@@ -15,12 +15,17 @@ from .manifest import (
 )
 from .models import Base, Candybar, Invocation, Skip
 from .store import (
+    DuplicateInvocationError,
     DuplicateNameError,
+    TerminalInvocation,
     create_registry_engine,
     database_url,
+    get_entrypoint,
     insert_candybar,
+    invocation_by_key,
     name_taken,
     normalize_dsn,
+    record_terminal_invocation,
     session_scope,
 )
 
@@ -30,16 +35,21 @@ __all__ = [
     "Base",
     "Candybar",
     "CandybarManifest",
+    "DuplicateInvocationError",
     "DuplicateNameError",
     "Invocation",
     "ManifestError",
     "Skip",
+    "TerminalInvocation",
     "create_registry_engine",
     "database_url",
+    "get_entrypoint",
     "insert_candybar",
+    "invocation_by_key",
     "load_manifest",
     "name_taken",
     "normalize_dsn",
+    "record_terminal_invocation",
     "session_scope",
     "uuid7",
 ]

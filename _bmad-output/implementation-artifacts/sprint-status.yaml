@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-25-2026 21:37
-last_updated: 10-26-2026 00:00
+last_updated: 10-26-2026 00:45
 project: candybar
 project_key: NOKEY
 tracking_system: file-system
@@ -41,7 +41,7 @@ development_status:
   1-3-heartbeat-publisher-fires-the-minute-tick: review
   1-4-registry-bootstrap-and-register-a-candybar-from-candybar-tom: review
   1-5-dispatcher-evaluates-schedules-off-the-tick: review
-  1-6-executor-runs-a-bare-executable-and-records-the-result: backlog
+  1-6-executor-runs-a-bare-executable-and-records-the-result: review
   1-7-basic-prometheus-metrics-and-metrics-endpoint: backlog
   1-8-manual-invoke-via-candybar-run-id: backlog
   1-9-deployment-envelope-on-the-delo-sh-stack: backlog

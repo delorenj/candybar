@@ -95,3 +95,12 @@ jobs:
         run: CANDYBAR_TEST_PG=1 uv run pytest tests/test_registry_integration.py -q
         env:
           DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test
+
+      # Executor end-to-end (story 1.6): real command off JetStream, real
+      # script spawn, real registry rows + counters. Needs both services,
+      # which are both up by this point in the job.
+      - name: Integration tests (executor: live NATS + Postgres)
+        run: CANDYBAR_TEST_NATS=1 CANDYBAR_TEST_PG=1 uv run pytest tests/test_executor_integration.py -q
+        env:
+          NATS_URL: nats://127.0.0.1:4222
+          DATABASE_URL: postgresql://candybar:candybar@127.0.0.1:5432/candybar_test

@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
@@ -20,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 
 from .ids import uuid7
 from .manifest import CandybarManifest
-from .models import Candybar
+from .models import Candybar, Invocation
 
 DATABASE_URL_ENV = "DATABASE_URL"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://localhost:5432/candybar"
@@ -31,6 +32,14 @@ class DuplicateNameError(Exception):
 
     Registry-level error so callers never import sqlalchemy themselves — the
     sole-writer guard forbids DB imports outside this package.
+    """
+
+
+class DuplicateInvocationError(Exception):
+    """The idempotency_key is already recorded (unique constraint hit).
+
+    Raised out of the terminal write so the caller's transaction rolls back;
+    the redelivery path then reloads the recorded row and republishes.
     """
 
 
@@ -112,3 +121,78 @@ async def insert_candybar(
             raise DuplicateNameError(manifest.name) from exc
         raise  # a different constraint fired — never misreport it as a name clash
     return row
+
+
+async def get_entrypoint(session: AsyncSession, candybar_id: UUID) -> str | None:
+    """The registered entrypoint for a candybar id, or None when unknown."""
+    result = await session.execute(select(Candybar.entrypoint).where(Candybar.id == candybar_id))
+    return result.scalar_one_or_none()
+
+
+async def invocation_by_key(session: AsyncSession, idempotency_key: str) -> Invocation | None:
+    """The recorded invocation for an idempotency key (the executor's dedupe read)."""
+    result = await session.execute(
+        select(Invocation).where(Invocation.idempotency_key == idempotency_key)
+    )
+    return result.scalar_one_or_none()
+
+
+@dataclass(frozen=True)
+class TerminalInvocation:
+    """Everything the executor learned about a finished (or unstartable) run."""
+
+    invocation_id: UUID
+    candybar_id: UUID
+    trigger: str
+    tick_id: str | None
+    idempotency_key: str
+    result: str  # "success" | "fail"
+    exit_code: int | None
+    runtime_ms: int | None
+    error_message: str | None
+    stderr_tail: str | None
+    token_spend: int
+    cost_usd: Decimal | None
+    started_at: datetime
+    finished_at: datetime
+
+
+async def record_terminal_invocation(session: AsyncSession, record: TerminalInvocation) -> None:
+    """Insert the terminal row AND bump counters in the caller's transaction (AD-10).
+
+    Raises DuplicateInvocationError when the idempotency key is already
+    recorded: the caller's session_scope rolls back, and the redelivery path
+    republishes from the recorded row instead of executing twice.
+    """
+    now = datetime.now(UTC)
+    row = Invocation(
+        id=record.invocation_id,
+        candybar_id=record.candybar_id,
+        trigger=record.trigger,
+        tick_id=record.tick_id,
+        idempotency_key=record.idempotency_key,
+        result=record.result,
+        exit_code=record.exit_code,
+        runtime_ms=record.runtime_ms,
+        error_message=record.error_message,
+        stderr_tail=record.stderr_tail,
+        token_spend=record.token_spend,
+        cost_usd=record.cost_usd,
+        started_at=record.started_at,
+        finished_at=record.finished_at,
+        created_at=now,
+    )
+    session.add(row)
+    candybar = await session.get(Candybar, record.candybar_id)
+    if candybar is None:
+        raise KeyError(f"unknown candybar: {record.candybar_id}")
+    candybar.total_invoked += 1
+    if record.result == "success":
+        candybar.total_successful += 1
+    candybar.updated_at = now
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        if "invocations_idempotency_key_key" in str(exc):
+            raise DuplicateInvocationError(record.idempotency_key) from exc
+        raise

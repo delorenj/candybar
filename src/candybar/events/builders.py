@@ -133,8 +133,9 @@ def build_candybar_invoked(
     tick_id: str | None,
     correlationid: UUID | None = None,
     causationid: UUID | None = None,
+    event_id: UUID | None = None,
 ) -> CandybarInvokedEvent:
-    eid = uuid4()
+    eid = event_id or uuid4()
     return CandybarInvokedEvent(
         id=eid,
         subject=voc.subject_for(voc.TYPE_CANDYBAR_INVOKED, "event"),
@@ -165,8 +166,9 @@ def build_candybar_completed(
     metrics: InvocationMetrics | None = None,
     correlationid: UUID | None = None,
     causationid: UUID | None = None,
+    event_id: UUID | None = None,
 ) -> CandybarCompletedEvent:
-    eid = uuid4()
+    eid = event_id or uuid4()
     return CandybarCompletedEvent(
         id=eid,
         subject=voc.subject_for(voc.TYPE_CANDYBAR_COMPLETED, "event"),
@@ -201,9 +203,10 @@ def build_candybar_failed(
     stderr: str = "",
     correlationid: UUID | None = None,
     causationid: UUID | None = None,
+    event_id: UUID | None = None,
 ) -> CandybarFailedEvent:
     """Build the terminal failure fact; stderr is truncated to its last 500 chars."""
-    eid = uuid4()
+    eid = event_id or uuid4()
     detail = FailureDetail(
         message=message,
         stderr_tail=stderr[-STDERR_TAIL_MAX:] if stderr else "",
