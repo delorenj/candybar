@@ -36,11 +36,39 @@ async def connect_nats(
     log: logging.Logger,
     retry_seconds: float = CONNECT_RETRY_SECONDS,
 ) -> nats.NATS | None:
-    """Connect, retrying every `retry_seconds` until success or stop."""
+    """Connect, retrying until success or stop; None when stopped first.
+
+    With `max_reconnect_attempts=-1` nats-py retries the INITIAL connect
+    forever by itself (every `reconnect_time_wait`, 2s): `nats.connect`
+    does not raise while the bus is down, it just never returns. So each
+    attempt is raced against `stop` and cancelled when the role stops —
+    otherwise a SIGTERM during a bus outage hangs every role until docker's
+    SIGKILL. `error_cb` turns nats-py's per-attempt traceback (its default
+    callback) into one warning line, for boot and mid-run reconnects alike.
+    The outer loop still retries a connect that does raise.
+    """
+
+    async def on_error(exc: Exception) -> None:
+        log.warning("NATS %s: %s: %s", url, type(exc).__name__, exc)
+
     nc: nats.NATS | None = None
     while nc is None and not stop.is_set():
+        attempt = asyncio.ensure_future(
+            nats.connect(url, name=name, max_reconnect_attempts=-1, error_cb=on_error)
+        )
+        stopped = asyncio.ensure_future(stop.wait())
         try:
-            nc = await nats.connect(url, name=name, max_reconnect_attempts=-1)
+            await asyncio.wait({attempt, stopped}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            stopped.cancel()
+        if not attempt.done():
+            attempt.cancel()
+            (late,) = await asyncio.gather(attempt, return_exceptions=True)
+            if isinstance(late, nats.NATS):  # connected in the same instant
+                await late.close()
+            break
+        try:
+            nc = attempt.result()
         except (nats.errors.Error, OSError, TimeoutError) as exc:
             log.warning(
                 "NATS connect to %s failed (%s: %s); retrying in %.0fs",

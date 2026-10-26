@@ -72,6 +72,38 @@ def test_connect_nats_stops_mid_retry(monkeypatch: Any) -> None:
     assert asyncio.run(drive()) is None
 
 
+def _refused_url() -> str:
+    """A loopback URL nothing listens on (bound, then released)."""
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    return f"nats://127.0.0.1:{port}"
+
+
+def test_connect_nats_real_client_stops_during_bus_outage(caplog: Any) -> None:
+    """Against REAL nats-py, not a raising double: with max_reconnect_attempts=-1
+    nats.connect never raises while the bus is down — it retries the initial
+    connect internally forever. A stop must still end the connect promptly,
+    and the per-attempt errors log as one line each, never a traceback."""
+
+    async def drive() -> Any:
+        stop = asyncio.Event()
+        task = asyncio.create_task(
+            connect_nats(_refused_url(), name="t", stop=stop, log=LOG, retry_seconds=30)
+        )
+        await asyncio.sleep(2.5)  # past nats-py's 2s reconnect_time_wait: >= 2 attempts
+        stop.set()
+        return await asyncio.wait_for(task, timeout=3)
+
+    with caplog.at_level(logging.WARNING):
+        assert asyncio.run(drive()) is None
+    refusals = [r for r in caplog.records if r.name == LOG.name and "Connect call failed" in r.getMessage()]
+    assert len(refusals) >= 2
+    assert not any(r.exc_info for r in caplog.records)
+
+
 class _FakeJS:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
