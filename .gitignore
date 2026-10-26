@@ -4,3 +4,11 @@
 !.env.op
 /.agents/local.json
 /.agents/skills
+
+# Python build/cache artifacts
+__pycache__/
+.venv/
+dist/
+*.egg-info/
+.ruff_cache/
+.pytest_cache/

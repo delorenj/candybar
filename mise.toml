@@ -1,6 +1,10 @@
 # mise configuration for candybar
 # https://mise.jdx.dev/configuration.html
 
+[tools]
+# Daemon/CLI/python-SDK toolchain: >=3.13 per the architecture spine (host: 3.14).
+python = "3.14"
+
 [env]
 _.path = [".mise/scripts", "agents/hermes/pm"]
 _.file = [".env"]

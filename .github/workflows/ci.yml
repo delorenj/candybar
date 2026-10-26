@@ -1,0 +1,44 @@
+# Lint + unit tests for candybar.
+#
+# Runner: GitHub-hosted `ubuntu-latest`. This repo is PUBLIC, so hosted
+# minutes are free (AD-15/NFR12 pin CI to GitHub-hosted runners). The
+# self-hosted runner rule applies only to private repos — do not "fix" this
+# to the delonet labels; that change would leave every job queued forever.
+#
+# The commands here mirror the local verification loop: ruff + pytest over
+# the uv-managed pinned stack.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Console script smoke (installed entry point)
+        run: uv run candybar --help
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Unit tests
+        run: uv run pytest -q
