@@ -7,9 +7,11 @@
     "type": "plane",
     "workspace": "33god",
     "identifier": "CAND",
-    "board_id": "",
-    "identifier_source": "proposed",
-    "state": "planned"
+    "board_id": "1487cbf0-6cfb-4a51-ae35-fa451fe42bf7",
+    "identifier_source": "provider",
+    "state": "linked",
+    "identifier_fetched_at": "2026-10-26T01:05:55.866Z",
+    "board_confirmed_at": "2026-10-26T01:05:55.866Z"
   },
   "agents": {},
   "status": "active",

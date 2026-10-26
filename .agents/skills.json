@@ -2,7 +2,9 @@
   "$schema": "https://raw.githubusercontent.com/delorenj/skillex/main/skills.schema.json",
   "inherit_global": true,
   "packs": [],
-  "skills": [],
+  "skills": [
+    "g33-33god-integration"
+  ],
   "exclude": [
     "bmad-advanced-elicitation",
     "bmad-agent-analyst",
