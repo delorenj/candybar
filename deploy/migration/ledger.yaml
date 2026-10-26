@@ -36,7 +36,7 @@ jobs:
   - systemctl --user disable --now newapi-allowances.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-allowances.timer
-  status: verified
+  status: rolled-back
   candybar_id: 01a1793a-d2a0-7070-b267-4f6d3e41a3b5
   cutover_at: '2026-10-26T17:21:01.164216Z'
   verification:
@@ -57,6 +57,14 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation 5489318d-e9f2-5211-aa7b-49ea0885b505 (scheduled) success exit=0 runtime=5942ms memory=55091200B cpu=0.1787
+  - at: '2026-10-26T18:19:54.454871Z'
+    action: rollback
+    outcome: ok
+    detail: 'native scheduler restored: Scheduled failures after cutover (exit 1 at 17:55, 18:00 and 18:15 UTC; native_failing=false)'
+  - at: '2026-10-26T18:19:54.595923Z'
+    action: rollback
+    outcome: ok
+    detail: candybar 01a1793a-d2a0-7070-b267-4f6d3e41a3b5 disabled
 - id: systemd:newapi-vm-health
   wave: '7.13'
   candybar:
@@ -345,13 +353,13 @@ jobs:
   - systemctl --user disable --now newapi-staff-sso.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-staff-sso.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17939-b676-7b1b-8232-ffd3ae91498c
   cutover_at: '2026-10-26T17:19:48.287493Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: e7826c7b-2140-570f-82e5-89cfe7402714
+    result: success
+    at: '2026-10-26T18:07:05.984303Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:15:41.842351Z'
@@ -362,6 +370,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17939-b676-7b1b-8232-ffd3ae91498c enabled; first fire 2026-10-26T18:07:00Z
+  - at: '2026-10-26T18:20:04.490369Z'
+    action: verify
+    outcome: ok
+    detail: invocation e7826c7b-2140-570f-82e5-89cfe7402714 (scheduled) success exit=0 runtime=5912ms memory=35524608B cpu=0.0372
 - id: systemd:newapi-token-watch
   wave: '7.13'
   candybar:
@@ -1849,13 +1861,13 @@ jobs:
   - systemctl --user disable --now hindsight-write-probe.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.agents/hooks/hindsight/systemd/hindsight-write-probe.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17941-24c0-79c4-81d7-8fc3dcdadf06
   cutover_at: '2026-10-26T17:27:55.297867Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 5084807c-d968-5969-8bd3-4eba4c5fc7f4
+    result: success
+    at: '2026-10-26T18:04:08.331637Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:23:34.911012Z'
@@ -1866,6 +1878,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17941-24c0-79c4-81d7-8fc3dcdadf06 enabled; first fire 2026-10-26T18:04:00Z
+  - at: '2026-10-26T18:20:05.077079Z'
+    action: verify
+    outcome: ok
+    detail: invocation 5084807c-d968-5969-8bd3-4eba4c5fc7f4 (scheduled) success exit=0 runtime=8271ms memory=10207232B cpu=0.0221
 - id: systemd:hindsight-memory-analysis.timer
   wave: '7.10'
   candybar:
