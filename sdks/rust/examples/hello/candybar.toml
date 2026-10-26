@@ -2,7 +2,8 @@
 #   cargo build --release --manifest-path sdks/rust/examples/hello/Cargo.toml
 #   candybar register sdks/rust/examples/hello
 # The executor execs `entrypoint` directly, so it points at the compiled
-# binary. A relative entrypoint resolves against this file's directory.
+# binary. A relative entrypoint resolves against this file's directory. With
+# CARGO_TARGET_DIR set, add `--target-dir sdks/rust/examples/hello/target`.
 [candybar]
 name = "hello-rust"
 description = "Rust SDK example: reports its trigger and a self-reported token spend."

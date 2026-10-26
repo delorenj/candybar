@@ -53,7 +53,9 @@ candybar register .
 The working example is [`examples/hello`](examples/hello), a standalone crate
 like an author's own. Build and register it with
 `cargo build --release --manifest-path sdks/rust/examples/hello/Cargo.toml`
-and then `candybar register sdks/rust/examples/hello`.
+and then `candybar register sdks/rust/examples/hello`. If you set
+`CARGO_TARGET_DIR`, add `--target-dir sdks/rust/examples/hello/target` so the
+binary lands where the example's `entrypoint` expects it.
 
 ## What the handler can return
 
@@ -85,7 +87,8 @@ rename): `{"status":"success"|"fail","message"?:string,"metrics":{"token_spend":
 
 - `message` and `cost_usd` are omitted when unset, and `metrics` never holds
   another key (the executor rejects any).
-- `message` is capped at 500 characters.
+- `message` is capped at 500 characters, and NUL is replaced by U+FFFD
+  (the registry's Postgres text columns reject NUL).
 - `token_spend` saturates at `i64::MAX` (the registry stores a BIGINT).
 - `add_cost` rejects negative, NaN and infinite values with a `MetricError`
   and leaves the total unchanged. Propagate it with `?` to fail the run.

@@ -32,6 +32,10 @@ fn probe(ctx: &Context) -> Result<Outcome, Box<dyn Error>> {
             ctx.add_tokens(11);
             Err("boom".into())
         }
+        "nul" => {
+            ctx.add_tokens(17);
+            Err("bad\0byte".into())
+        }
         "panic" => {
             ctx.add_tokens(13);
             panic!("kaboom");

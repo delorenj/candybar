@@ -162,6 +162,19 @@ def test_err_and_panic_leave_failure_detail_on_stderr(probe: Path, monkeypatch) 
     assert "candybar-sdk: invocation failed: panic: kaboom" in outcome.stderr_tail
 
 
+def test_nul_never_reaches_what_the_executor_stores(probe: Path, monkeypatch) -> None:
+    # Postgres text rejects NUL: one in error_message or stderr_tail would make
+    # the terminal write fail and the command re-run on every redelivery.
+    monkeypatch.setenv("CANDYBAR_EXAMPLE_MODE", "nul")
+    outcome, _, _ = _run(probe)
+    resolved = resolve_outcome(outcome)
+    assert resolved.success is False
+    assert resolved.message == "bad�byte"
+    assert resolved.metrics.token_spend == 17
+    assert "\x00" not in outcome.stderr_tail
+    assert "invocation failed: bad�byte" in outcome.stderr_tail
+
+
 def test_bad_cost_fails_the_invocation_and_keeps_the_file_valid(probe: Path, monkeypatch) -> None:
     monkeypatch.setenv("CANDYBAR_EXAMPLE_MODE", "bad-cost")
     outcome, _, _ = _run(probe)

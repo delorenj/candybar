@@ -19,4 +19,4 @@ node_modules/
 *.tgz
 
 # Rust SDK (story 4.3): cargo build output (sdks/rust and its example crates)
-target/
+sdks/**/target/

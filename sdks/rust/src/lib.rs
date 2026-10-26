@@ -410,6 +410,7 @@ impl Status {
 /// A handler's explicit verdict. Metrics are never part of an outcome: they
 /// accumulate on the [`Context`], so they cannot be counted twice and are
 /// still reported when the handler fails.
+#[must_use = "an Outcome does nothing unless the handler returns it"]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outcome {
     status: Status,
@@ -590,7 +591,7 @@ where
         let _ = writeln!(
             err,
             "candybar-sdk: invocation failed: {}",
-            outcome.message().unwrap_or("")
+            clean_message(outcome.message().unwrap_or(""))
         );
     }
 
@@ -626,9 +627,9 @@ fn panic_text(payload: &(dyn Any + Send)) -> &str {
 }
 
 /// Encode the AD-8 result JSON in canonical key order: `status`, `message`
-/// (omitted when `None`, capped at [`MESSAGE_MAX_CHARS`]), `metrics`
-/// (`token_spend` always, capped at [`TOKEN_SPEND_MAX`]; `cost_usd` only when
-/// `Some` and valid).
+/// (omitted when `None`; capped at [`MESSAGE_MAX_CHARS`], NUL replaced by
+/// U+FFFD), `metrics` (`token_spend` always, capped at [`TOKEN_SPEND_MAX`];
+/// `cost_usd` only when `Some` and valid).
 pub fn encode_result(
     status: Status,
     message: Option<&str>,
@@ -641,7 +642,7 @@ pub fn encode_result(
     out.push('"');
     if let Some(message) = message {
         out.push_str(",\"message\":");
-        push_json_string(&mut out, truncate_chars(message, MESSAGE_MAX_CHARS));
+        push_json_string(&mut out, &clean_message(message));
     }
     out.push_str(",\"metrics\":{\"token_spend\":");
     out.push_str(&token_spend.min(TOKEN_SPEND_MAX).to_string());
@@ -660,6 +661,13 @@ fn truncate_chars(text: &str, max: usize) -> &str {
         Some((byte_index, _)) => &text[..byte_index],
         None => text,
     }
+}
+
+/// Cap a message and replace NUL, which the registry's Postgres text columns
+/// reject: a NUL reaching `error_message` or `stderr_tail` would fail the
+/// executor's terminal write and re-run the job on every redelivery.
+fn clean_message(text: &str) -> String {
+    truncate_chars(text, MESSAGE_MAX_CHARS).replace('\0', "\u{FFFD}")
 }
 
 fn push_json_string(out: &mut String, text: &str) {
@@ -821,6 +829,27 @@ mod tests {
             r#"{"status":"fail","message":"boom","metrics":{"token_spend":11}}"#
         );
         assert!(stderr.contains("invocation failed: boom"), "{stderr}");
+    }
+
+    #[test]
+    fn nul_never_reaches_the_result_or_stderr() {
+        let tmp = TempDir::new();
+        let env = env_for(&tmp.path("result.json"));
+        let long_tail = "x".repeat(2000);
+        let (code, result, stderr) = exec(&env, |_| -> Result<(), String> {
+            Err(format!("bad\0byte {long_tail}"))
+        });
+        assert_eq!(code, EXIT_FAIL);
+        let result = result.unwrap();
+        assert!(result.contains("\"message\":\"bad\u{FFFD}byte x"), "{result}");
+        assert!(!result.contains('\0') && !result.contains("\\u0000"));
+        assert!(!stderr.contains('\0'), "{stderr:?}");
+        assert!(stderr.contains("bad\u{FFFD}byte"));
+        // The stderr line carries the same capped text as the result file.
+        assert!(
+            stderr.trim_end().chars().count()
+                <= "candybar-sdk: invocation failed: ".len() + MESSAGE_MAX_CHARS
+        );
     }
 
     #[test]
@@ -1073,7 +1102,7 @@ mod tests {
         let encoded = encode_result(Status::Success, Some(exotic), 0, None);
         assert_eq!(
             encoded,
-            "{\"status\":\"success\",\"message\":\"quote\\\" backslash\\\\ newline\\n tab\\t bell\\u0007 nul\\u0000 esc\\u001b emoji🍬 é\",\"metrics\":{\"token_spend\":0}}"
+            "{\"status\":\"success\",\"message\":\"quote\\\" backslash\\\\ newline\\n tab\\t bell\\u0007 nul\u{FFFD} esc\\u001b emoji🍬 é\",\"metrics\":{\"token_spend\":0}}"
         );
 
         let long: String = "🍬".repeat(2000);

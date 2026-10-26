@@ -30,5 +30,8 @@ fn greet(ctx: &Context) -> Result<Outcome, Box<dyn Error>> {
     // A real job would call its model here and add the provider's usage.
     ctx.add_tokens(PROMPT_TOKENS + COMPLETION_TOKENS);
     ctx.add_cost(COST_USD)?;
-    Ok(Outcome::success_with(format!("hello from rust [{}, {tick}]", ctx.trigger())))
+    Ok(Outcome::success_with(format!(
+        "hello from rust [{}, {tick}]",
+        ctx.trigger()
+    )))
 }
