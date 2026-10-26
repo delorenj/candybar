@@ -931,7 +931,7 @@ jobs:
   source_of_truth:
     repo: delorenj/agents
     path: tools/jev-clairic/hermes/cron-jobs.json
-    commit: 03761d6
+    commit: 03761d6d036425d71f9087f5a2f126ccac83518c
   disable:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 777c511a009c --scheduler external'
   rollback:
@@ -994,7 +994,7 @@ jobs:
   source_of_truth:
     repo: delorenj/agents
     path: tools/jev-clairic/hermes/aperture-lane-monitor.sh
-    commit: 03761d6
+    commit: 03761d6d036425d71f9087f5a2f126ccac83518c
   disable:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit f3db72089593 --scheduler external'
   rollback:
@@ -1056,7 +1056,7 @@ jobs:
   source_of_truth:
     repo: delorenj/candybar
     path: deploy/migration/ledger.yaml
-    commit: 216657b
+    commit: 216657b461cd32d02da41fde9dc30f8cedaeab10
   disable:
   - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler external'
   rollback:
@@ -1114,7 +1114,7 @@ jobs:
   source_of_truth:
     repo: delorenj/candybar
     path: deploy/migration/ledger.yaml
-    commit: 216657b
+    commit: 216657b461cd32d02da41fde9dc30f8cedaeab10
   disable:
   - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler external'
   rollback:
@@ -1172,7 +1172,7 @@ jobs:
   source_of_truth:
     repo: delorenj/candybar
     path: deploy/migration/ledger.yaml
-    commit: 216657b
+    commit: 216657b461cd32d02da41fde9dc30f8cedaeab10
   disable:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler external'
   rollback:
@@ -1230,7 +1230,7 @@ jobs:
   source_of_truth:
     repo: delorenj/candybar
     path: deploy/migration/ledger.yaml
-    commit: 216657b
+    commit: 216657b461cd32d02da41fde9dc30f8cedaeab10
   disable:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler external'
   rollback:
