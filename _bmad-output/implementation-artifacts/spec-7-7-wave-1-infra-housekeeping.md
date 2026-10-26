@@ -81,7 +81,7 @@ context: []
 - `srvls-metrics` verified by its 17:40Z scheduled fire (df5c10a9, success, metered). `gnome-shell-restart` verified by its 18:00Z scheduled fire (c6484dba, success, memory 4.3 MB, cpu_load 1.0022).
 - **Incident (recovered):** the shared ledger suffers a stale-write race when a wave agent hand-edits `ledger.yaml` instead of loading under the CLI lock — wave 7.8's plan commit (6a011dc) dropped all other waves' entries including live cutover records. Detected within minutes; restored by union of ae7cba7 + the 7.8/7.9 additions (my reconstruction matched the wave-7.13 agent's concurrent restore, committed as 1365145). No cutover state was lost. Follow-up filed in deferred-work.md (ledger needs a CLI add-entry verb / writers must never hand-write without a locked fresh load).
 - No daemon code changed; no container redeploy and no executor restart were needed.
-- Remaining verifications are time-gated by the jobs' own schedules: gnome-shell-restart 18:00Z, cache-prune-codex-tmp 18:17Z (this session), the five 04:10–05:41 ET dailies tomorrow morning, cache-prune Sunday 05:07 ET.
+- Remaining verifications are time-gated by the jobs' own schedules: cache-prune-codex-tmp 18:17Z (this session), the six 04:10–05:41 ET dailies tomorrow morning, cache-prune Sunday 05:07 ET.
 
 ## Spec Change Log
 
