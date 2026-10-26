@@ -36,6 +36,8 @@ class FakeRow:
     entrypoint: str
     noise: bool
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    total_invoked: int = 0
+    total_successful: int = 0
 
 
 class FakeSink:
@@ -113,7 +115,10 @@ def test_register_happy_path_201_row_and_event(rig: Any) -> None:
     UUID(body["id"])  # parses as a uuid
     assert body["noise"] is False
     assert "createdAt" in body
-    assert body["entrypoint"] == "/bin/true"
+    # Story 5.1: the 201 body is the contract's single-definition shape —
+    # counters start at zero and the executor-internal entrypoint is not echoed.
+    assert body["totalInvoked"] == 0 and body["totalSuccessful"] == 0
+    assert "entrypoint" not in body
 
     # Row was inserted with the same id the event carries.
     assert len(rig.rows) == 1

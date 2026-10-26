@@ -73,6 +73,29 @@ Invalid cron/name → `application/problem+json` (422); duplicate name → 409;
 bus down → 503 and no row. API bind: `CANDYBAR_API_HOST`/`CANDYBAR_API_PORT`;
 CLI target: `CANDYBAR_API_URL`.
 
+## Definitions API (CAP-8, Story 5.1)
+
+The shapes are `_bmad-output/specs/spec-cron-framework/holocene-view-contract.md`,
+field for field (`tests/contract_shapes.py` parses them out of that file):
+
+```bash
+curl https://candybar.delo.sh/candybars          # [{id, name, description, tags, schedule, noise, createdAt}, ...] oldest first
+curl https://candybar.delo.sh/candybars/<id>     # the same + {totalInvoked, totalSuccessful}
+curl -X POST https://candybar.delo.sh/candybars -H 'content-type: application/json' \
+  -d '{"name":"my-job","schedule":"*/5 * * * *","entrypoint":"/abs/run.sh"}'   # 201, single shape
+curl -X PATCH https://candybar.delo.sh/candybars/<id> -H 'content-type: application/json' \
+  -d '{"schedule":"0 * * * *"}'                 # 200, single shape
+```
+
+`PATCH` takes any non-empty subset of `name`, `description`, `tags`,
+`schedule`, `entrypoint`, `noise`. The merged definition is validated like a
+manifest. If anything actually changed, one `bloodbank.cron.candybar.updated`
+fact goes out first, with `changes` = only the changed fields, and then the
+row is written. Sending the stored values back is a 200 with no fact. Unknown
+or read-only keys and `null` → 422; unknown id → 404; name taken → 409; bus
+down → 503 with the row unchanged. `createdAt` is always UTC. The executor's
+`entrypoint` is accepted on writes but never echoed.
+
 ## Run a candybar now
 
 ```bash

@@ -25,6 +25,7 @@ from .models import (
 )
 from .store import (
     INVOCATION_LIST_MAX,
+    UPDATABLE_FIELDS,
     DuplicateInvocationError,
     DuplicateNameError,
     SkipEntry,
@@ -41,14 +42,17 @@ from .store import (
     get_invocation,
     insert_candybar,
     invocation_by_key,
+    list_candybars,
     list_invocations,
     list_skips,
+    lock_candybar,
     name_taken,
     normalize_dsn,
     occurrence_skip_id,
     record_terminal_invocation,
     rest_of_day_skip_id,
     session_scope,
+    update_candybar,
 )
 
 __all__ = [
@@ -58,6 +62,7 @@ __all__ = [
     "SKIP_OCCURRENCE",
     "SKIP_REST_OF_DAY",
     "SLUG_RE",
+    "UPDATABLE_FIELDS",
     "Base",
     "Candybar",
     "CandybarManifest",
@@ -81,14 +86,17 @@ __all__ = [
     "get_invocation",
     "insert_candybar",
     "invocation_by_key",
+    "list_candybars",
     "list_invocations",
     "list_skips",
     "load_manifest",
+    "lock_candybar",
     "name_taken",
     "normalize_dsn",
     "occurrence_skip_id",
     "record_terminal_invocation",
     "rest_of_day_skip_id",
     "session_scope",
+    "update_candybar",
     "uuid7",
 ]

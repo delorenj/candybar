@@ -43,6 +43,15 @@ class CandybarManifest(BaseModel):
             )
         return value
 
+    @field_validator("tags")
+    @classmethod
+    def _tags_non_blank(cls, value: list[str]) -> list[str]:
+        # The created/updated event payloads require non-blank tags; refuse
+        # here so a blank tag is a 422, never a 500 out of the event builder.
+        if any(not tag.strip() for tag in value):
+            raise ValueError("tags must be non-blank strings")
+        return value
+
     @field_validator("entrypoint")
     @classmethod
     def _entrypoint_non_empty(cls, value: str) -> str:

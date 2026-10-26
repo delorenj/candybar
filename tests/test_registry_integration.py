@@ -523,3 +523,119 @@ def test_invocation_reads_round_trip_through_the_api(migrated_db: str) -> None:
     assert [i["id"] for i in listed] == [str(x) for x in reversed(ids)]
     assert len(client.get(f"/candybars/{other_id}/invocations").json()["invocations"]) == 1
     assert client.get(f"/candybars/{uuid7()}/invocations").status_code == 404
+
+
+def test_definitions_crud_round_trip_through_the_api(migrated_db: str) -> None:
+    """Story 5.1: register, list, get, patch on real Postgres via the real routes.
+
+    Every response is checked key-for-key against the contract file's field
+    lists; the counters on GET /candybars/{id} are the registry's; a PATCH
+    publishes exactly one `updated` fact and the row change commits; a rename
+    onto a taken name is 409 with nothing published or written.
+    """
+    import asyncio
+    import json
+    from datetime import UTC, datetime
+    from uuid import UUID
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from candybar.api.app import create_app
+    from candybar.events.parse import parse_envelope
+    from candybar.registry import (
+        TerminalInvocation,
+        get_candybar,
+        record_terminal_invocation,
+    )
+    from contract_shapes import LIST_KEYS, SINGLE_KEYS, assert_contract_shape
+
+    class Sink:
+        def __init__(self) -> None:
+            self.events: list[object] = []
+
+        async def publish(self, event: object) -> None:
+            self.events.append(parse_envelope(json.loads(event.model_dump_json())))
+
+    sink = Sink()
+    api_engine = create_async_engine(migrated_db, poolclass=NullPool)
+    client = TestClient(create_app(session_factory=lambda: session_scope(api_engine), sink=sink))
+
+    assert client.get("/candybars").json() == []
+    first = client.post(
+        "/candybars",
+        json={"name": "crud-a", "description": "first", "tags": ["x"],
+              "schedule": "*/5 * * * *", "entrypoint": "/bin/true"},
+    )
+    assert first.status_code == 201
+    assert_contract_shape(first.json(), SINGLE_KEYS)
+    second = client.post(
+        "/candybars",
+        json={"name": "crud-b", "schedule": "0 * * * *", "entrypoint": "/bin/true",
+              "noise": True},
+    )
+    a_id, b_id = first.json()["id"], second.json()["id"]
+
+    listed = client.get("/candybars").json()
+    assert [item["id"] for item in listed] == [a_id, b_id]
+    for item in listed:
+        assert_contract_shape(item, LIST_KEYS)
+    assert listed[1]["noise"] is True
+
+    async def record_one() -> None:
+        engine = create_registry_engine(migrated_db)
+        try:
+            async with session_scope(engine) as session:
+                now = datetime.now(UTC)
+                await record_terminal_invocation(
+                    session,
+                    TerminalInvocation(
+                        invocation_id=uuid7(), candybar_id=UUID(a_id), trigger="manual",
+                        tick_id=None, idempotency_key=f"candybar:{a_id}:manual:crud",
+                        result="success", exit_code=0, runtime_ms=3, error_message=None,
+                        stderr_tail=None, token_spend=0, cost_usd=None,
+                        started_at=now, finished_at=now,
+                    ),
+                )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(record_one())
+    detail = client.get(f"/candybars/{a_id}").json()
+    assert_contract_shape(detail, SINGLE_KEYS)
+    assert detail["totalInvoked"] == 1 and detail["totalSuccessful"] == 1
+    assert detail["createdAt"] == first.json()["createdAt"]
+
+    sink.events.clear()
+    patched = client.patch(f"/candybars/{a_id}", json={"schedule": "0 3 * * *", "tags": ["x"]})
+    assert patched.status_code == 200
+    assert_contract_shape(patched.json(), SINGLE_KEYS)
+    assert patched.json()["schedule"] == "0 3 * * *" and patched.json()["totalInvoked"] == 1
+    assert len(sink.events) == 1
+    event = sink.events[0]
+    assert event.type == "bloodbank.cron.candybar.updated"
+    assert event.data.changes == {"schedule": "0 3 * * *"}
+    assert client.get(f"/candybars/{a_id}").json()["schedule"] == "0 3 * * *"
+
+    async def stored_row() -> tuple[str, str, datetime, datetime]:
+        engine = create_registry_engine(migrated_db)
+        try:
+            async with session_scope(engine) as session:
+                row = await get_candybar(session, UUID(a_id))
+                return row.name, row.schedule, row.created_at, row.updated_at
+        finally:
+            await engine.dispose()
+
+    name, schedule, created_at, updated_at = asyncio.run(stored_row())
+    assert (name, schedule) == ("crud-a", "0 3 * * *") and updated_at > created_at
+
+    sink.events.clear()
+    clash = client.patch(f"/candybars/{a_id}", json={"name": "crud-b"})
+    assert clash.status_code == 409 and sink.events == []
+    assert asyncio.run(stored_row())[0] == "crud-a"
+
+    renamed = client.patch(f"/candybars/{a_id}", json={"name": "crud-c"})
+    assert renamed.status_code == 200 and renamed.json()["name"] == "crud-c"
+    assert sink.events[0].data.name == "crud-c"
+    assert client.patch(f"/candybars/{uuid7()}", json={"noise": True}).status_code == 404

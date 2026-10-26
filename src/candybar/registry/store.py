@@ -348,6 +348,49 @@ async def get_candybar(session: AsyncSession, candybar_id: UUID) -> Candybar | N
     return await session.get(Candybar, candybar_id)
 
 
+async def list_candybars(session: AsyncSession) -> list[Candybar]:
+    """Every registered candybar, oldest first (created_at, then id) — Story 5.1."""
+    result = await session.scalars(select(Candybar).order_by(Candybar.created_at, Candybar.id))
+    return list(result.all())
+
+
+async def lock_candybar(session: AsyncSession, candybar_id: UUID) -> Candybar | None:
+    """The candybar row locked FOR UPDATE until the caller's commit, or None.
+
+    Serializes concurrent definition updates of one candybar (Story 5.1): each
+    diffs against the row the previous one committed, so `updated.changes`
+    never reports a stale before-image.
+    """
+    return await session.get(Candybar, candybar_id, with_for_update=True, populate_existing=True)
+
+
+# Definition fields a caller may change (Story 5.1); ids, timestamps and
+# counters are registry-owned.
+UPDATABLE_FIELDS = ("name", "description", "tags", "schedule", "entrypoint", "noise")
+
+
+async def update_candybar(
+    session: AsyncSession, row: Candybar, changes: dict[str, object]
+) -> Candybar:
+    """Apply `changes` to a (locked) candybar row and flush. Caller commits.
+
+    Raises DuplicateNameError when a rename hits the unique name constraint.
+    """
+    unknown = set(changes) - set(UPDATABLE_FIELDS)
+    if unknown:
+        raise ValueError(f"not updatable: {sorted(unknown)}")
+    for field_name, value in changes.items():
+        setattr(row, field_name, list(value) if field_name == "tags" else value)  # type: ignore[arg-type]
+    row.updated_at = datetime.now(UTC)
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        if "candybars_name_key" in str(exc):
+            raise DuplicateNameError(str(changes.get("name", row.name))) from exc
+        raise
+    return row
+
+
 async def get_entrypoint(session: AsyncSession, candybar_id: UUID) -> str | None:
     """The registered entrypoint for a candybar id, or None when unknown."""
     result = await session.execute(select(Candybar.entrypoint).where(Candybar.id == candybar_id))

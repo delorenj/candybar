@@ -15,6 +15,15 @@ record ... stored in the `invocations` table, queryable via the API"):
 row, and `GET /candybars/{id}/invocations?limit=N` lists a candybar's
 recorded invocations newest first. Rows exist only once terminal, so an
 in-flight invocation is a 404.
+Story 5.1 completes definitions CRUD per holocene-view-contract.md:
+`GET /candybars` (bare array of the definition shape), `GET /candybars/{id}`
+(definition + `totalInvoked`/`totalSuccessful`), `POST /candybars` answering
+that single shape, and `PATCH /candybars/{id}` — the row is locked, diffed,
+and when anything changed one `bloodbank.cron.candybar.updated` fact
+(`changes` = the changed fields only) is published FIRST, then the row change
+commits in the same flow (spine state rule, as on register). Response shapes
+are the contract's, field for field: `entrypoint` is executor-internal and is
+not echoed.
 All errors are RFC 7807 problem+json. Epic 5 adds the rest of the CAP-8 read surface.
 """
 
@@ -34,10 +43,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import REGISTRY, CollectorRegistry
 from prometheus_client.exposition import choose_encoder
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from candybar.events.builders import build_candybar_created, build_candybar_invoke
+from candybar.events.builders import (
+    build_candybar_created,
+    build_candybar_invoke,
+    build_candybar_updated,
+)
 from candybar.registry import (
     INVOCATION_LIST_MAX,
     CandybarManifest,
@@ -45,8 +58,11 @@ from candybar.registry import (
     get_candybar,
     get_invocation,
     insert_candybar,
+    list_candybars,
     list_invocations,
+    lock_candybar,
     name_taken,
+    update_candybar,
     uuid7,
 )
 
@@ -78,6 +94,24 @@ class RegisterRequest(BaseModel):
         return CandybarManifest.model_validate(self.model_dump())
 
 
+class UpdateRequest(BaseModel):
+    """PATCH /candybars/{id} body — any non-empty subset of the writable fields.
+
+    Defaults are never validated, so an omitted field stays unset while an
+    explicit `null` fails its type (422): "clear this field" is not a thing.
+    Unknown and read-only keys (id, createdAt, counters) are refused.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(default=None)  # type: ignore[assignment]
+    description: str = Field(default=None)  # type: ignore[assignment]
+    tags: list[str] = Field(default=None)  # type: ignore[assignment]
+    schedule: str = Field(default=None)  # type: ignore[assignment]
+    entrypoint: str = Field(default=None)  # type: ignore[assignment]
+    noise: bool = Field(default=None)  # type: ignore[assignment]
+
+
 def problem(status: int, title: str, detail: str) -> JSONResponse:
     return JSONResponse(
         status_code=status,
@@ -98,16 +132,36 @@ def utc_iso(value: datetime | None) -> str | None:
 
 
 def candybar_row_json(row: Any) -> dict[str, Any]:
-    """The holocene-view-contract row shape (+ entrypoint), camelCase dates."""
+    """The holocene-view-contract definition shape, exactly (GET /candybars items)."""
     return {
         "id": str(row.id),
         "name": row.name,
         "description": row.description,
         "tags": list(row.tags),
         "schedule": row.schedule,
-        "entrypoint": row.entrypoint,
         "noise": row.noise,
         "createdAt": utc_iso(row.created_at),
+    }
+
+
+def candybar_detail_json(row: Any) -> dict[str, Any]:
+    """The single-definition shape: definition plus registry counters (GET /candybars/{id})."""
+    return {
+        **candybar_row_json(row),
+        "totalInvoked": row.total_invoked,
+        "totalSuccessful": row.total_successful,
+    }
+
+
+def definition_of(row: Any) -> dict[str, Any]:
+    """A stored row's writable definition, in CandybarManifest field names."""
+    return {
+        "name": row.name,
+        "description": row.description,
+        "tags": list(row.tags),
+        "schedule": row.schedule,
+        "entrypoint": row.entrypoint,
+        "noise": row.noise,
     }
 
 
@@ -223,7 +277,83 @@ def create_app(
                 409, "Candybar name already registered", f"name {manifest.name!r} is taken"
             )
 
-        return JSONResponse(status_code=201, content=candybar_row_json(row))
+        return JSONResponse(status_code=201, content=candybar_detail_json(row))
+
+    @app.get("/candybars")
+    async def definitions() -> JSONResponse:
+        """Every registered candybar in the contract definition shape, oldest first."""
+        async with session_factory() as session:
+            body = [candybar_row_json(row) for row in await list_candybars(session)]
+        return JSONResponse(content=body)
+
+    @app.get("/candybars/{candybar_id}")
+    async def definition(candybar_id: UUID) -> JSONResponse:
+        """One definition plus its registry counters."""
+        async with session_factory() as session:
+            row = await get_candybar(session, candybar_id)
+            body = candybar_detail_json(row) if row is not None else None
+        if body is None:
+            return problem(404, "Candybar not found", f"no candybar registered with id {candybar_id}")
+        return JSONResponse(content=body)
+
+    @app.patch("/candybars/{candybar_id}")
+    async def update(candybar_id: UUID, body: UpdateRequest) -> JSONResponse:
+        """Change a definition: lock, diff, publish `updated` (changes only), write."""
+        patch = body.model_dump(exclude_unset=True)
+        if not patch:
+            return problem(422, "Invalid candybar update", "no fields to update")
+
+        try:
+            async with session_factory() as session:
+                row = await lock_candybar(session, candybar_id)
+                if row is None:
+                    return problem(
+                        404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                    )
+                current = definition_of(row)
+                try:
+                    merged = CandybarManifest.model_validate({**current, **patch})
+                except ValueError as exc:
+                    return problem(422, "Invalid candybar definition", str(exc)[:500])
+                wanted = merged.model_dump()
+                changes = {k: wanted[k] for k in patch if wanted[k] != current[k]}
+                if not changes:
+                    # Nothing differs from the stored row: no fact, no write.
+                    return JSONResponse(content=candybar_detail_json(row))
+
+                if "entrypoint" in changes and not Path(merged.entrypoint).is_file():
+                    return problem(
+                        422,
+                        "Invalid candybar definition",
+                        f"entrypoint is not an existing file: {merged.entrypoint!r}",
+                    )
+                if "name" in changes and await name_taken(session, merged.name):
+                    return problem(
+                        409, "Candybar name already registered", f"name {merged.name!r} is taken"
+                    )
+
+                event = build_candybar_updated(
+                    candybar_id=candybar_id, name=merged.name, changes=changes
+                )
+                try:
+                    await sink.publish(event)
+                except BUS_ERRORS as exc:
+                    log.error("failed to publish candybar.updated for %s: %s", candybar_id, exc)
+                    return problem(
+                        503,
+                        "Event bus unavailable",
+                        "could not publish candybar.updated; the definition is unchanged",
+                    )
+
+                row = await update_candybar(session, row, changes)
+                result = candybar_detail_json(row)
+        except DuplicateNameError:
+            # Rename race: another writer took the name between the check and
+            # the flush (session_scope rolled back; the fact may already be out).
+            return problem(
+                409, "Candybar name already registered", f"name {patch.get('name')!r} is taken"
+            )
+        return JSONResponse(content=result)
 
     @app.post("/candybars/{candybar_id}/invoke", status_code=202)
     async def invoke(candybar_id: UUID) -> JSONResponse:
