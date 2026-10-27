@@ -14,7 +14,7 @@
 
 ## Contract candybar must expose
 
-Base: REST over HTTPS at a `*.delo.sh` hostname, plus one streaming channel for live updates. All timestamps ISO 8601 UTC. Auth/transport details are architecture-phase decisions; the shapes below are the contract.
+Base: REST over HTTPS at `https://candybar.delo.sh` (live since 2026-10-26), plus one SSE channel for live updates. All timestamps ISO 8601 UTC. No in-app auth in v1: access is edge-only (Traefik/Cloudflare). Errors are `application/problem+json` (`{ type, title, status, detail }`). The shapes below are the contract.
 
 ### Definitions
 
@@ -33,7 +33,30 @@ Base: REST over HTTPS at a `*.delo.sh` hostname, plus one streaming channel for 
 
 ### Live updates
 
-- A streaming channel (websocket or SSE — architecture phase picks one) emitting an event whenever: an invocation starts, an invocation completes (with result), a skip is applied, a definition changes, or the "current" row advances. Each event carries enough of the row shape above for the view to patch in place without a refetch.
+- A streaming channel (SSE, `GET /schedule/stream`, AD-11) emitting an event whenever: an invocation starts, an invocation completes (with result), a skip is applied, a definition changes, or the "current" row advances. Each event carries enough of the row shape above for the view to patch in place without a refetch.
+
+#### Wire format (added 2026-10-27 for the holocene handoff; implemented by Story 5.4)
+
+- **Endpoint:** `GET /schedule/stream`, optionally `?from=<ts>&to=<ts>` (both or neither, same limits as `/schedule`). Use a browser `EventSource`. The server sends `retry: 3000` first and a `: keepalive` comment when idle.
+- **Frame:** `id: <boot>-<seq>` / `event: <name>` / `data: <one-line JSON>`. Every payload has `type` (= the event name), `seq`, `key` (the patch key) and `at` (UTC). Event names are API-level only, not Bloodbank types.
+- **Events:**
+
+| `event` | Trigger | Payload (besides `type`, `seq`, `key`, `at`) |
+|---|---|---|
+| `ready` | every fresh connection | `cut`, `current` (key `ready`; not a patch) |
+| `invocation.started` | an invocation starts | `candybarId`, `invocationId`, `trigger` (`scheduled`/`manual`/`misfire`), `row` |
+| `invocation.completed` | an invocation completes | as above, plus `result` (`success`/`fail`); `row.lastResult` set |
+| `skip.applied` | a skip is applied | `candybarId`, `reason`, `row`. `reason` is `occurrence` or `rest_of_day` for operator skips (the only ones whose `row.skipped` is true), or a system skip: `misfire_coalesced`, `overlap`, `executor_backlog_coalesced`, `disabled` |
+| `definition.changed` | a definition is created or updated, incl. `enabled` | `candybarId`, `change` (`created`/`updated`), `definition` (the `GET /candybars` shape), `changes` (updates only: the changed visible fields); `rows` when the stream has a window |
+| `current.advanced` | a tick or definition change moves the current row | `cut`, `current` (a `/schedule` row, or `null` when nothing is upcoming) |
+| `reset` | the server cannot guarantee continuity | `reason` (`unresumable`, `update_failed`, `render_failed`), `cut`, `current` |
+
+- **Patch key:** a row's identity is `<candybarId>@<fireTime>`. Events with no schedule row carry `row: null` and a non-row key: `invocation:<invocationId>` (a manual run), `skip:<factId>`, `definition:<candybarId>`; the notices use `ready`, `current` and `reset`.
+- **Patch rules:** on a row event, replace the row at its key. On `current.advanced`, rows with `fireTime < cut` become `past`, the row matching `current` becomes `current`, and the rest become `upcoming`. On `definition.changed`, set `name`, `schedule` and `noise` on that candybar's rows (or replace them with `rows` when the stream has a window); a change of `enabled` adds or removes upcoming rows, so a stream without a window refetches `/schedule` on it.
+- **Idempotent:** every payload is absolute state, so applying one twice changes nothing.
+- **Resume:** reconnect with `Last-Event-ID` (EventSource does this itself). If the id is still in the server's 1024-event buffer, exactly the missed events replay; otherwise the client gets `reset` and must refetch `/schedule`. `seq` counts within one server boot (the `<boot>` prefix changes on restart), so after a `reset` the client forgets the seqs it applied.
+- **Window:** with `from`/`to`, row events outside the window arrive as id-only frames (no `event`, no `data`); they move the resume cursor and dispatch nothing.
+- **Fallback:** if streaming is unavailable, poll `GET /schedule/next`.
 
 ### Noise collection
 
