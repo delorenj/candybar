@@ -75,7 +75,7 @@ development_status:
   5-6-skip-operations-api: done
   epic-5-retrospective: optional
 
-  epic-6: backlog
+  epic-6: done  # delegated: handed to holocene as HOLOC-24 (I-7) 2026-10-27
   epic-6-retrospective: optional
 
   epic-7: in-progress

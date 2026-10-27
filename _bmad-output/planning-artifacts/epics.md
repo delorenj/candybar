@@ -523,6 +523,7 @@ The gmail-inbox-style live schedule view (Definitions + Schedule tabs, current/u
 - **Candybar-side obligation:** Epic 5 implements the contract verbatim; Story 5.1, 5.2, 5.4, 5.5, 5.6 each carry contract-conformance acceptance criteria. Any contract change requires updating both the contract file and the affected Epic 5 story ACs in the same commit.
 - **Explicitly no implementation stories here** per the Director Rule: row styling, autoscroll, tab layout, toggle interaction, and grouping/filtering beyond the contract queries are all holocene repo scope.
 - **Handoff trigger:** when Epic 5 reaches done, file the cross-project initiative item with the holocene PM referencing the contract and the live base URL `https://candybar.delo.sh`.
+- **Handed off 2026-10-27:** Epic 5 done; contract completed with the SSE wire format (commit 2e505a8); filed on holocene's board as `HOLOC-24` under parent initiative `I-7` (33GOD `initiatives.md`). Candybar's remaining obligation is keeping the contract and API in step.
 
 ## Epic 7: Cron Migration onto Candybar
 
