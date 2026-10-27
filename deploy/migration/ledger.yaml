@@ -151,13 +151,13 @@ jobs:
   - systemctl --user disable --now newapi-db-pull.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-db-pull.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17939-8d7e-7b6b-b51a-18f13c120eaf
   cutover_at: '2026-10-26T17:19:37.802787Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 64760ca4-3fa8-54c2-b847-85b5437d5419
+    result: success
+    at: '2026-10-27T12:05:34.675730Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:15:40.439162Z'
@@ -168,6 +168,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17939-8d7e-7b6b-b51a-18f13c120eaf enabled; first fire 2026-10-27T12:05:00Z
+  - at: '2026-10-27T14:38:48.362732Z'
+    action: verify
+    outcome: ok
+    detail: invocation 64760ca4-3fa8-54c2-b847-85b5437d5419 (scheduled) success exit=0 runtime=34510ms memory=88764416B cpu=0.0196
 - id: systemd:newapi-claude-token
   wave: '7.13'
   candybar:
@@ -304,13 +308,13 @@ jobs:
   - systemctl --user disable --now newapi-openrouter-sync.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-openrouter-sync.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17939-b32c-7c55-af69-f7aa768fbc15
   cutover_at: '2026-10-26T17:19:47.445867Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 67bcc953-ae5a-5cae-b961-edd28aae0ecb
+    result: success
+    at: '2026-10-27T07:47:02.442357Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:15:41.490900Z'
@@ -321,6 +325,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17939-b32c-7c55-af69-f7aa768fbc15 enabled; first fire 2026-10-27T07:47:00Z
+  - at: '2026-10-27T14:38:48.975862Z'
+    action: verify
+    outcome: ok
+    detail: invocation 67bcc953-ae5a-5cae-b961-edd28aae0ecb (scheduled) success exit=0 runtime=2356ms memory=29671424B cpu=0.0661
 - id: systemd:newapi-staff-sso
   wave: '7.13'
   candybar:
@@ -405,13 +413,13 @@ jobs:
   - systemctl --user disable --now newapi-token-watch.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-token-watch.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17939-b9af-7316-bada-e543afdf55b9
   cutover_at: '2026-10-26T17:19:49.128067Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 94713e7f-f967-56be-befb-df23b3db9329
+    result: success
+    at: '2026-10-27T12:30:01.801234Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:15:42.216875Z'
@@ -422,6 +430,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17939-b9af-7316-bada-e543afdf55b9 enabled; first fire 2026-10-27T12:30:00Z
+  - at: '2026-10-27T14:38:49.636333Z'
+    action: verify
+    outcome: ok
+    detail: invocation 94713e7f-f967-56be-befb-df23b3db9329 (scheduled) success exit=0 runtime=1657ms memory=44421120B cpu=0.267
 - id: systemd:aai-free-scout.timer
   wave: '7.13'
   candybar:
@@ -445,7 +457,7 @@ jobs:
   deviations:
   - RandomizedDelaySec=10m dropped (now fires exactly 04:37 local)
   - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: false
+  native_failing: true
   source_of_truth:
     repo: AutomaticAI-io/client-portal
     path: gateway/ops/systemd/aai-free-scout.timer
@@ -454,13 +466,13 @@ jobs:
   - systemctl --user disable --now aai-free-scout.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/aai-free-scout.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17939-bd28-7d5a-ab3e-2d4a83e9f996
   cutover_at: '2026-10-26T17:19:50.013161Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 40d2fe7f-ef5a-5d6c-a561-e64293133e52
+    result: fail
+    at: '2026-10-27T09:21:04.781956Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:15:42.566444Z'
@@ -471,6 +483,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17939-bd28-7d5a-ab3e-2d4a83e9f996 enabled; first fire 2026-10-27T08:37:00Z
+  - at: '2026-10-27T14:38:50.214425Z'
+    action: verify
+    outcome: ok
+    detail: 'invocation 40d2fe7f-ef5a-5d6c-a561-e64293133e52 (scheduled) fail exit=1 runtime=2644699ms memory=466382848B cpu=0.0327 (result parity: the job already failed natively)'
 - id: systemd:intelliforia-pull-prod.timer
   wave: '7.12'
   candybar:
@@ -502,13 +518,13 @@ jobs:
   - systemctl --user disable --now intelliforia-pull-prod.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-pull-prod.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17938-39bc-74a6-a5d3-26e2d01f9f75
   cutover_at: '2026-10-26T17:18:10.854333Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 10fce7ac-3a66-5e1f-aa05-a21a21025566
+    result: success
+    at: '2026-10-27T08:21:40.452831Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:26.005859Z'
@@ -519,6 +535,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17938-39bc-74a6-a5d3-26e2d01f9f75 enabled; first fire 2026-10-27T08:15:00Z
+  - at: '2026-10-27T14:38:50.779419Z'
+    action: verify
+    outcome: ok
+    detail: invocation 10fce7ac-3a66-5e1f-aa05-a21a21025566 (scheduled) success exit=0 runtime=400340ms memory=460292096B cpu=0.8127
 - id: systemd:intelliforia-client-health.timer
   wave: '7.12'
   candybar:
@@ -550,13 +570,13 @@ jobs:
   - systemctl --user disable --now intelliforia-client-health.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-client-health.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17938-56bc-7741-aba0-83c8ba8cf906
   cutover_at: '2026-10-26T17:18:18.429218Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 646c98b6-b876-5e7f-bdd0-b26c5583acb3
+    result: success
+    at: '2026-10-27T09:30:00.620239Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:26.027730Z'
@@ -567,6 +587,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17938-56bc-7741-aba0-83c8ba8cf906 enabled; first fire 2026-10-27T09:30:00Z
+  - at: '2026-10-27T14:38:51.381232Z'
+    action: verify
+    outcome: ok
+    detail: invocation 646c98b6-b876-5e7f-bdd0-b26c5583acb3 (scheduled) success exit=0 runtime=450ms memory=39440384B cpu=0.6279
 - id: systemd:intelliforia-client-health-monday.timer
   wave: '7.12'
   candybar:
@@ -643,13 +667,13 @@ jobs:
   - systemctl --user disable --now intelliforia-staging-track-main.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/intelliforia-staging-track-main.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17938-6222-7abf-b39e-41495eff680f
   cutover_at: '2026-10-26T17:18:21.515299Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: fa088f62-9a9f-5623-9c3f-cf4459deb2a4
+    result: success
+    at: '2026-10-27T11:05:08.450285Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:26.066794Z'
@@ -660,6 +684,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17938-6222-7abf-b39e-41495eff680f enabled; first fire 2026-10-27T11:05:00Z
+  - at: '2026-10-27T14:38:52.542702Z'
+    action: verify
+    outcome: ok
+    detail: invocation fa088f62-9a9f-5623-9c3f-cf4459deb2a4 (scheduled) success exit=0 runtime=8350ms memory=49856512B cpu=0.0854
 - id: systemd:tolt-forge-daily
   wave: '7.16'
   candybar:
@@ -692,13 +720,13 @@ jobs:
   - systemctl --user disable --now tolt-forge-daily.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-forge-daily.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17938-5381-7f92-8f1e-6966648dd452
   cutover_at: '2026-10-26T17:18:17.559351Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 0f43ac97-3ed8-5c03-9ada-c9a084e864b6
+    result: fail
+    at: '2026-10-26T20:00:08.753454Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:31.252762Z'
@@ -709,6 +737,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17938-5381-7f92-8f1e-6966648dd452 enabled; first fire 2026-10-26T20:00:00Z
+  - at: '2026-10-27T14:38:53.179409Z'
+    action: verify
+    outcome: ok
+    detail: 'invocation 0f43ac97-3ed8-5c03-9ada-c9a084e864b6 (scheduled) fail exit=1 runtime=8561ms memory=384258048B cpu=0.3707 (result parity: the job already failed natively)'
 - id: systemd:tolt-items-daily
   wave: '7.16'
   candybar:
@@ -742,13 +774,13 @@ jobs:
   - systemctl --user disable --now tolt-items-daily.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-items-daily.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17938-6fff-7821-bcf3-3048d43cce18
   cutover_at: '2026-10-26T17:18:24.754946Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 4013f95d-b416-589f-a229-ad0250f5dddf
+    result: fail
+    at: '2026-10-27T07:00:39.370311Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:43.160477Z'
@@ -759,6 +791,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17938-6fff-7821-bcf3-3048d43cce18 enabled; first fire 2026-10-27T07:00:00Z
+  - at: '2026-10-27T14:38:53.850214Z'
+    action: verify
+    outcome: ok
+    detail: 'invocation 4013f95d-b416-589f-a229-ad0250f5dddf (scheduled) fail exit=1 runtime=39237ms memory=212303872B cpu=0.0677 (result parity: the job already failed natively)'
 - id: systemd:pr-crusher
   wave: '7.16'
   candybar:
@@ -792,13 +828,13 @@ jobs:
   - systemctl --user disable --now pr-crusher.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/pr-crusher.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17938-75c4-7219-8204-dfa8d0572a1f
   cutover_at: '2026-10-26T17:18:26.351942Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: bdc2661e-91ca-5fde-bf08-f9a33044e972
+    result: fail
+    at: '2026-10-27T07:00:05.261451Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:52.266848Z'
@@ -809,6 +845,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17938-75c4-7219-8204-dfa8d0572a1f enabled; first fire 2026-10-27T07:00:00Z
+  - at: '2026-10-27T14:38:54.485774Z'
+    action: verify
+    outcome: ok
+    detail: 'invocation bdc2661e-91ca-5fde-bf08-f9a33044e972 (scheduled) fail exit=1 runtime=5145ms memory=23740416B cpu=0.0933 (result parity: the job already failed natively)'
 - id: systemd:honda-hunt-daily-check.timer
   wave: '7.16'
   candybar:
@@ -841,13 +881,13 @@ jobs:
   - systemctl --user disable --now honda-hunt-daily-check.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/honda-hunt-daily-check.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17938-961c-7581-b9c2-ec6f9e3a708a
   cutover_at: '2026-10-26T17:18:34.537833Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: ee9bbb54-e10a-5b95-a01f-d029c6753fe9
+    result: fail
+    at: '2026-10-27T13:00:12.676887Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:52.685063Z'
@@ -858,6 +898,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17938-961c-7581-b9c2-ec6f9e3a708a enabled; first fire 2026-10-27T13:00:00Z
+  - at: '2026-10-27T14:38:55.059382Z'
+    action: verify
+    outcome: ok
+    detail: 'invocation ee9bbb54-e10a-5b95-a01f-d029c6753fe9 (scheduled) fail exit=1 runtime=12570ms memory=580808704B cpu=0.4488 (result parity: the job already failed natively)'
 - id: systemd:delodocs-wiki-self-tuning-weekly.timer
   wave: '7.16'
   candybar:
@@ -1073,13 +1117,13 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler internal'
-  status: cutover
+  status: verified
   candybar_id: 01a1793b-951c-7dbb-8aff-0abcb26bdf90
   cutover_at: '2026-10-26T17:28:03.182875Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 05e1095d-2059-5cab-bc28-e903bf41619a
+    result: success
+    at: '2026-10-27T13:01:49.233382Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:45.194172Z'
@@ -1098,6 +1142,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793b-951c-7dbb-8aff-0abcb26bdf90 enabled after the batched hermes-gateway-restart; pin active
+  - at: '2026-10-27T14:38:55.661258Z'
+    action: verify
+    outcome: ok
+    detail: invocation 05e1095d-2059-5cab-bc28-e903bf41619a (scheduled) success exit=0 runtime=109075ms memory=275755008B cpu=0.1228
 - id: hermes:dumply:8aecd027dbd0
   wave: '7.17'
   candybar:
@@ -1131,13 +1179,13 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p dumply cron edit 8aecd027dbd0 --scheduler internal'
-  status: cutover
+  status: verified
   candybar_id: 01a1793b-e235-7efd-8719-d316aba335b4
   cutover_at: '2026-10-26T17:28:03.192006Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 686094ed-f868-5c4c-8063-23dbc019293a
+    result: success
+    at: '2026-10-27T00:30:46.807107Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:45.561130Z'
@@ -1156,6 +1204,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793b-e235-7efd-8719-d316aba335b4 enabled after the batched hermes-gateway-restart; pin active
+  - at: '2026-10-27T14:38:56.290610Z'
+    action: verify
+    outcome: ok
+    detail: invocation 686094ed-f868-5c4c-8063-23dbc019293a (scheduled) success exit=0 runtime=46645ms memory=352100352B cpu=0.2063
 - id: hermes:peter-griffin:b240575fae0c
   wave: '7.17'
   candybar:
@@ -1189,13 +1241,13 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit b240575fae0c --scheduler internal'
-  status: cutover
+  status: verified
   candybar_id: 01a1793b-f875-73c7-b1cd-4df0d7f28cbd
   cutover_at: '2026-10-26T17:28:03.201181Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 2fce00f1-7a8e-5b3c-ae09-af072cccebf2
+    result: success
+    at: '2026-10-27T09:58:17.901287Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:45.915968Z'
@@ -1214,6 +1266,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793b-f875-73c7-b1cd-4df0d7f28cbd enabled after the batched hermes-gateway-restart; pin active
+  - at: '2026-10-27T14:38:56.948242Z'
+    action: verify
+    outcome: ok
+    detail: invocation 2fce00f1-7a8e-5b3c-ae09-af072cccebf2 (scheduled) success exit=0 runtime=317867ms memory=428392448B cpu=0.0364
 - id: hermes:peter-griffin:3684c5aa8eac
   wave: '7.17'
   candybar:
@@ -1247,13 +1303,13 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p peter-griffin cron edit 3684c5aa8eac --scheduler internal'
-  status: cutover
+  status: verified
   candybar_id: 01a1793c-0b29-7ef2-ac1d-aa1bc158ce1c
   cutover_at: '2026-10-26T17:28:03.216463Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 561bc701-af3e-55e3-ba60-15ebb66198be
+    result: success
+    at: '2026-10-27T10:25:16.412514Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:17:46.286550Z'
@@ -1272,6 +1328,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793c-0b29-7ef2-ac1d-aa1bc158ce1c enabled after the batched hermes-gateway-restart; pin active
+  - at: '2026-10-27T14:38:57.574899Z'
+    action: verify
+    outcome: ok
+    detail: invocation 561bc701-af3e-55e3-ba60-15ebb66198be (scheduled) success exit=0 runtime=136377ms memory=301056000B cpu=0.0749
 - id: systemd:cache-prune-codex-tmp.timer
   wave: '7.7'
   candybar:
@@ -1353,13 +1413,13 @@ jobs:
   - systemctl --user disable --now cache-prune-daily.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune-daily.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17941-5493-76ad-9549-cd33cde24f58
   cutover_at: '2026-10-26T17:28:07.557073Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 41e3d561-e198-59c2-85a6-5cff35e60b2e
+    result: success
+    at: '2026-10-27T09:23:06.787086Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:23:13.802102Z'
@@ -1370,6 +1430,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17941-5493-76ad-9549-cd33cde24f58 enabled; first fire 2026-10-27T09:23:00Z
+  - at: '2026-10-27T14:38:58.181612Z'
+    action: verify
+    outcome: ok
+    detail: invocation 41e3d561-e198-59c2-85a6-5cff35e60b2e (scheduled) success exit=0 runtime=6711ms memory=179417088B cpu=0.7931
 - id: systemd:cache-prune.timer
   wave: '7.7'
   candybar:
@@ -1447,13 +1511,13 @@ jobs:
   - systemctl --user disable --now docker-prune.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/docker-prune.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17941-5c4f-7445-a8c9-4f653505764c
   cutover_at: '2026-10-26T17:28:09.532912Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: f0c53df2-c091-5410-91b2-00e8f97f18a7
+    result: success
+    at: '2026-10-27T09:41:10.337644Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:23:13.881150Z'
@@ -1464,6 +1528,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17941-5c4f-7445-a8c9-4f653505764c enabled; first fire 2026-10-27T09:41:00Z
+  - at: '2026-10-27T14:38:59.278872Z'
+    action: verify
+    outcome: ok
+    detail: invocation f0c53df2-c091-5410-91b2-00e8f97f18a7 (scheduled) success exit=0 runtime=10263ms memory=80699392B cpu=0.5603
 - id: systemd:state-maintain
   wave: '7.7'
   candybar:
@@ -1494,13 +1562,13 @@ jobs:
   - systemctl --user disable --now state-maintain.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/state-maintain.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17941-601b-745b-9070-d0f6fec1e893
   cutover_at: '2026-10-26T17:28:10.502416Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 193384c3-7e7e-5af7-9b74-24243a8683ac
+    result: success
+    at: '2026-10-27T09:40:05.221035Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:23:13.918852Z'
@@ -1511,6 +1579,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17941-601b-745b-9070-d0f6fec1e893 enabled; first fire 2026-10-27T09:40:00Z
+  - at: '2026-10-27T14:38:59.930858Z'
+    action: verify
+    outcome: ok
+    detail: invocation 193384c3-7e7e-5af7-9b74-24243a8683ac (scheduled) success exit=0 runtime=5097ms memory=461082624B cpu=0.5791
 - id: systemd:user-logrotate
   wave: '7.7'
   candybar:
@@ -1541,13 +1613,13 @@ jobs:
   - systemctl --user disable --now user-logrotate.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/user-logrotate.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17941-63ec-772d-a26f-101de7484056
   cutover_at: '2026-10-26T17:28:11.479202Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 7be7474e-82e1-58fd-a81b-90e5bb582b2b
+    result: success
+    at: '2026-10-27T09:17:03.364748Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:23:13.954908Z'
@@ -1558,6 +1630,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17941-63ec-772d-a26f-101de7484056 enabled; first fire 2026-10-27T09:17:00Z
+  - at: '2026-10-27T14:39:00.644287Z'
+    action: verify
+    outcome: ok
+    detail: invocation 7be7474e-82e1-58fd-a81b-90e5bb582b2b (scheduled) success exit=0 runtime=3268ms memory=250232832B cpu=0.7682
 - id: systemd:zellij-ark
   wave: '7.7'
   candybar:
@@ -1755,13 +1831,13 @@ jobs:
   - systemctl --user disable --now srvls-snapshot.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/srvls-snapshot.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17941-6f01-7764-910f-b532a019fc48
   cutover_at: '2026-10-26T17:28:14.343510Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 1b8fcb56-4f95-5a84-889f-11c222e2d7fb
+    result: success
+    at: '2026-10-27T08:10:02.288779Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:23:14.110431Z'
@@ -1772,6 +1848,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17941-6f01-7764-910f-b532a019fc48 enabled; first fire 2026-10-27T08:10:00Z
+  - at: '2026-10-27T14:39:01.262271Z'
+    action: verify
+    outcome: ok
+    detail: invocation 1b8fcb56-4f95-5a84-889f-11c222e2d7fb (scheduled) success exit=0 runtime=2167ms memory=37842944B cpu=0.1274
 - id: systemd:hindsight-capture-sweep.timer
   wave: '7.10'
   candybar:
@@ -1914,13 +1994,13 @@ jobs:
   - systemctl --user disable --now hindsight-memory-analysis.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-memory-analysis.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1793e-2686-796d-bc20-a620f13809b1
   cutover_at: '2026-10-26T17:24:39.511061Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: c8bed51a-5699-59bf-b99f-b3a3f4df5063
+    result: success
+    at: '2026-10-27T09:00:06.727046Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:23:34.911012Z'
@@ -1931,6 +2011,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793e-2686-796d-bc20-a620f13809b1 enabled; first fire 2026-10-27T09:00:00Z
+  - at: '2026-10-27T14:39:01.914490Z'
+    action: verify
+    outcome: ok
+    detail: invocation c8bed51a-5699-59bf-b99f-b3a3f4df5063 (scheduled) success exit=0 runtime=6585ms memory=58183680B cpu=0.1374
 - id: systemd:hindsight-template-sweep.timer
   wave: '7.10'
   candybar:
@@ -2019,13 +2103,13 @@ jobs:
   - systemctl --user disable --now forever-ago-vault.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/forever-ago-vault.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17947-520d-738a-9d21-e6de2dd10e64
   cutover_at: '2026-10-26T17:34:40.168941Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 8ef97271-3a7a-5663-a20c-ac4ebb608321
+    result: success
+    at: '2026-10-27T07:00:15.605805Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:20:00Z'
@@ -2040,6 +2124,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17947-520d-738a-9d21-e6de2dd10e64 enabled; first fire 2026-10-27T07:00:00Z
+  - at: '2026-10-27T14:39:02.590480Z'
+    action: verify
+    outcome: ok
+    detail: invocation 8ef97271-3a7a-5663-a20c-ac4ebb608321 (scheduled) success exit=0 runtime=15459ms memory=1093996544B cpu=0.898
 - id: systemd:restic-vault
   wave: '7.9'
   candybar:
@@ -2072,13 +2160,13 @@ jobs:
   - systemctl --user disable --now restic-vault.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/restic-vault.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17948-1e34-7611-a5c9-19ac51c114fb
   cutover_at: '2026-10-26T17:35:32.418730Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 56c97913-9e53-5886-9c9b-a46f35a7f01e
+    result: success
+    at: '2026-10-27T08:34:53.447553Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:20:00Z'
@@ -2093,6 +2181,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17948-1e34-7611-a5c9-19ac51c114fb enabled; first fire 2026-10-27T08:30:00Z
+  - at: '2026-10-27T14:39:03.233155Z'
+    action: verify
+    outcome: ok
+    detail: invocation 56c97913-9e53-5886-9c9b-a46f35a7f01e (scheduled) success exit=0 runtime=293171ms memory=197341184B cpu=0.0223
 - id: systemd:backup-drill.timer
   wave: '7.9'
   candybar:
@@ -2185,13 +2277,13 @@ jobs:
   - systemctl --user disable --now restic-dbdumps.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/restic-dbdumps.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794a-a292-774f-81ee-b7e62183fecd
   cutover_at: '2026-10-26T17:38:17.380153Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 7c75a411-4756-5579-8ff1-5d8603673a1a
+    result: fail
+    at: '2026-10-27T13:34:57.576125Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:20:00Z'
@@ -2206,6 +2298,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794a-a292-774f-81ee-b7e62183fecd enabled; first fire 2026-10-27T13:15:00Z
+  - at: '2026-10-27T14:39:03.878249Z'
+    action: verify
+    outcome: ok
+    detail: 'invocation 7c75a411-4756-5579-8ff1-5d8603673a1a (scheduled) fail exit=1 runtime=1197408ms memory=1914482688B cpu=0.0038 (result parity: the job already failed natively)'
 - id: systemd:milkshake-ledger-backup.timer
   wave: '7.9'
   candybar:
@@ -2413,7 +2509,7 @@ jobs:
   - cron evaluated the line in system local time with no CRON_TZ; the candybar pins America/New_York explicitly (same zone today)
   - flock moves from /tmp to $XDG_RUNTIME_DIR (set under the systemd user manager, unset under cron); safe because the crontab line is removed in the same cutover
   - the script announces start/finish/failure itself via notify-vox.sh, so no candybar on_failure hook
-  native_failing: false
+  native_failing: true
   source_of_truth:
     repo: delorenj/zshyzsh
     path: scripts/sync-vault-to-drive.sh
@@ -2424,13 +2520,13 @@ jobs:
   - systemctl --user daemon-reload
   rollback:
   - crontab -l 2>/dev/null | grep -qxF -- '30 */2 * * * /home/delorenj/.local/bin/sync-vault-to-drive' || { { crontab -l 2>/dev/null || true; printf '%s\n' '30 */2 * * * /home/delorenj/.local/bin/sync-vault-to-drive'; } | crontab -; }
-  status: cutover
+  status: verified
   candybar_id: 01a1794c-c058-7f06-ae67-2f47b5b32219
   cutover_at: '2026-10-26T17:40:36.056271Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: f9ff9480-27a0-5ed8-af03-7f95eb55d236
+    result: fail
+    at: '2026-10-26T18:30:16.535498Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:20:00Z'
@@ -2441,6 +2537,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794c-c058-7f06-ae67-2f47b5b32219 enabled; first fire 2026-10-26T18:30:00Z
+  - at: '2026-10-27T14:39:04.506541Z'
+    action: verify
+    outcome: ok
+    detail: 'invocation f9ff9480-27a0-5ed8-af03-7f95eb55d236 (scheduled) fail exit=1 runtime=16360ms memory=22454272B cpu=0.0104 (result parity: the job already failed natively)'
 - id: systemd:bloodbank-agent-hooks-health.timer
   wave: '7.8'
   candybar:
@@ -2861,13 +2961,13 @@ jobs:
   rollback:
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron edit 8da3f24263f9 --scheduler internal'
   - '"$HOME/.local/bin/hermes" -p 33god-pm cron resume 8da3f24263f9'
-  status: cutover
+  status: verified
   candybar_id: 01a17951-0470-7f83-8bbd-dfa5c7ce30f2
   cutover_at: '2026-10-26T17:45:21.922759Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 4050e315-0141-5898-b5c1-847d28fc99b8
+    result: success
+    at: '2026-10-27T10:04:27.890766Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:45:21.922759Z'
@@ -2878,6 +2978,10 @@ jobs:
     action: source-of-truth
     outcome: updated
     detail: delorenj/infra scripts/dev-journal-hermes-nightly.sh @ 7c1b7d2129cdc099de084d66c6549f601b00ee8d (tracked wrapper home / executable source)
+  - at: '2026-10-27T14:39:05.155895Z'
+    action: verify
+    outcome: ok
+    detail: invocation 4050e315-0141-5898-b5c1-847d28fc99b8 (scheduled) success exit=0 runtime=267649ms memory=493039616B cpu=0.0305
 - id: systemd:dev-journal-ensure-nightly.timer
   wave: '7.15'
   candybar:
@@ -2909,13 +3013,13 @@ jobs:
   - systemctl --user disable --now dev-journal-ensure-nightly.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/dev-journal-ensure-nightly.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17951-5b9a-7ce8-8bc5-e379b3d434fd
   cutover_at: '2026-10-26T17:45:38.022507Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 084fa62e-a67b-5342-81b7-c84883033c14
+    result: success
+    at: '2026-10-27T10:15:01.736090Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:40:26.802019Z'
@@ -2926,6 +3030,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17951-5b9a-7ce8-8bc5-e379b3d434fd enabled; first fire 2026-10-27T10:15:00Z
+  - at: '2026-10-27T14:39:05.850728Z'
+    action: verify
+    outcome: ok
+    detail: invocation 084fa62e-a67b-5342-81b7-c84883033c14 (scheduled) success exit=0 runtime=1532ms memory=30195712B cpu=0.3481
 - id: systemd:dev-journal-reconcile.timer
   wave: '7.15'
   candybar:
@@ -3011,13 +3119,13 @@ jobs:
   - systemctl --user disable --now sync-daily-reports-to-s3.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/infra/systemd/user/sync-daily-reports-to-s3.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794f-f807-772c-acd5-d61a583eba21
   cutover_at: '2026-10-26T17:44:06.997409Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 19a522c8-dc09-533b-8d99-565c9a320d9d
+    result: success
+    at: '2026-10-27T10:30:00.496440Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:40:26.849465Z'
@@ -3028,6 +3136,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794f-f807-772c-acd5-d61a583eba21 enabled; first fire 2026-10-27T10:30:00Z
+  - at: '2026-10-27T14:39:06.501534Z'
+    action: verify
+    outcome: ok
+    detail: invocation 19a522c8-dc09-533b-8d99-565c9a320d9d (scheduled) success exit=0 runtime=238ms memory=13926400B cpu=0.2359
 - id: hermes:33god-pm:9b5dadbd1e4d
   wave: '7.15'
   candybar:
@@ -3250,13 +3362,13 @@ jobs:
   - systemctl --user disable --now james-brennan-billing-ledger.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-billing-ledger.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794e-f599-791a-8124-8b1be3c81de7
   cutover_at: '2026-10-26T17:43:00.814762Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 59ad9862-9f18-5656-9636-c94f9adbe653
+    result: success
+    at: '2026-10-27T10:17:02.516969Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:42:05.746068Z'
@@ -3267,6 +3379,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794e-f599-791a-8124-8b1be3c81de7 enabled; first fire 2026-10-27T10:17:00Z
+  - at: '2026-10-27T14:39:07.152691Z'
+    action: verify
+    outcome: ok
+    detail: invocation 59ad9862-9f18-5656-9636-c94f9adbe653 (scheduled) success exit=0 runtime=2419ms memory=36081664B cpu=0.1216
 - id: systemd:sync-jim-dropbox
   wave: '7.14'
   candybar:
@@ -3351,19 +3467,23 @@ jobs:
   - systemctl --user disable --now activity-report@james-brennan.timer
   rollback:
   - systemctl --user enable --now activity-report@james-brennan.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794e-fa97-7ce1-ba2e-728f2f612795
   cutover_at: '2026-10-26T17:43:02.114445Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 34c89c49-bf35-5452-be33-4cf8247f2814
+    result: success
+    at: '2026-10-27T07:37:36.728794Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:43:02.114445Z'
     action: cutover
     outcome: ok
     detail: candybar 01a1794e-fa97-7ce1-ba2e-728f2f612795 enabled; first fire 2026-10-27T07:30:00Z
+  - at: '2026-10-27T14:39:07.826083Z'
+    action: verify
+    outcome: ok
+    detail: invocation 34c89c49-bf35-5452-be33-4cf8247f2814 (scheduled) success exit=0 runtime=456482ms memory=553046016B cpu=0.0557
 - id: systemd:james-brennan-nightly-suite.timer
   wave: '7.14'
   candybar:
@@ -3395,13 +3515,13 @@ jobs:
   - systemctl --user disable --now james-brennan-nightly-suite.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-nightly-suite.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794e-ff4b-76df-8851-99231980004b
   cutover_at: '2026-10-26T17:43:03.272612Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 86a07db2-2f33-55fc-bd0c-264e180ac0ce
+    result: success
+    at: '2026-10-27T07:11:16.587806Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:42:07.386604Z'
@@ -3412,6 +3532,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794e-ff4b-76df-8851-99231980004b enabled; first fire 2026-10-27T07:11:00Z
+  - at: '2026-10-27T14:39:08.476293Z'
+    action: verify
+    outcome: ok
+    detail: invocation 86a07db2-2f33-55fc-bd0c-264e180ac0ce (scheduled) success exit=0 runtime=16511ms memory=20582400B cpu=0.0168
 - id: systemd:james-brennan-daily-update.timer
   wave: '7.14'
   candybar:
@@ -3443,13 +3567,13 @@ jobs:
   - systemctl --user disable --now james-brennan-daily-update.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-daily-update.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794f-0409-7e1b-9f3d-243f63edf8da
   cutover_at: '2026-10-26T17:43:04.512620Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: b7b0b9ba-be0e-5d1c-aea7-4f820b0f1ef4
+    result: success
+    at: '2026-10-27T07:09:18.963401Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:42:07.921349Z'
@@ -3460,6 +3584,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794f-0409-7e1b-9f3d-243f63edf8da enabled; first fire 2026-10-27T07:00:00Z
+  - at: '2026-10-27T14:39:09.076152Z'
+    action: verify
+    outcome: ok
+    detail: invocation b7b0b9ba-be0e-5d1c-aea7-4f820b0f1ef4 (scheduled) success exit=0 runtime=558391ms memory=8182484992B cpu=0.0829
 - id: systemd:james-brennan-nightly-fix.timer
   wave: '7.14'
   candybar:
@@ -3491,13 +3619,13 @@ jobs:
   - systemctl --user disable --now james-brennan-nightly-fix.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-nightly-fix.timer
-  status: cutover
+  status: verified
   candybar_id: 01a1794f-0892-771f-8913-9184703c932a
   cutover_at: '2026-10-26T17:43:05.641604Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: f7b6c193-ac96-5a79-80c4-67bad07ea277
+    result: success
+    at: '2026-10-27T08:23:02.365903Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:42:08.503339Z'
@@ -3508,6 +3636,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1794f-0892-771f-8913-9184703c932a enabled; first fire 2026-10-27T08:23:00Z
+  - at: '2026-10-27T14:39:09.706820Z'
+    action: verify
+    outcome: ok
+    detail: invocation f7b6c193-ac96-5a79-80c4-67bad07ea277 (scheduled) success exit=0 runtime=2297ms memory=21016576B cpu=0.0488
 - id: systemd:telnyx-s3-intake
   wave: '7.11'
   candybar:
@@ -3592,13 +3724,13 @@ jobs:
   - systemctl --user disable --now gruvato-acoustid-check.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/gruvato/deploy/gruvato-acoustid-check.timer
-  status: cutover
+  status: verified
   candybar_id: 01a17953-d39d-708b-a96c-7cceefab032b
   cutover_at: '2026-10-26T17:48:19.782147Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: b609caaa-ba31-5563-abbb-2cbd6713ec3c
+    result: success
+    at: '2026-10-26T19:07:00.170223Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:45:36.597188Z'
@@ -3609,6 +3741,10 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a17953-d39d-708b-a96c-7cceefab032b enabled; first fire 2026-10-26T19:07:00Z
+  - at: '2026-10-27T14:39:10.355614Z'
+    action: verify
+    outcome: ok
+    detail: invocation b609caaa-ba31-5563-abbb-2cbd6713ec3c (scheduled) success exit=0 runtime=98ms memory=20938752B cpu=0.8091
 - id: systemd:mobile-deploy-hub-catchup.timer
   wave: '7.11'
   candybar:
