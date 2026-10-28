@@ -1,6 +1,6 @@
-"""`candybar migrate {plan,cutover,verify,rollback,status}` (Story 7.5, AD-21).
+"""`candybar migrate {plan,cutover,verify,rollback,decommission,status}` (Story 7.5, AD-21).
 
-The five verbs over the committed ledger. Ordering rules the wave stories
+The six verbs over the committed ledger. Ordering rules the wave stories
 rely on:
 
 - **cutover**: register the candybar DISABLED -> retire the native scheduler
@@ -18,8 +18,16 @@ rely on:
   the proof. Never a manual run (AD-21). A job that already failed natively
   (`native_failing`) verifies on result parity.
 
+- **decommission**: retire a job for good. The native scheduler is left (or
+  put) retired, the candybar is disabled, and the entry becomes the terminal
+  status `decommissioned` with the reason in its history. `rollback` and
+  `cutover` refuse a decommissioned entry; the way back is a deliberate
+  ledger edit, never a verb. With the API down the entry is still
+  decommissioned and records `disable_pending`; re-run `decommission`.
+
 Exit codes: 0 ok, 1 refused/failed, 2 invalid ledger or unknown id,
-3 pending (verify: no fire yet; rollback: the candybar disable is pending).
+3 pending (verify: no fire yet; rollback/decommission: the candybar disable
+is pending).
 """
 
 from __future__ import annotations
@@ -35,6 +43,7 @@ from .client import ApiError
 from .ledger import (
     KIND_SYSTEMD_TIMER,
     STATUS_CUTOVER,
+    STATUS_DECOMMISSIONED,
     STATUS_PLANNED,
     STATUS_ROLLED_BACK,
     STATUS_VERIFIED,
@@ -303,7 +312,14 @@ def _plan_entry(host: Host, entry: LedgerEntry, *, write: bool) -> int:
                 f"next native fire {fmt(state.next_fire, tz)} vs candybar {fmt(fires.next, tz)}: "
                 "schedules differ (expected only for interval timers, whose phase is not kept)"
             )
-    if entry.status in (STATUS_PLANNED, STATUS_ROLLED_BACK):
+    if entry.status == STATUS_DECOMMISSIONED:
+        host.echo(f"decommissioned: {_decommission_note(entry)}; no cutover possible")
+        if state.active:
+            problems.append(
+                "the native scheduler is ACTIVE for a decommissioned job: something "
+                "re-installed it; remove its source and run `candybar migrate decommission` again"
+            )
+    elif entry.status in (STATUS_PLANNED, STATUS_ROLLED_BACK):
         problems.extend(_cutover_blockers(host, entry))
         reason = refusal(entry, state, now) if state.active or state.retired else None
         host.echo(f"cutover now: {'refused: ' + reason if reason else 'allowed'}")
@@ -397,6 +413,9 @@ def _cutover(
         host.echo(f"cutover of {entry.id} refused: {reason}")
         return EXIT_FAILED
 
+    if entry.status == STATUS_DECOMMISSIONED:
+        host.echo(f"{entry.id} is decommissioned: {_decommission_note(entry)}")
+        return EXIT_FAILED
     if entry.status in (STATUS_CUTOVER, STATUS_VERIFIED):
         host.echo(
             f"{entry.id} is already {entry.status} (candybar {entry.candybar_id})"
@@ -514,6 +533,9 @@ def _verify(host: Host, path: Path, ledger: Ledger, entry: LedgerEntry) -> int:
             f"{entry.id} already verified by invocation {entry.verification.invocation_id}"
         )
         return EXIT_OK
+    if entry.status == STATUS_DECOMMISSIONED:
+        host.echo(f"{entry.id} is decommissioned: nothing to verify")
+        return EXIT_FAILED
     if (
         entry.status != STATUS_CUTOVER
         or not entry.candybar_id
@@ -608,6 +630,13 @@ def rollback(host: Host, path: Path, job_id: str, *, reason: str = "") -> int:
 def _rollback(
     host: Host, path: Path, ledger: Ledger, entry: LedgerEntry, reason: str
 ) -> int:
+    if entry.status == STATUS_DECOMMISSIONED:
+        host.echo(
+            f"refusing to roll back {entry.id}: it is decommissioned "
+            f"({_decommission_note(entry)}). A decommissioned job is gone for good; to bring "
+            "it back, re-create its source and edit the ledger entry by hand."
+        )
+        return EXIT_FAILED
     if entry.status == STATUS_PLANNED:
         host.echo(f"{entry.id} was never cut over: nothing to roll back")
         return EXIT_FAILED
@@ -668,6 +697,114 @@ def _rollback(
 
 
 # --------------------------------------------------------------------------
+# decommission
+
+
+def _decommission_note(entry: LedgerEntry) -> str:
+    # The first ok event carries the reason; later ones are the candybar disable.
+    for event in entry.history:
+        if event.action == "decommission" and event.outcome == "ok":
+            return f"{event.detail} ({event.at:%Y-%m-%d})"
+    return "no reason recorded"
+
+
+def decommission(host: Host, path: Path, job_id: str, *, reason: str) -> int:
+    """Retire a job for good: native retired, candybar disabled, status terminal."""
+    try:
+        with locked(path):
+            ledger = load_ledger(path)
+            entry = ledger.entry(job_id)
+            return _decommission(host, path, ledger, entry, reason)
+    except LedgerError as exc:
+        host.echo(f"error: {exc}")
+        return EXIT_USAGE
+
+
+def _decommission(
+    host: Host, path: Path, ledger: Ledger, entry: LedgerEntry, reason: str
+) -> int:
+    reason = reason.strip()
+    if entry.status != STATUS_DECOMMISSIONED:
+        if not reason:
+            host.echo(f"refusing to decommission {entry.id} without a --reason")
+            return EXIT_FAILED
+        # 1. The native scheduler must end up retired. Anything that is still
+        #    active (a planned or rolled-back job) is retired with the ledger's
+        #    own disable commands; a cut-over job already is.
+        state = host.probe(entry)
+        if not state.active and not state.retired:
+            entry.record(
+                host.now(),
+                "decommission",
+                "refused",
+                f"the native scheduler is in an unknown state: {state.detail}",
+            )
+            save_ledger(path, ledger)
+            host.echo(
+                f"decommission of {entry.id} refused: the native scheduler is in an unknown "
+                f"state ({state.detail})"
+            )
+            return EXIT_FAILED
+        if state.active:
+            host.echo(f"decommission {entry.id}: retiring the native scheduler")
+            failure = _run(host, entry.disable)
+            if failure is None:
+                after = host.probe(entry)
+                if not after.retired:
+                    failure = (
+                        "the native scheduler is not retired after the disable commands "
+                        f"({after.detail})"
+                    )
+            if failure is not None:
+                entry.record(host.now(), "decommission", "failed", failure)
+                save_ledger(path, ledger)
+                host.echo(
+                    f"decommission FAILED: {failure}. Nothing else was changed; fix the "
+                    "disable commands and re-run."
+                )
+                return EXIT_FAILED
+        entry.status = STATUS_DECOMMISSIONED
+        entry.disable_pending = bool(entry.candybar_id)
+        entry.record(host.now(), "decommission", "ok", reason)
+        save_ledger(path, ledger)  # decided and on disk before the API is tried
+    # 2. Disable the candybar (best effort; a re-run finishes it).
+    if entry.candybar_id and entry.disable_pending:
+        try:
+            host.api.set_enabled(entry.candybar_id, False)
+            entry.disable_pending = False
+            entry.record(
+                host.now(),
+                "decommission",
+                "ok",
+                f"candybar {entry.candybar_id} disabled",
+            )
+        except ApiError as exc:
+            if exc.status == 404:
+                entry.disable_pending = False
+                entry.record(
+                    host.now(), "decommission", "ok", "candybar no longer registered"
+                )
+            else:
+                entry.record(
+                    host.now(), "decommission", "pending", f"candybar disable: {exc}"
+                )
+        save_ledger(path, ledger)
+    if entry.disable_pending:
+        host.echo(
+            f"{entry.id} is decommissioned, but candybar {entry.candybar_id} could NOT be "
+            "disabled (API unreachable?). Re-run `candybar migrate decommission "
+            f"{entry.id} --reason ...` once the API is back. Commit the ledger."
+        )
+        return EXIT_PENDING
+    host.echo(
+        f"decommissioned {entry.id}: native scheduler retired, candybar disabled. "
+        "Remove the job's source (unit files, scripts, installers) so nothing "
+        "re-creates it. Commit the ledger."
+    )
+    return EXIT_OK
+
+
+# --------------------------------------------------------------------------
 # status
 
 
@@ -712,6 +849,11 @@ def status(
             row["native"] = (
                 "active" if state.active else "retired" if state.retired else "unknown"
             )
+        if entry.status == STATUS_DECOMMISSIONED and (
+            enabled is True or row.get("native") == "active"
+        ):
+            # Gone for good, yet something schedules it again.
+            row["resurrected"] = True
         rows.append(row)
     if as_json:
         host.echo(json.dumps(rows, indent=2))
@@ -724,6 +866,8 @@ def status(
     for row in rows:
         flag = {True: "enabled", False: "disabled", None: "-"}[row["enabled"]]
         extra = " DISABLE-PENDING" if row["disablePending"] else ""
+        if row.get("resurrected"):
+            extra += " RESURRECTED"
         native = f" native={row['native']}" if "native" in row else ""
         host.echo(
             f"{row['status']:<12} {row['wave']:<5} {row['id']:<48} {row['candybar']:<36} "
@@ -741,6 +885,7 @@ __all__ = [
     "Host",
     "candybar_fires",
     "cutover",
+    "decommission",
     "guard_for",
     "plan",
     "refusal",

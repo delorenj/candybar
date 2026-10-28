@@ -38,7 +38,7 @@ jobs:
     source_of_truth: {repo: delorenj/infra, path: systemd/user/cache-prune-daily.timer, commit: <sha>}
     disable: [systemctl --user disable --now cache-prune-daily.timer]
     rollback: [systemctl --user enable --now /home/delorenj/code/infra/systemd/user/cache-prune-daily.timer]
-    status: planned                            # planned | cutover | verified | rolled-back
+    status: planned                            # planned | cutover | verified | rolled-back | decommissioned
     candybar_id: null                          # set by cutover
     cutover_at: null
     verification: {invocation_id: null, result: null, at: null}
@@ -107,6 +107,19 @@ the CLI exits 3; re-run `rollback` when the API is back. Meanwhile the host
 executor skips any queued scheduled fire of a candybar it reads as disabled.
 If the restore itself fails, the candybar is NOT disabled (the job keeps one
 scheduler) and the CLI exits 1.
+
+**decommission** = retire a job for good: `candybar migrate decommission <id>
+--reason '...'`. The native scheduler is left retired (a still-active one is
+retired with the entry's `disable` commands first), the candybar is disabled
+through the API, and the entry becomes `decommissioned` with the reason in its
+history. It is terminal: `rollback`, `cutover` and `verify` refuse it with a
+message (the way back is a deliberate ledger edit after re-creating the
+source). With the API down the entry still becomes `decommissioned` with
+`disable_pending: true`, exit 3; re-run `decommission`. `status --probe` flags
+a decommissioned job that something re-enabled as `RESURRECTED`, and `plan <id>`
+reports an active native scheduler for it as a problem. After decommissioning,
+delete the job's source (unit files, scripts, installers) so nothing
+re-creates it; the candybar row itself stays, disabled, for its run history.
 
 ### Rollback by hand (daemon AND CLI unavailable)
 

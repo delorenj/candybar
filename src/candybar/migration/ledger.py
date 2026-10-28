@@ -4,7 +4,8 @@ One entry per cron-inventory id (`_bmad-output/planning-artifacts/cron-inventory
 what candybar the job becomes, which native scheduler it leaves, the accepted
 deviations, where its source of truth lives (repo, path, commit), the exact
 shell commands that retire and restore the native scheduler, the verifying
-invocation, and a status `planned | cutover | verified | rolled-back`.
+invocation, and a status
+`planned | cutover | verified | rolled-back | decommissioned`.
 
 The file is committed: it is the record a human (or a wave story) reads to
 undo a cutover even when the candybar daemon is down. `candybar migrate`
@@ -44,7 +45,10 @@ STATUS_PLANNED = "planned"
 STATUS_CUTOVER = "cutover"
 STATUS_VERIFIED = "verified"
 STATUS_ROLLED_BACK = "rolled-back"
-Status = Literal["planned", "cutover", "verified", "rolled-back"]
+# Terminal: the job was retired for good (`candybar migrate decommission`).
+# Nothing schedules it, `rollback` and `cutover` refuse it.
+STATUS_DECOMMISSIONED = "decommissioned"
+Status = Literal["planned", "cutover", "verified", "rolled-back", "decommissioned"]
 
 KIND_SYSTEMD_TIMER = "systemd-timer"
 KIND_CRONTAB = "crontab"
@@ -53,7 +57,7 @@ NativeKind = Literal["systemd-timer", "crontab", "hermes"]
 
 HEADER = (
     "# Candybar migration ledger (Story 7.5, AD-21): one entry per cron-inventory id.\n"
-    "# Driven by `candybar migrate {plan,cutover,verify,rollback,status}`; schema and\n"
+    "# Driven by `candybar migrate {plan,cutover,verify,rollback,decommission,status}`; schema and\n"
     "# procedure in deploy/migration/README.md. Commit it after every change: it is\n"
     "# how a cutover is undone when the daemon is down.\n"
 )
@@ -196,8 +200,9 @@ class LedgerEntry(_Model):
     candybar_id: str | None = None
     cutover_at: AwareDatetime | None = None
     verification: Verification = Verification()
-    # A rollback restored the native scheduler but could not reach the API to
-    # disable the candybar; re-running `rollback` finishes it.
+    # A rollback restored the native scheduler (or a decommission retired the
+    # job) but could not reach the API to disable the candybar; re-running
+    # `rollback` (`decommission`) finishes it.
     disable_pending: bool = False
     history: list[HistoryEvent] = []
 
@@ -329,6 +334,7 @@ __all__ = [
     "KIND_SYSTEMD_TIMER",
     "LEDGER_ENV",
     "STATUS_CUTOVER",
+    "STATUS_DECOMMISSIONED",
     "STATUS_PLANNED",
     "STATUS_ROLLED_BACK",
     "STATUS_VERIFIED",

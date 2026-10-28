@@ -1,5 +1,5 @@
 # Candybar migration ledger (Story 7.5, AD-21): one entry per cron-inventory id.
-# Driven by `candybar migrate {plan,cutover,verify,rollback,status}`; schema and
+# Driven by `candybar migrate {plan,cutover,verify,rollback,decommission,status}`; schema and
 # procedure in deploy/migration/README.md. Commit it after every change: it is
 # how a cutover is undone when the daemon is down.
 version: 1
@@ -881,7 +881,7 @@ jobs:
   - systemctl --user disable --now honda-hunt-daily-check.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/honda-hunt-daily-check.timer
-  status: verified
+  status: decommissioned
   candybar_id: 01a17938-961c-7581-b9c2-ec6f9e3a708a
   cutover_at: '2026-10-26T17:18:34.537833Z'
   verification:
@@ -902,6 +902,14 @@ jobs:
     action: verify
     outcome: ok
     detail: 'invocation ee9bbb54-e10a-5b95-a01f-d029c6753fe9 (scheduled) fail exit=1 runtime=12570ms memory=580808704B cpu=0.4488 (result parity: the job already failed natively)'
+  - at: '2026-10-28T09:25:35.353512Z'
+    action: decommission
+    outcome: ok
+    detail: 'user: kill honda-hunt daily check; retired for good 2026-10-28'
+  - at: '2026-10-28T09:25:35.554338Z'
+    action: decommission
+    outcome: ok
+    detail: candybar 01a17938-961c-7581-b9c2-ec6f9e3a708a disabled
 - id: systemd:delodocs-wiki-self-tuning-weekly.timer
   wave: '7.16'
   candybar:
@@ -2520,7 +2528,7 @@ jobs:
   - systemctl --user daemon-reload
   rollback:
   - crontab -l 2>/dev/null | grep -qxF -- '30 */2 * * * /home/delorenj/.local/bin/sync-vault-to-drive' || { { crontab -l 2>/dev/null || true; printf '%s\n' '30 */2 * * * /home/delorenj/.local/bin/sync-vault-to-drive'; } | crontab -; }
-  status: verified
+  status: decommissioned
   candybar_id: 01a1794c-c058-7f06-ae67-2f47b5b32219
   cutover_at: '2026-10-26T17:40:36.056271Z'
   verification:
@@ -2541,6 +2549,14 @@ jobs:
     action: verify
     outcome: ok
     detail: 'invocation f9ff9480-27a0-5ed8-af03-7f95eb55d236 (scheduled) fail exit=1 runtime=16360ms memory=22454272B cpu=0.0104 (result parity: the job already failed natively)'
+  - at: '2026-10-28T09:25:33.555254Z'
+    action: decommission
+    outcome: ok
+    detail: 'user: never uses the Drive vault sync; retired for good 2026-10-28'
+  - at: '2026-10-28T09:25:33.891398Z'
+    action: decommission
+    outcome: ok
+    detail: candybar 01a1794c-c058-7f06-ae67-2f47b5b32219 disabled
 - id: systemd:bloodbank-agent-hooks-health.timer
   wave: '7.8'
   candybar:

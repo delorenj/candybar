@@ -414,6 +414,7 @@ uv run candybar migrate plan <inventory-id> --write   # validate, probe the nati
 uv run candybar migrate cutover <inventory-id>        # register disabled -> retire native -> enable
 uv run candybar migrate verify <inventory-id>         # first scheduled fire is the proof (exit 3 until then)
 uv run candybar migrate rollback <inventory-id>       # restore native FIRST, then disable (works with the daemon down)
+uv run candybar migrate decommission <inventory-id> --reason '...'  # retire for good (rollback then refuses)
 uv run candybar migrate status [--json] [--probe]
 ```
 

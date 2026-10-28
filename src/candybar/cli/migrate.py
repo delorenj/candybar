@@ -26,7 +26,8 @@ migrate_app = typer.Typer(
     name="migrate",
     help=(
         "Move a job from its native scheduler (systemd timer, crontab line, Hermes ticker) onto "
-        "candybar, reversibly, through the committed migration ledger. Exit codes: 0 ok, "
+        "candybar, reversibly, through the committed migration ledger; or retire it for good "
+        "(`decommission`). Exit codes: 0 ok, "
         "1 refused/failed, 2 invalid ledger or unknown id, 3 pending."
     ),
     no_args_is_help=True,
@@ -126,6 +127,23 @@ def rollback_cmd(
     from candybar.migration import ops
 
     raise typer.Exit(ops.rollback(_host(), _ledger(ledger), job_id, reason=reason))
+
+
+@migrate_app.command("decommission")
+def decommission_cmd(
+    job_id: Annotated[
+        str, typer.Argument(metavar="ID", help="Inventory id of the ledger entry.")
+    ],
+    reason: Annotated[
+        str,
+        typer.Option("--reason", help="Why the job is gone for good, recorded in the entry's history."),
+    ],
+    ledger: LedgerOption = None,
+) -> None:
+    """Retire a job for good: native scheduler retired, candybar disabled, `rollback` refused afterwards."""
+    from candybar.migration import ops
+
+    raise typer.Exit(ops.decommission(_host(), _ledger(ledger), job_id, reason=reason))
 
 
 @migrate_app.command("status")

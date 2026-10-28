@@ -452,6 +452,130 @@ def test_recutover_after_a_pending_rollback_disables_first(world: World, ledger_
 
 
 # ---------------------------------------------------------------------------
+# decommission
+
+
+def test_decommission_a_cut_over_job_disables_the_candybar_and_keeps_native_retired(
+    world: World, ledger_path: Path
+) -> None:
+    cid = cut(world, ledger_path)
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="never used") == EXIT_OK
+    assert world.log == ["enabled=False"]  # native was already retired: no command run
+    assert world.candybars[cid]["enabled"] is False and not world.active
+    entry = entry_of(ledger_path)
+    assert entry.status == "decommissioned" and not entry.disable_pending
+    assert [(h.action, h.outcome) for h in entry.history[-2:]] == [
+        ("decommission", "ok"), ("decommission", "ok")]
+    assert entry.history[-2].detail == "never used"
+
+
+def test_decommission_requires_a_reason(world: World, ledger_path: Path) -> None:
+    cut(world, ledger_path)
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="  ") == EXIT_FAILED
+    assert world.log == [] and entry_of(ledger_path).status == "cutover"
+
+
+def test_decommission_of_a_planned_job_retires_the_active_native_scheduler(
+    world: World, ledger_path: Path
+) -> None:
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="not needed") == EXIT_OK
+    assert world.log == [f"$ {DISABLE}"]  # no candybar was ever registered: no API call
+    assert not world.active and not world.candybars
+    assert entry_of(ledger_path).status == "decommissioned"
+
+
+def test_decommission_whose_native_retire_fails_changes_nothing(
+    world: World, ledger_path: Path
+) -> None:
+    world.fail = {DISABLE}
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="x") == EXIT_FAILED
+    entry = entry_of(ledger_path)
+    assert entry.status == "planned" and entry.history[-1].outcome == "failed"
+    assert world.active
+
+
+def test_decommission_with_the_api_down_finishes_on_a_rerun(
+    world: World, ledger_path: Path
+) -> None:
+    cid = cut(world, ledger_path)
+    world.api_down = True
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="gone") == EXIT_PENDING
+    entry = entry_of(ledger_path)
+    assert entry.status == "decommissioned" and entry.disable_pending
+    assert world.candybars[cid]["enabled"] is True  # unreachable
+    world.api_down = False
+    world.log.clear()
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="") == EXIT_OK
+    assert world.log == ["enabled=False"]
+    assert not entry_of(ledger_path).disable_pending
+    assert world.candybars[cid]["enabled"] is False
+
+
+def test_decommission_is_idempotent(world: World, ledger_path: Path) -> None:
+    cut(world, ledger_path)
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="gone") == EXIT_OK
+    world.log.clear()
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="again") == EXIT_OK
+    assert world.log == []
+
+
+def test_decommission_unknown_id_is_a_usage_error(world: World, ledger_path: Path) -> None:
+    assert ops.decommission(world.host(), ledger_path, "systemd:nope.timer", reason="x") == EXIT_USAGE
+
+
+def test_rollback_refuses_a_decommissioned_entry(world: World, ledger_path: Path) -> None:
+    cut(world, ledger_path)
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="never used") == EXIT_OK
+    world.log.clear()
+    world.echoes.clear()
+    assert ops.rollback(world.host(), ledger_path, JOB) == EXIT_FAILED
+    assert world.log == []  # the native scheduler was not restored
+    assert "decommissioned" in output(world) and "never used" in output(world)
+    assert not world.active and entry_of(ledger_path).status == "decommissioned"
+
+
+def test_cutover_and_verify_refuse_a_decommissioned_entry(world: World, ledger_path: Path) -> None:
+    cut(world, ledger_path)
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="gone") == EXIT_OK
+    world.log.clear()
+    assert ops.cutover(world.host(), ledger_path, JOB) == EXIT_FAILED
+    assert ops.verify(world.host(), ledger_path, JOB) == EXIT_FAILED
+    assert world.log == [] and entry_of(ledger_path).status == "decommissioned"
+
+
+def test_decommissioned_entries_are_not_planned_by_default(world: World, ledger_path: Path) -> None:
+    cut(world, ledger_path)
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="gone") == EXIT_OK
+    world.echoes.clear()
+    assert ops.plan(world.host(), ledger_path, []) == EXIT_OK
+    assert "no entries to plan" in output(world)
+    assert ops.plan(world.host(), ledger_path, [JOB]) == EXIT_OK  # explicit id: informational
+    assert "decommissioned" in output(world) and "cutover now" not in output(world)
+
+
+def test_plan_flags_a_resurrected_native_scheduler(world: World, ledger_path: Path) -> None:
+    cut(world, ledger_path)
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="gone") == EXIT_OK
+    world.enabled = world.active = True  # an installer re-ran
+    assert ops.plan(world.host(), ledger_path, [JOB]) == EXIT_FAILED
+    assert "ACTIVE for a decommissioned job" in output(world)
+
+
+def test_status_marks_a_resurrected_decommissioned_entry(world: World, ledger_path: Path) -> None:
+    cid = cut(world, ledger_path)
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="gone") == EXIT_OK
+    world.echoes.clear()
+    assert ops.status(world.host(), ledger_path, as_json=True, probe_native=True) == EXIT_OK
+    [row] = json.loads(output(world))
+    assert row["status"] == "decommissioned" and row["enabled"] is False
+    assert row["native"] == "retired" and "resurrected" not in row
+    world.candybars[cid]["enabled"] = True
+    world.echoes.clear()
+    assert ops.status(world.host(), ledger_path, probe_native=True) == EXIT_OK
+    assert "RESURRECTED" in output(world)
+
+
+# ---------------------------------------------------------------------------
 # verify
 
 
@@ -580,6 +704,12 @@ def test_cli_wiring(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0 and "no entries" in result.output
     result = runner.invoke(app, ["migrate", "verify", "systemd:nope.timer", "--ledger", str(path)])
     assert result.exit_code == EXIT_USAGE
+    result = runner.invoke(
+        app, ["migrate", "decommission", "systemd:nope.timer", "--reason", "x", "--ledger", str(path)]
+    )
+    assert result.exit_code == EXIT_USAGE
+    result = runner.invoke(app, ["migrate", "decommission", "systemd:nope.timer", "--ledger", str(path)])
+    assert result.exit_code == 2  # --reason is required (typer usage error)
     monkeypatch.setenv("CANDYBAR_LEDGER", str(path))
     result = runner.invoke(app, ["migrate", "plan"])
     assert result.exit_code == 0 and "no entries to plan" in result.output
