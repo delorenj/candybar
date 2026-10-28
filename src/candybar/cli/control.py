@@ -12,6 +12,8 @@ bad arguments.
 from __future__ import annotations
 
 import json
+import os
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -23,16 +25,19 @@ from zoneinfo import ZoneInfo
 
 import typer
 
-from candybar.migration.client import ApiError, CandybarApi
+from candybar.dispatcher.firetimes import fire_times
+from candybar.migration.client import INVOCATIONS_PAGE, ApiError, CandybarApi
 
 JsonOption = Annotated[bool, typer.Option("--json", help="Print the raw API JSON.")]
 RefArgument = Annotated[str, typer.Argument(metavar="NAME|ID", help="Candybar name or registry id.")]
 
-# How far `skip --next` looks for the candybar's next unskipped fire. Each
-# window is one /schedule read; a wider one can hit the API's 20,000-fire cap
-# (a minutely job alone is 10,080 fires a week), so stop at the first hit.
-NEXT_FIRE_HORIZONS = (timedelta(hours=1), timedelta(days=1), timedelta(days=7))
+# How far `skip` (no flags) looks for the candybar's next unskipped fire.
+NEXT_FIRE_HORIZON = timedelta(days=366)
 STREAM_RETRY_S = 3.0
+# A past fire with no finished run reads "pending" (not "no-run") this long.
+PENDING_GRACE = timedelta(minutes=15)
+# `skip` checks at most this many upcoming fires for an unskipped one.
+NEXT_FIRE_CANDIDATES = 50
 
 
 def _now() -> datetime:
@@ -151,11 +156,15 @@ def _flags(candybar: dict[str, Any]) -> str:
     return ",".join(flags) or "-"
 
 
-def _row_state(row: dict[str, Any]) -> str:
+def _row_state(row: dict[str, Any], now: datetime) -> str:
     if row.get("skipped"):
         return "skipped"
     if row["state"] == "past":
-        return row.get("lastResult") or "no-run"
+        if row.get("lastResult"):
+            return row["lastResult"]
+        # lastResult only reflects finished runs: a recent fire may still be running.
+        recent = now - _parse_ts(row["fireTime"]) < PENDING_GRACE
+        return "pending" if recent else "no-run"
     return row["state"]
 
 
@@ -293,7 +302,7 @@ def schedule(
     table = []
     for row in rows:
         marker = ">" if row["state"] == "current" else " "
-        table.append([marker, _when(row["fireTime"], now), row["name"], _row_state(row), row["schedule"]])
+        table.append([marker, _when(row["fireTime"], now), row["name"], _row_state(row, now), row["schedule"]])
     _table([" ", "FIRE", "NAME", "STATE", "SCHEDULE"], table)
     typer.echo(f"{len(rows)} fires")
 
@@ -308,16 +317,17 @@ def history(
     api = _api()
     candybar = _resolve(api, ref)
     try:
-        runs = api.invocations(candybar["id"], limit)
+        # --failed filters client-side, so read the API's whole page first.
+        runs = api.invocations(candybar["id"], INVOCATIONS_PAGE if failed else limit)
     except ApiError as exc:
         raise _fail(exc) from exc
     if failed:
-        runs = [r for r in runs if r["result"] != "success"]
+        runs = [r for r in runs if r.get("result") == "fail"][:limit]
     if as_json:
         _print_json(runs)
         return
     if not runs:
-        typer.echo("no recorded runs")
+        typer.echo(f"no {'failed' if failed else 'recorded'} runs")
         return
     _runs_table(runs, _now())
 
@@ -325,14 +335,15 @@ def history(
 def _runs_table(runs: list[dict[str, Any]], now: datetime) -> None:
     rows = []
     for run in runs:
+        result = run.get("result") or "running"  # the row exists from claim time
         note = run.get("errorMessage") or ""
-        if run["result"] != "success" and run.get("exitCode") not in (None, 0):
+        if result == "fail" and run.get("exitCode") not in (None, 0):
             note = f"exit {run['exitCode']}" + (f": {note}" if note else "")
         rows.append(
             [
                 _when(run["startedAt"], now),
-                run["trigger"],
-                run["result"],
+                run.get("trigger") or "-",
+                result,
                 _duration(run.get("runtimeMs")),
                 _bytes(run.get("memoryPeakBytes")),
                 f"{run.get('cpuLoad') or 0:.2f}",
@@ -370,18 +381,24 @@ def resume(ref: RefArgument) -> None:
     _set_enabled(ref, True)
 
 
-def _next_unskipped_fire(api: CandybarApi, candybar_id: str, now: datetime) -> str | None:
-    start = _utc_z(now)
-    for horizon in NEXT_FIRE_HORIZONS:
-        try:
-            rows = api.schedule(start, _utc_z(now + horizon))
-        except ApiError as exc:
-            if exc.status == 422:  # window holds too many fires: stop widening
-                return None
-            raise
-        for row in rows:
-            if row["candybarId"] == candybar_id and row["state"] != "past" and not row.get("skipped"):
-                return row["fireTime"]
+def _next_unskipped_fire(api: CandybarApi, candybar: dict[str, Any], now: datetime) -> str | None:
+    """The candybar's next fire with no skip on it.
+
+    Fire instants come from the dispatcher's own `fire_times` (no /schedule
+    window over every candybar, which a few minutely jobs push past the API's
+    fire cap); each candidate's skip state is one single-minute /schedule read.
+    """
+    start = (now + timedelta(minutes=1)).replace(second=0, microsecond=0)
+    zone = ZoneInfo(candybar.get("timezone") or "UTC")
+    candidates = fire_times(candybar["schedule"], zone, start, start + NEXT_FIRE_HORIZON)
+    for _, fire in zip(range(NEXT_FIRE_CANDIDATES), candidates, strict=False):
+        rows = api.schedule(_utc_z(fire), _utc_z(fire + timedelta(minutes=1)))
+        row = next(
+            (r for r in rows if r["candybarId"] == candybar["id"] and _parse_ts(r["fireTime"]) == fire),
+            None,
+        )
+        if row is None or not row.get("skipped"):
+            return _utc_z(fire)
     return None
 
 
@@ -426,9 +443,12 @@ def skip(
                 raise typer.Exit(code=2) from exc
             fire = _utc_z(moment.astimezone())  # astimezone() reads a naive time as local
         else:
-            fire = _next_unskipped_fire(api, candybar["id"], _now())
+            fire = _next_unskipped_fire(api, candybar, _now())
             if fire is None:
-                typer.echo(f"{name} has no unskipped fire in the next 7 days; pass --at", err=True)
+                typer.echo(
+                    f"{name} has no unskipped fire among its next {NEXT_FIRE_CANDIDATES}; pass --at",
+                    err=True,
+                )
                 raise typer.Exit(code=1)
         result = api.skip(candybar["id"], _utc_z(_parse_ts(fire)))
     except ApiError as exc:
@@ -499,7 +519,13 @@ def wait_for_invocation(
     deadline = clock() + timeout_s
     delay = 0.5
     while True:
-        row = api.get_invocation(invocation_id)
+        try:
+            row = api.get_invocation(invocation_id)
+        except ApiError as exc:
+            # A blip (API restart, proxy 502) says nothing about the run itself.
+            if not (exc.unreachable or (exc.status or 0) >= 500):
+                raise
+            row = None
         if row is not None and row.get("result") is not None:
             return row
         if clock() >= deadline:
@@ -599,6 +625,9 @@ def tail(
     noisy = {c["id"] for c in candybars if c.get("noise")}
     url = f"{api.base}/schedule/stream"
     last_id: str | None = None
+    # A reconnect backoff, not a schedule clock (AD-1 is the heartbeat's alone),
+    # passed by reference like `migrate`'s Host.sleep.
+    backoff = time.sleep
     try:
         while True:
             try:
@@ -622,9 +651,13 @@ def tail(
                     line = _describe(event, body, names, _now())
                     if line:
                         typer.echo(line)
+            except BrokenPipeError:
+                # The reader went away (`| head`): stop, quietly.
+                os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+                raise typer.Exit(code=0) from None
             except (urllib.error.URLError, OSError, TimeoutError) as exc:
                 typer.echo(f"stream dropped ({exc}); reconnecting in {STREAM_RETRY_S:.0f}s", err=True)
-            time.sleep(STREAM_RETRY_S)
+            backoff(STREAM_RETRY_S)
     except KeyboardInterrupt:
         raise typer.Exit(code=0) from None
 
