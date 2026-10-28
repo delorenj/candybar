@@ -2,7 +2,7 @@
 
 `run_target` is the executor's default `run`: the worker hands it either the
 bare `entrypoint` path of a pre-Epic-7 candybar, or the stored runner dict
-(`exec`, `systemd`, or the Story 7.4 `hermes` runner).
+(`exec`, `systemd`, the Story 7.4 `hermes` runner, or the `n8n` runner).
 Everything below it returns a `RunOutcome`, so a bad stored runner or a unit
 that will not start fails through the same record path as any failed run.
 
@@ -27,8 +27,16 @@ from pathlib import Path
 from uuid import UUID
 
 from ..events.builders import STDERR_TAIL_MAX
-from ..runners import ExecRunner, HermesRunner, RunnerError, SystemdRunner, parse_runner
+from ..runners import (
+    ExecRunner,
+    HermesRunner,
+    N8nRunner,
+    RunnerError,
+    SystemdRunner,
+    parse_runner,
+)
 from ..text import scrub_text
+from . import n8n_runner
 from .gpu import GpuSampler
 from .hermes_runner import hermes_argv, kill_after_seconds, parse_result_line
 from .runner import ProcessRegistry, RunOutcome, child_env, run_invocation
@@ -93,6 +101,13 @@ async def run_target(
             argv=hermes_argv(parsed),
             timeout_s=kill_after_seconds(parsed),
             stdout_result=parse_result_line,
+            root=root,
+            **common,  # type: ignore[arg-type]
+        )
+    if isinstance(parsed, N8nRunner):
+        return await run_invocation(
+            argv=n8n_runner.n8n_argv(parsed),
+            timeout_s=n8n_runner.kill_after_seconds(parsed),
             root=root,
             **common,  # type: ignore[arg-type]
         )

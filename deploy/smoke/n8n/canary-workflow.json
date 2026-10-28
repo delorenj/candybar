@@ -1,0 +1,51 @@
+{
+  "name": "candybar n8n-runner canary",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "candybar/canary",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Candybar fire",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "68ca68ae-21c5-40a2-a1a7-90a5e32612d0"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"candybar\": { \"status\": $json.body.data.fail ? \"fail\" : \"success\", \"message\": \"n8n canary \" + ($json.body.data.fail ? \"failed on request\" : \"ok\") + \" (\" + $json.body.candybar.trigger + \")\", \"tokenSpend\": 0 } } }}",
+        "options": {}
+      },
+      "name": "Verdict",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        300,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Candybar fire": {
+      "main": [
+        [
+          {
+            "node": "Verdict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

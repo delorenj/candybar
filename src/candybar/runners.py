@@ -18,6 +18,12 @@ no I/O, so the manifest, the API and the executor validate the same shape:
   never fires it; this runner is its only trigger. The attempt's input +
   output tokens become the invocation's token spend. Hermes no-agent jobs do
   not use this runner (README, "Runner kinds").
+- `n8n`     -> `{webhook | url, data{}?, timeout_s?, on_failure?}`: the
+  executor POSTs the invocation context (plus the static `data`) to an n8n
+  webhook workflow and waits for its response, which decides the verdict.
+  `webhook` is a path under `$CANDYBAR_N8N_URL/webhook/`; `url` is a whole
+  URL (another host, or `/webhook-test/` while building). The workflow must
+  have no Schedule Trigger of its own: this runner is its only clock.
 
 The bare `entrypoint` column stays the `exec` default for rows that carry no
 runner. A kind this module does not know is rejected at registration, never stored.
@@ -29,10 +35,18 @@ PATCH diff never reports a change that is not one.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 
 from .text import has_unsafe_text
 
@@ -46,6 +60,12 @@ SYSTEMD_UNIT_RE = re.compile(r"^[A-Za-z0-9_.:@\\][A-Za-z0-9_.:@\\-]*\.service$")
 # item, so no leading dash (option injection), no whitespace, no path.
 HERMES_REF_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.:@-]*$")
 HERMES_DEFAULT_TIMEOUT_S = 3600
+# An n8n webhook path: one argv-safe relative URL path, no `..` segment, no query.
+N8N_WEBHOOK_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.:@/-]*$")
+N8N_URL_RE = re.compile(r"^https?://[^\s/?#]+(/[^\s]*)?$")
+N8N_DEFAULT_TIMEOUT_S = 3600
+# `data` travels as one argv item to the webhook client: keep it small.
+N8N_DATA_MAX_BYTES = 64 * 1024
 TIMEOUT_MAX_SECONDS = 7 * 24 * 3600
 ARGV_MAX_ITEMS = 256
 ENV_MAX_ITEMS = 256
@@ -155,11 +175,64 @@ class HermesRunner(_RunnerBase):
         return value
 
 
-Runner = Annotated[ExecRunner | SystemdRunner | HermesRunner, Field(discriminator="kind")]
-_RUNNER_ADAPTER: TypeAdapter[ExecRunner | SystemdRunner | HermesRunner] = TypeAdapter(Runner)
+class N8nRunner(_RunnerBase):
+    kind: Literal["n8n"]
+    # Exactly one: a webhook path (resolved against $CANDYBAR_N8N_URL at run
+    # time, so moving n8n never touches a row) or a whole URL.
+    webhook: str | None = None
+    url: str | None = None
+    # Static, non-secret JSON handed to the workflow as `data`: lets one
+    # workflow serve several candybars.
+    data: dict[str, Any] = Field(default_factory=dict)
+    # Bounds the wait for the workflow's response; the executor kills the
+    # webhook client a grace period later.
+    timeout_s: int = Field(default=N8N_DEFAULT_TIMEOUT_S, ge=1, le=TIMEOUT_MAX_SECONDS)
+
+    @field_validator("webhook")
+    @classmethod
+    def _webhook_is_a_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not N8N_WEBHOOK_RE.match(value) or ".." in value.split("/"):
+            raise ValueError(
+                f"webhook must be a path under /webhook/ (letters, digits, _ . : @ - /, "
+                f"no leading dash or slash, no '..'), got {value!r}"
+            )
+        return value
+
+    @field_validator("url")
+    @classmethod
+    def _url_is_http(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if has_unsafe_text(value) or not N8N_URL_RE.match(value):
+            raise ValueError(f"url must be an http(s) URL, got {value!r}")
+        return value
+
+    @field_validator("data")
+    @classmethod
+    def _data_is_small_json(cls, value: dict[str, Any]) -> dict[str, Any]:
+        try:
+            encoded = json.dumps(value, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"data must be plain JSON: {exc}") from exc
+        if len(encoded.encode()) > N8N_DATA_MAX_BYTES or has_unsafe_text(encoded):
+            raise ValueError(f"data must be at most {N8N_DATA_MAX_BYTES} bytes of clean JSON")
+        return value
+
+    @model_validator(mode="after")
+    def _one_target(self) -> N8nRunner:
+        if (self.webhook is None) == (self.url is None):
+            raise ValueError("an n8n runner needs exactly one of `webhook` or `url`")
+        return self
 
 
-def parse_runner(raw: object) -> ExecRunner | SystemdRunner | HermesRunner:
+RunnerModel = ExecRunner | SystemdRunner | HermesRunner | N8nRunner
+Runner = Annotated[RunnerModel, Field(discriminator="kind")]
+_RUNNER_ADAPTER: TypeAdapter[RunnerModel] = TypeAdapter(Runner)
+
+
+def parse_runner(raw: object) -> RunnerModel:
     """Validate a runner definition (a dict), raising `RunnerError` on any problem."""
     if not isinstance(raw, dict):
         raise RunnerError(f"runner must be an object, got {type(raw).__name__}")
@@ -191,6 +264,8 @@ def runner_label(runner: dict[str, Any]) -> str:
         return f"systemd:{runner['unit']}"
     if runner.get("kind") == "hermes":
         return f"hermes:{runner['profile']}/{runner['job_id']}"
+    if runner.get("kind") == "n8n":
+        return f"n8n:{runner.get('webhook') or runner.get('url')}"
     argv = runner.get("argv") or ["?"]
     return str(argv[0])
 
@@ -199,10 +274,14 @@ __all__ = [
     "ARGV_MAX_ITEMS",
     "HERMES_DEFAULT_TIMEOUT_S",
     "HERMES_REF_RE",
+    "N8N_DATA_MAX_BYTES",
+    "N8N_DEFAULT_TIMEOUT_S",
+    "N8N_WEBHOOK_RE",
     "RESERVED_ENV_PREFIX",
     "SYSTEMD_UNIT_RE",
     "ExecRunner",
     "HermesRunner",
+    "N8nRunner",
     "Runner",
     "RunnerError",
     "SystemdRunner",

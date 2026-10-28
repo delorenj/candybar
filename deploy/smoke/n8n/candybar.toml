@@ -1,0 +1,14 @@
+# Canary for the n8n runner: POSTs to the n8n workflow "candybar n8n-runner
+# canary" (canary-workflow.json here, id EX1JV2nQqoaDfZrA) and records its
+# verdict. No side effects, no tokens.
+[candybar]
+name = "deploy-smoke-n8n"
+description = "n8n-runner canary: webhook round trip with a candybar verdict"
+tags = ["canary", "runner-n8n"]
+schedule = "*/15 * * * *"
+noise = true
+
+[candybar.runner]
+kind = "n8n"
+webhook = "candybar/canary"
+timeout_s = 60

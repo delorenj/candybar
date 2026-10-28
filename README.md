@@ -74,7 +74,7 @@ Invalid cron/name/timezone → `application/problem+json` (422); duplicate name 
 bus down → 503 and no row. API bind: `CANDYBAR_API_HOST`/`CANDYBAR_API_PORT`;
 CLI target: `CANDYBAR_API_URL`.
 
-## Runner kinds (Stories 7.3 and 7.4, AD-18, AD-19)
+## Runner kinds (Stories 7.3 and 7.4, AD-18, AD-19; n8n)
 
 A candybar defines how the executor starts it with **exactly one** of
 `entrypoint` (above: a bare executable, the `exec` default) or a `[candybar.runner]`
@@ -106,6 +106,16 @@ kind = "hermes"
 profile = "33god-pm"        # hermes -p <profile>
 job_id = "a1b2c3d4e5f6"     # the Hermes job id (hex), not its name
 timeout_s = 3600            # default; bounds the whole wait (the CLI is killed 60s later)
+```
+
+```toml
+# n8n: POST to an n8n webhook workflow and wait for its answer
+[candybar.runner]
+kind = "n8n"
+webhook = "candybar/nightly-digest"   # -> $CANDYBAR_N8N_URL/webhook/candybar/nightly-digest
+# url = "https://n8n.delo.sh/webhook-test/..."   # or a whole URL (exactly one of the two)
+data = { lane = "ops" }                # optional static JSON, handed to the workflow as `data`
+timeout_s = 3600                       # default; bounds the wait (the client is killed 30s later)
 ```
 
 | | `exec` | `systemd` |
@@ -157,6 +167,31 @@ timeout_s = 3600            # default; bounds the whole wait (the CLI is killed 
   `on_failure` hook (an argv that delivers `$CANDYBAR_FAILURE_MESSAGE` to the
   same target, e.g. `ntfy-publish`). That keeps no agent machinery in the path
   and nothing to pin.
+- **The `n8n` runner.** Candybar owns when the workflow runs; n8n owns its
+  steps. The executor spawns its stdlib webhook client
+  (`python -m candybar.n8n_webhook`), which POSTs
+  `{"candybar": {id, invocationId, trigger, tickId}, "data": {...}}` and waits
+  for the response, so timeouts, shutdown and the AD-8 result behave as for any
+  job. The webhook base is `CANDYBAR_N8N_URL` on the executor host (default
+  `https://n8n.delo.sh`). Build the workflow like this:
+  - **Webhook node:** method POST. Respond **"Using 'Respond to Webhook' Node"**
+    (or "When Last Node Finishes"). "Immediately" only proves the trigger
+    landed, so every run would read as a success.
+  - **No Schedule Trigger.** Candybar is the workflow's only clock; a
+    Schedule Trigger alongside it is a second, invisible scheduler.
+  - **Verdict.** A non-2xx answer (n8n gives `500 Error in workflow` in
+    last-node mode), no answer within `timeout_s`, or no connection is a
+    failure. So is a 2xx with an **empty body**: n8n 2.18 sends exactly that
+    when a Respond-node workflow errors before it responds. Any other 2xx is a
+    success, unless the JSON (an object, or a list's first item) carries a
+    namespaced verdict: `{"candybar": {"status": "success"|"fail", "message":
+    "...", "tokenSpend": 1234, "costUsd": 0.02}}`. Tokens and cost are
+    recorded as the invocation's spend.
+  - **Metering.** Runtime is the workflow's real wall time. Memory and CPU are
+    the client's (near zero), because the work runs inside n8n's process.
+  - **Activate it.** An inactive workflow answers 404 "webhook is not
+    registered", and that 404 is recorded as the failure message. The canary
+    is `deploy/smoke/n8n/`.
 - **`on_failure`** (any kind) is an argv run once, best effort and unmetered,
   right after a recorded failure, with the AD-8 env plus
   `CANDYBAR_FAILURE_MESSAGE`; it is capped at 60s. It is skipped, with a
