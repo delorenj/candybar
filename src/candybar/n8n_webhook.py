@@ -11,7 +11,11 @@ response (the Webhook node must respond "When Last Node Finishes" or "Using
     {"candybar": {"id", "invocationId", "trigger", "tickId"}, "data": {...}}
 
 The verdict:
-- a non-2xx answer, no answer within `--timeout`, or no connection: fail;
+- a non-2xx answer, no answer within `--timeout` (a wall-clock deadline for
+  the whole exchange), or no connection: fail. Redirects are never followed:
+  urllib would turn the POST into a body-less GET and judge whatever page
+  the redirect lands on (an SSO portal, a moved URL) as the workflow's answer,
+  so a 3xx is a failure that names its Location;
 - a 2xx answer with an EMPTY body: fail. That is what n8n (2.18) sends when a
   "Using 'Respond to Webhook' Node" workflow dies before its Respond node;
   in "When Last Node Finishes" mode the same error is a 500;
@@ -27,15 +31,18 @@ exit code (0/1) matches it.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import math
 import os
+import signal
 import sys
 import urllib.error
 import urllib.request
 from typing import Any
 
 from candybar import __version__
+from candybar.text import scrub_text
 
 VERDICT_KEY = "candybar"
 EMPTY_BODY_MESSAGE = (
@@ -44,6 +51,18 @@ EMPTY_BODY_MESSAGE = (
 )
 MESSAGE_MAX = 2000
 TOKEN_SPEND_MAX = 2**63 - 1
+
+
+class _Deadline(BaseException):  # BaseException: no library `except Exception` swallows it
+    """The wall-clock `--timeout` passed (socket timeouts are per operation)."""
+
+
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        return None  # urllib then raises the 3xx as an HTTPError
+
+
+_OPENER = urllib.request.build_opener(_NoRedirects)
 
 
 def _payload(data: dict[str, Any]) -> dict[str, Any]:
@@ -86,51 +105,82 @@ def _verdict(body: str) -> dict[str, Any]:
     return {}
 
 
+def _number(value: Any) -> float | int | None:
+    """A finite JSON number (ints of any size stay exact), else None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    return None
+
+
 def _metrics(verdict: dict[str, Any]) -> dict[str, Any]:
     metrics: dict[str, Any] = {}
-    tokens = verdict.get("tokenSpend", verdict.get("token_spend"))
-    if isinstance(tokens, int | float) and not isinstance(tokens, bool) and math.isfinite(tokens):
+    tokens = _number(verdict.get("tokenSpend", verdict.get("token_spend")))
+    if tokens is not None:
         metrics["token_spend"] = min(max(0, int(tokens)), TOKEN_SPEND_MAX)
-    cost = verdict.get("costUsd", verdict.get("cost_usd"))
-    if isinstance(cost, int | float) and not isinstance(cost, bool) and math.isfinite(cost) and cost >= 0:
-        metrics["cost_usd"] = float(cost)
+    cost = _number(verdict.get("costUsd", verdict.get("cost_usd")))
+    if cost is not None and cost >= 0:
+        try:
+            as_float = float(cost)
+        except OverflowError:  # an int too big for a float: not a real cost
+            as_float = math.inf
+        if math.isfinite(as_float):
+            metrics["cost_usd"] = as_float
     return metrics
+
+
+def _clean(message: str | None) -> str | None:
+    return scrub_text(message)[:MESSAGE_MAX] if message else message
 
 
 def call(url: str, data: dict[str, Any], timeout_s: float) -> tuple[bool, str | None, dict[str, Any]]:
     """POST the context and judge the answer: (success, message, metrics)."""
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(_payload(data)).encode(),
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": f"candybar/{__version__}",
-            "X-Candybar-Invocation-Id": os.environ.get("CANDYBAR_INVOCATION_ID", ""),
-        },
-        method="POST",
-    )
+    late = f"n8n did not answer within {timeout_s:g}s"
     try:
-        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(_payload(data)).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": f"candybar/{__version__}",
+                "X-Candybar-Invocation-Id": os.environ.get("CANDYBAR_INVOCATION_ID", ""),
+            },
+            method="POST",
+        )
+        with _OPENER.open(request, timeout=timeout_s) as response:
             body = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
-        text = exc.read().decode("utf-8", errors="replace")
-        return False, f"n8n answered {exc.code}: {_snippet(text) or exc.reason}", {}
-    except TimeoutError:
-        return False, f"n8n did not answer within {timeout_s:g}s", {}
+        try:
+            text = exc.read().decode("utf-8", errors="replace")
+        except (OSError, http.client.HTTPException):
+            text = ""
+        if 300 <= exc.code < 400:
+            where = exc.headers.get("Location") if exc.headers else None
+            return False, _clean(f"n8n answered {exc.code} redirect to {where or '?'} (not followed)"), {}
+        return False, _clean(f"n8n answered {exc.code}: {_snippet(text) or exc.reason}"), {}
+    except (_Deadline, TimeoutError):
+        return False, late, {}
     except (urllib.error.URLError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
         if isinstance(reason, TimeoutError):
-            return False, f"n8n did not answer within {timeout_s:g}s", {}
-        return False, f"n8n unreachable at {url}: {reason}", {}
+            return False, late, {}
+        return False, _clean(f"n8n unreachable at {url}: {reason}"), {}
+    except http.client.HTTPException as exc:  # IncompleteRead, InvalidURL, BadStatusLine...
+        return False, _clean(f"n8n connection broke mid-response at {url}: {exc!r}"), {}
+    except ValueError as exc:
+        return False, _clean(f"invalid n8n URL {url!r}: {exc}"), {}
 
     if not body.strip():
         return False, EMPTY_BODY_MESSAGE, {}
     verdict = _verdict(body)
     status = verdict.get("status", "success")
     message = verdict.get("message")
-    message = str(message)[:MESSAGE_MAX] if message is not None else None
+    message = _clean(str(message)) if message is not None else None
     if status != "success":
-        return False, message or f"workflow reported status {status!r}", _metrics(verdict)
+        return False, message or _clean(f"workflow reported status {status!r}"), _metrics(verdict)
     return True, message, _metrics(verdict)
 
 
@@ -151,11 +201,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, required=True)
     parser.add_argument("--data", default="{}", help="Static JSON object passed as `data`.")
     args = parser.parse_args(argv)
-    data = json.loads(args.data)
-    ok, message, metrics = call(args.url, data if isinstance(data, dict) else {}, args.timeout)
+
+    def _expire(signum: int, frame: object) -> None:
+        raise _Deadline
+
+    # The socket timeout bounds each connect/recv; this bounds the whole
+    # exchange, so a trickling peer cannot outlive `--timeout`.
+    previous = signal.signal(signal.SIGALRM, _expire)
+    signal.setitimer(signal.ITIMER_REAL, args.timeout)
+    try:
+        data = json.loads(args.data)
+        ok, message, metrics = call(args.url, data if isinstance(data, dict) else {}, args.timeout)
+    except _Deadline:
+        ok, message, metrics = False, f"n8n did not answer within {args.timeout:g}s", {}
+    except Exception as exc:  # noqa: BLE001 - any surprise still leaves a verdict, never a bare traceback
+        ok, message, metrics = False, _clean(f"n8n webhook client crashed: {exc!r}"), {}
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
     _write_result(ok, message, metrics)
     if message:
-        print(message, file=sys.stdout if ok else sys.stderr)
+        stream = sys.stdout if ok else sys.stderr
+        try:
+            print(message, file=stream)
+        except (UnicodeEncodeError, OSError):
+            pass  # the result file already carries it; the exit code must still match
     return 0 if ok else 1
 
 

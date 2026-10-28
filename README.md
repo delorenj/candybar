@@ -180,8 +180,9 @@ timeout_s = 3600                       # default; bounds the wait (the client is
   - **No Schedule Trigger.** Candybar is the workflow's only clock; a
     Schedule Trigger alongside it is a second, invisible scheduler.
   - **Verdict.** A non-2xx answer (n8n gives `500 Error in workflow` in
-    last-node mode), no answer within `timeout_s`, or no connection is a
-    failure. So is a 2xx with an **empty body**: n8n 2.18 sends exactly that
+    last-node mode), no answer within `timeout_s` (wall clock, for the whole
+    exchange), or no connection is a failure. Redirects are never followed: a
+    3xx (an SSO portal, a moved URL) is a failure naming its `Location`. So is a 2xx with an **empty body**: n8n 2.18 sends exactly that
     when a Respond-node workflow errors before it responds. Any other 2xx is a
     success, unless the JSON (an object, or a list's first item) carries a
     namespaced verdict: `{"candybar": {"status": "success"|"fail", "message":

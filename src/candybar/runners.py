@@ -37,7 +37,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import (
     BaseModel,
@@ -61,8 +63,8 @@ SYSTEMD_UNIT_RE = re.compile(r"^[A-Za-z0-9_.:@\\][A-Za-z0-9_.:@\\-]*\.service$")
 HERMES_REF_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.:@-]*$")
 HERMES_DEFAULT_TIMEOUT_S = 3600
 # An n8n webhook path: one argv-safe relative URL path, no `..` segment, no query.
-N8N_WEBHOOK_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.:@/-]*$")
-N8N_URL_RE = re.compile(r"^https?://[^\s/?#]+(/[^\s]*)?$")
+N8N_WEBHOOK_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.:@/-]*")
+N8N_URL_RE = re.compile(r"https?://[^\s/?#]+(/\S*)?")
 N8N_DEFAULT_TIMEOUT_S = 3600
 # `data` travels as one argv item to the webhook client: keep it small.
 N8N_DATA_MAX_BYTES = 64 * 1024
@@ -175,6 +177,19 @@ class HermesRunner(_RunnerBase):
         return value
 
 
+def _strings(value: Any) -> Iterator[str]:
+    """Every str key and value inside a JSON document."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield from _strings(key)
+            yield from _strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _strings(item)
+
+
 class N8nRunner(_RunnerBase):
     kind: Literal["n8n"]
     # Exactly one: a webhook path (resolved against $CANDYBAR_N8N_URL at run
@@ -193,7 +208,7 @@ class N8nRunner(_RunnerBase):
     def _webhook_is_a_path(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        if not N8N_WEBHOOK_RE.match(value) or ".." in value.split("/"):
+        if not N8N_WEBHOOK_RE.fullmatch(value) or ".." in value.split("/"):
             raise ValueError(
                 f"webhook must be a path under /webhook/ (letters, digits, _ . : @ - /, "
                 f"no leading dash or slash, no '..'), got {value!r}"
@@ -205,8 +220,15 @@ class N8nRunner(_RunnerBase):
     def _url_is_http(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        if has_unsafe_text(value) or not N8N_URL_RE.match(value):
+        if has_unsafe_text(value) or not N8N_URL_RE.fullmatch(value):
             raise ValueError(f"url must be an http(s) URL, got {value!r}")
+        try:
+            parts = urlsplit(value)
+            parts.port  # noqa: B018 - raises on a non-numeric or out-of-range port
+        except ValueError as exc:
+            raise ValueError(f"url must be an http(s) URL, got {value!r}: {exc}") from exc
+        if not parts.hostname:
+            raise ValueError(f"url must name a host, got {value!r}")
         return value
 
     @field_validator("data")
@@ -216,8 +238,12 @@ class N8nRunner(_RunnerBase):
             encoded = json.dumps(value, allow_nan=False)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"data must be plain JSON: {exc}") from exc
-        if len(encoded.encode()) > N8N_DATA_MAX_BYTES or has_unsafe_text(encoded):
-            raise ValueError(f"data must be at most {N8N_DATA_MAX_BYTES} bytes of clean JSON")
+        if len(encoded.encode()) > N8N_DATA_MAX_BYTES:
+            raise ValueError(f"data must be at most {N8N_DATA_MAX_BYTES} bytes of JSON")
+        # json.dumps escapes NUL and lone surrogates, so check the raw strings:
+        # Postgres jsonb rejects both, after the API has published its fact.
+        if any(has_unsafe_text(text) for text in _strings(value)):
+            raise ValueError("data must not contain NUL or lone surrogate characters")
         return value
 
     @model_validator(mode="after")

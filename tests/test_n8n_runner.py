@@ -311,3 +311,147 @@ def test_a_whole_url_skips_the_base(n8n: FakeN8n, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv(n8n_runner.N8N_URL_ENV, "http://127.0.0.1:9")  # would be unreachable
     assert resolve_outcome(_run({"kind": "n8n", "url": f"{n8n.base}/webhook-test/build"})).success
     assert n8n.requests[0]["path"] == "/webhook-test/build"
+
+
+# ---------------------------------------------------------------------------
+# Review regressions: hostile or broken answers must still leave a verdict.
+
+
+class RawN8n:
+    """A server whose POST handler is a plain function of the request handler."""
+
+    def __init__(self, respond: Any) -> None:
+        self.paths: list[tuple[str, str]] = []
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def _any(self) -> None:
+                outer.paths.append((self.command, self.path))
+                length = int(self.headers.get("Content-Length") or 0)
+                self.rfile.read(length)
+                respond(self)
+
+            do_POST = do_GET = _any
+
+            def log_message(self, *args: object) -> None:
+                return None
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/webhook/x"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self) -> None:
+        self.server.shutdown()
+
+
+def _raw(respond: Any) -> Iterator[RawN8n]:
+    server = RawN8n(respond)
+    yield server
+    server.close()
+
+
+def _redirect(h: BaseHTTPRequestHandler) -> None:
+    if h.command == "POST":
+        h.send_response(302)
+        h.send_header("Location", "/login")
+        h.send_header("Content-Length", "0")
+        h.end_headers()
+    else:
+        body = b"<html>login</html>"
+        h.send_response(200)
+        h.send_header("Content-Length", str(len(body)))
+        h.end_headers()
+        h.wfile.write(body)
+
+
+def test_a_redirect_is_a_failure_and_never_followed() -> None:
+    """urllib would replay a 302 as a body-less GET and judge the landing page."""
+    for server in _raw(_redirect):
+        ok, message, _ = n8n_webhook.call(server.url, {}, 5)
+        assert not ok and message == "n8n answered 302 redirect to /login (not followed)"
+        assert server.paths == [("POST", "/webhook/x")]
+
+
+def _truncated(h: BaseHTTPRequestHandler) -> None:
+    h.send_response(200)
+    h.send_header("Content-Length", "100")
+    h.end_headers()
+    h.wfile.write(b'{"can')
+    h.wfile.flush()
+    h.close_connection = True
+
+
+def test_a_body_cut_short_is_a_failure_not_a_crash() -> None:
+    for server in _raw(_truncated):
+        ok, message, _ = n8n_webhook.call(server.url, {}, 5)
+        assert not ok and message is not None and message.startswith("n8n connection broke mid-response")
+
+
+def _trickle(h: BaseHTTPRequestHandler) -> None:
+    h.send_response(200)
+    h.send_header("Content-Length", "40")
+    h.end_headers()
+    for _ in range(40):
+        try:
+            h.wfile.write(b" ")
+            h.wfile.flush()
+        except OSError:
+            return
+        time.sleep(0.25)
+
+
+def test_the_timeout_is_a_wall_clock_deadline_for_a_trickling_peer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each recv is under the socket timeout, but the whole exchange is not."""
+    result = tmp_path / "result.json"
+    monkeypatch.setenv("CANDYBAR_RESULT_FILE", str(result))
+    for server in _raw(_trickle):
+        started = time.monotonic()
+        code = n8n_webhook.main(["--url", server.url, "--timeout", "1"])
+        assert time.monotonic() - started < 3
+        assert code == 1
+        assert json.loads(result.read_text())["message"] == "n8n did not answer within 1s"
+
+
+def test_a_lone_surrogate_in_a_success_message_stays_a_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    result = tmp_path / "result.json"
+    monkeypatch.setenv("CANDYBAR_RESULT_FILE", str(result))
+    body = b'{"candybar": {"status": "success", "message": "hi \\ud800 there"}}'
+
+    def respond(h: BaseHTTPRequestHandler) -> None:
+        h.send_response(200)
+        h.send_header("Content-Length", str(len(body)))
+        h.end_headers()
+        h.wfile.write(body)
+
+    for server in _raw(respond):
+        assert n8n_webhook.main(["--url", server.url, "--timeout", "5"]) == 0
+    doc = json.loads(result.read_text())
+    assert doc["status"] == "success" and doc["message"] == "hi � there"
+
+
+def test_numbers_too_big_for_a_float_are_clamped_or_dropped(n8n: FakeN8n) -> None:
+    huge = int("9" * 400)
+    n8n.reply(200, f'{{"candybar": {{"status": "success", "tokenSpend": {huge}, "costUsd": {huge}}}}}')
+    assert _call(n8n) == (True, None, {"token_spend": 2**63 - 1})
+
+
+def test_an_unusable_url_is_a_failure_not_a_crash() -> None:
+    ok, message, _ = n8n_webhook.call("http://[::1/webhook/x", {}, 2)
+    assert not ok and message is not None
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {**N8N, "data": {"k": "a\x00b"}},
+        {**N8N, "data": {"k": ["ok", "\ud800"]}},
+        {**N8N, "data": {"\x00key": 1}},
+        {"kind": "n8n", "url": "https://n8n.example:99999/webhook/x"},
+        {"kind": "n8n", "url": "https://n8n.example:port/webhook/x"},
+        {"kind": "n8n", "url": "https://n8n.example/webhook/x\n"},
+        {"kind": "n8n", "webhook": "candybar/x\n"},
+    ],
+)
+def test_rejects_text_postgres_or_urllib_would_choke_on(raw: dict[str, Any]) -> None:
+    with pytest.raises(RunnerError):
+        parse_runner(raw)
