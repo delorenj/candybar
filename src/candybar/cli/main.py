@@ -3,7 +3,9 @@
 `--help`/`--version` and `daemon` (Story 1.3); `register` (Story 1.4)
 loads a candybar.toml manifest and registers it via the API; `run`
 (Story 1.8) invokes a registered candybar now via the API (AD-12);
-`migrate` (Story 7.5, AD-21) drives the cron-migration ledger.
+`migrate` (Story 7.5, AD-21) drives the cron-migration ledger; the
+operator control commands (`ls`, `show`, `next`, `schedule`, `history`,
+`pause`, `resume`, `skip`, `edit`, `tail`) live in `candybar.cli.control`.
 """
 
 import asyncio
@@ -16,10 +18,12 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Annotated
+from uuid import UUID
 
 import typer
 
 from candybar import __version__
+from candybar.cli import control
 from candybar.cli.migrate import migrate_app
 
 app = typer.Typer(
@@ -31,6 +35,7 @@ API_URL_ENV = "CANDYBAR_API_URL"
 DEFAULT_API_URL = "http://127.0.0.1:8700"
 
 app.add_typer(migrate_app, name="migrate")
+control.install(app)
 
 
 def _version_callback(value: bool) -> None:
@@ -136,16 +141,33 @@ def register(
 
 @app.command()
 def run(
-    candybar_id: Annotated[str, typer.Argument(metavar="ID", help="Registry id (UUID) of the candybar.")],
+    candybar_ref: Annotated[
+        str, typer.Argument(metavar="NAME|ID", help="Candybar name or registry id (UUID).")
+    ],
+    wait: Annotated[
+        bool, typer.Option("--wait", "-w", help="Wait for the run to finish and print its result.")
+    ] = False,
+    timeout: Annotated[
+        float, typer.Option("--timeout", help="Seconds --wait gives up after (the run keeps going).")
+    ] = 3600,
 ) -> None:
     """Invoke a registered candybar now, out of schedule (Story 1.8, AD-12).
 
     Calls POST /candybars/{id}/invoke on CANDYBAR_API_URL (default
     http://127.0.0.1:8700). The API publishes a trigger=manual invoke command
     and the executor runs it exactly like a scheduled fire; this command
-    returns once the invocation is accepted, not when it finishes.
+    returns once the invocation is accepted, not when it finishes, unless
+    --wait (exit 1 on a failed run, 3 when --timeout passes first).
     """
+    from candybar.migration.client import ApiError, CandybarApi
+
     base = os.environ.get(API_URL_ENV, DEFAULT_API_URL).rstrip("/")
+    try:
+        UUID(candybar_ref)
+        candybar_id = candybar_ref
+    except ValueError:
+        # A name: resolve it to the id the invoke route takes.
+        candybar_id = control.resolve_id(CandybarApi(base), candybar_ref)
     # Quote the whole segment: an id can never reach a different route.
     url = f"{base}/candybars/{urllib.parse.quote(candybar_id, safe='')}/invoke"
     request = urllib.request.Request(url, data=b"", method="POST")
@@ -164,6 +186,19 @@ def run(
         f"invoked {body['name']} (id {body['candybarId']}): "
         f"invocation {body['invocationId']}, idempotency_key {body['idempotencyKey']}"
     )
+    if not wait:
+        return
+    try:
+        row = control.wait_for_invocation(CandybarApi(base), body["invocationId"], timeout)
+    except ApiError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if row is None:
+        typer.echo(f"still running after {timeout:g}s; check `candybar history {body['name']}`", err=True)
+        raise typer.Exit(code=3)
+    control.print_run(row)
+    if row["result"] != "success":
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

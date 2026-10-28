@@ -73,12 +73,25 @@ def test_run_unknown_id_prints_problem_json_exits_1() -> None:
     assert printed["status"] == 404 and printed["title"] == "Candybar not found"
 
 
-def test_run_malformed_id_prints_problem_json_exits_1() -> None:
-    err = _problem(422, "Invalid request body", "uuid_parsing")
-    with patch("urllib.request.urlopen", side_effect=err):
-        result = CliRunner().invoke(app, ["run", "not-a-uuid"])
-    assert result.exit_code == 1
-    assert json.loads(result.output.strip())["status"] == 422
+def test_run_by_name_resolves_then_invokes() -> None:
+    listing = [{"id": CANDYBAR_ID, "name": "nightly-report"}, {"id": "x", "name": "other"}]
+    responses = [_FakeResponse(listing), _FakeResponse(ACCEPTED)]  # type: ignore[arg-type]
+    with patch("urllib.request.urlopen", side_effect=responses) as mock:
+        result = CliRunner().invoke(app, ["run", "nightly-report"])
+    assert result.exit_code == 0, result.output
+    assert mock.call_args_list[0].args[0].full_url.endswith("/candybars")
+    invoke = mock.call_args_list[1].args[0]
+    assert invoke.get_method() == "POST"
+    assert invoke.full_url.endswith(f"/candybars/{CANDYBAR_ID}/invoke")
+
+
+def test_run_unknown_name_exits_2_without_invoking() -> None:
+    listing = [{"id": CANDYBAR_ID, "name": "nightly-report"}]
+    with patch("urllib.request.urlopen", return_value=_FakeResponse(listing)) as mock:  # type: ignore[arg-type]
+        result = CliRunner().invoke(app, ["run", "nightly"])
+    assert result.exit_code == 2
+    assert "did you mean: nightly-report" in result.output
+    assert mock.call_count == 1  # the listing only: no invoke
 
 
 def test_run_bus_down_prints_problem_json_exits_1() -> None:
@@ -96,12 +109,13 @@ def test_run_api_unreachable_exits_1() -> None:
     assert "unreachable" in result.output
 
 
-def test_run_quotes_the_id_segment() -> None:
-    """A hostile id can never escape its path segment to reach another route."""
-    with patch("urllib.request.urlopen", return_value=_FakeResponse(ACCEPTED)) as mock:
-        CliRunner().invoke(app, ["run", "../../metrics?x=1"])
-    url = mock.call_args.args[0].full_url
-    assert url.endswith("/candybars/..%2F..%2Fmetrics%3Fx%3D1/invoke")
+def test_run_never_sends_a_hostile_ref_as_a_path() -> None:
+    """A non-UUID ref is only ever matched against names: it can never escape
+    its path segment to reach another route."""
+    with patch("urllib.request.urlopen", return_value=_FakeResponse([])) as mock:  # type: ignore[arg-type]
+        result = CliRunner().invoke(app, ["run", "../../metrics?x=1"])
+    assert result.exit_code == 2
+    assert [c.args[0].full_url.rsplit("/", 1)[1] for c in mock.call_args_list] == ["candybars"]
 
 
 def test_run_requires_an_id() -> None:

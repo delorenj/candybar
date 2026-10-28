@@ -407,6 +407,31 @@ returns once the command is accepted, not when the job finishes. Unknown id → 
 malformed id → 422, bus down → 503: each prints the problem+json body and
 exits 1. Needs the `api` and `executor` roles running.
 
+## Operate from the terminal
+
+The CLI wraps the API for day-to-day control. Every command takes a candybar
+**name or id**, reads `CANDYBAR_API_URL` (`export
+CANDYBAR_API_URL=https://candybar.delo.sh` off-box), and prints JSON with
+`--json`. Exit codes: 0 ok, 1 API refused/unreachable (or a failed `run
+--wait`), 2 unknown candybar or bad arguments, 3 `run --wait` timed out.
+
+```bash
+candybar ls [--all] [--tag T] [--hide-noise]     # registered candybars (paused hidden unless --all)
+candybar show <name> [-n 5]                      # definition, runner, totals, latest runs
+candybar next                                    # the single next fire
+candybar schedule [--ahead 12] [--back 2] [-c <name>] [--hide-noise]   # fires around now, with results
+candybar history <name> [-n 20] [--failed]       # runs with runtime, memory, CPU, tokens, error
+candybar run <name> [--wait] [--timeout 3600]    # fire now; --wait prints the result
+candybar pause|resume <name>                     # stop/restart scheduling (POST /enabled)
+candybar skip <name> [--at TIME | --today | --date YYYY-MM-DD]   # default: its next unskipped fire
+candybar edit <name> [--schedule ..] [--timezone ..] [--name ..] [--description ..] [--tags a,b] [--noise/--no-noise]
+candybar tail [--hide-noise] [--ticks] [--json]  # live invocations, skips, definition changes (SSE)
+```
+
+Times print in the local zone of the machine the CLI runs on; `skip --at` reads a
+naive time the same way, and `--today`/`--date` are dates in the candybar's own
+timezone.
+
 ## Migrate a cron job onto candybar (Story 7.5, AD-21)
 
 ```bash

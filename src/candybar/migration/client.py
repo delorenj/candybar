@@ -101,5 +101,45 @@ class CandybarApi:
         )
         return list(body.get("invocations", []))
 
+    # The operator control surface (`candybar ls|show|next|schedule|pause|
+    # resume|skip|edit|history|tail`) reads and writes through the same client.
+
+    def get_invocation(self, invocation_id: str) -> dict[str, Any] | None:
+        """The stored row, or None while the invocation is still in flight."""
+        try:
+            return self._call("GET", f"/invocations/{self._id(invocation_id)}")
+        except ApiError as exc:
+            if exc.status == 404:
+                return None
+            raise
+
+    def invoke(self, candybar_id: str) -> dict[str, Any]:
+        return self._call("POST", f"/candybars/{self._id(candybar_id)}/invoke")
+
+    def schedule(self, start: str, end: str) -> list[dict[str, Any]]:
+        query = urllib.parse.urlencode({"from": start, "to": end})
+        return self._call("GET", f"/schedule?{query}")
+
+    def schedule_next(self) -> dict[str, Any] | None:
+        try:
+            return self._call("GET", "/schedule/next")
+        except ApiError as exc:
+            if exc.status == 404:
+                return None
+            raise
+
+    def skip(self, candybar_id: str, fire_time: str) -> dict[str, Any]:
+        return self._call(
+            "POST", f"/candybars/{self._id(candybar_id)}/skip", {"fireTime": fire_time}
+        )
+
+    def skip_day(self, candybar_id: str, day: str) -> dict[str, Any]:
+        return self._call(
+            "POST", f"/candybars/{self._id(candybar_id)}/skip-rest-of-day", {"date": day}
+        )
+
+    def set_noise(self, candybar_id: str, noise: bool) -> dict[str, Any]:
+        return self._call("PUT" if noise else "DELETE", f"/candybars/{self._id(candybar_id)}/noise")
+
 
 __all__ = ["API_URL_ENV", "ApiError", "CandybarApi", "api_url"]
