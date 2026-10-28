@@ -707,19 +707,19 @@ jobs:
     schedule: OnCalendar=*-*-* 16:00:00; Persistent=true; RandomizedDelaySec=60
     jitter_s: 60
     unit: tolt-forge-daily.timer
-    unit_file: /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-forge-daily.timer
+    unit_file: /home/delorenj/code/lost-things-forge/foundry/cron/tolt-forge-daily.timer
   deviations:
   - RandomizedDelaySec=60 dropped (now fires exactly 16:00 local)
   - Persistent=true catch-up replaced by candybar misfire policy
   native_failing: true
   source_of_truth:
-    repo: delorenj/tower-of-lost-things
+    repo: delorenj/lost-things-forge
     path: foundry/cron/tolt-forge-daily.timer
-    commit: 1576845debc6f6e03d17bfdcbe76b3a9327c2e47
+    commit: 0753cc4cfc7178ca6d3d2ab24ee56083551ff280
   disable:
   - systemctl --user disable --now tolt-forge-daily.timer
   rollback:
-  - systemctl --user enable --now /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-forge-daily.timer
+  - systemctl --user enable --now /home/delorenj/code/lost-things-forge/foundry/cron/tolt-forge-daily.timer
   status: verified
   candybar_id: 01a17938-5381-7f92-8f1e-6966648dd452
   cutover_at: '2026-10-26T17:18:17.559351Z'
@@ -760,20 +760,20 @@ jobs:
     schedule: OnCalendar=*-*-* 03:00:00; Persistent=true; RandomizedDelaySec=120
     jitter_s: 120
     unit: tolt-items-daily.timer
-    unit_file: /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-items-daily.timer
+    unit_file: /home/delorenj/code/lost-things-forge/foundry/cron/tolt-items-daily.timer
   deviations:
   - RandomizedDelaySec=120 dropped (now fires exactly 03:00 local)
   - Persistent=true catch-up replaced by candybar misfire policy
   - tolt-items-inbox.path trigger stays on systemd (not this job)
   native_failing: true
   source_of_truth:
-    repo: delorenj/tower-of-lost-things
+    repo: delorenj/lost-things-forge
     path: foundry/cron/tolt-items-daily.timer
-    commit: 1576845debc6f6e03d17bfdcbe76b3a9327c2e47
+    commit: 0753cc4cfc7178ca6d3d2ab24ee56083551ff280
   disable:
   - systemctl --user disable --now tolt-items-daily.timer
   rollback:
-  - systemctl --user enable --now /home/delorenj/code/tower-of-lost-things/foundry/cron/tolt-items-daily.timer
+  - systemctl --user enable --now /home/delorenj/code/lost-things-forge/foundry/cron/tolt-items-daily.timer
   status: verified
   candybar_id: 01a17938-6fff-7821-bcf3-3048d43cce18
   cutover_at: '2026-10-26T17:18:24.754946Z'
