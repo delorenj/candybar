@@ -910,6 +910,10 @@ jobs:
     action: decommission
     outcome: ok
     detail: candybar 01a17938-961c-7581-b9c2-ec6f9e3a708a disabled
+  - at: '2026-10-28T09:27:53.233061Z'
+    action: decommission
+    outcome: note
+    detail: 'source removed: ~/.config/systemd/user honda-hunt-daily-check.{service,timer} and .service.d drop-in, DeLoDocs Projects/project-fuckudeer/scripts/systemd/ units (dir removed). The project and its daily-honda-hunt-check.sh script are untouched.'
 - id: systemd:delodocs-wiki-self-tuning-weekly.timer
   wave: '7.16'
   candybar:
@@ -2557,6 +2561,10 @@ jobs:
     action: decommission
     outcome: ok
     detail: candybar 01a1794c-c058-7f06-ae67-2f47b5b32219 disabled
+  - at: '2026-10-28T09:27:53.233061Z'
+    action: decommission
+    outcome: note
+    detail: 'source removed: zshyzsh scripts/sync-vault-to-drive.sh (git rm), ~/.local/bin/sync-vault-to-drive link, manifests/sync-vault-to-drive; skills folder-curator/drive-sync.md updated. gdrive:ObsidianVault copy left in place.'
 - id: systemd:bloodbank-agent-hooks-health.timer
   wave: '7.8'
   candybar:
