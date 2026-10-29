@@ -191,6 +191,11 @@ def load_policy(path: Path) -> dict[str, dict]:
             raise ValueError("exception requires exact id, owner and reason")
         if entry["id"] in exceptions or any(c in entry["id"] for c in "*?["):
             raise ValueError("duplicate or wildcard scheduling exception")
+        if (any(key in entry for key in ("ledger_id", "ledger_status"))
+                and (not all(isinstance(entry.get(key), str) and entry[key].strip()
+                             for key in ("ledger_id", "ledger_status"))
+                     or entry["ledger_status"] != "rolled-back")):
+            raise ValueError("invalid rollback exception metadata")
         exceptions[entry["id"]] = entry
     return exceptions
 

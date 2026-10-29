@@ -29,9 +29,18 @@ def transition(report: dict, previous: dict) -> tuple[dict, list[str]]:
             held = {key for key in old - current if any(key.startswith(prefixes.get(name, "unknown:" + name))
                                                         for name in unavailable)}
     current |= held
-    messages = [f"SCHEDULING POLICY: {key}: {policy.REMEDY if not key.startswith('unknown:') else 'inventory unknown; inspect doctor report'}"
-                for key in sorted(current - old)]
-    messages += [f"SCHEDULING POLICY RECOVERED: {key} cleared." for key in sorted(old - current)]
+    introduced, cleared = current - old, old - current
+    messages = []
+    if introduced or cleared:
+        new_bypass = sum(not key.startswith("unknown:") for key in introduced)
+        recovered_bypass = sum(not key.startswith("unknown:") for key in cleared)
+        new_unknown = sum(key.startswith("unknown:") for key in introduced)
+        resolved_unknown = sum(key.startswith("unknown:") for key in cleared)
+        messages.append("SCHEDULING POLICY transition: "
+                        f"{new_bypass} new bypass, {recovered_bypass} cleared; "
+                        f"{new_unknown} new unknown, {resolved_unknown} resolved. "
+                        "Inspect Candybar scheduling-policy-drift report and run candybar doctor --live. "
+                        "Do not bulk-disable or migrate existing clocks.")
     return {"conditions": sorted(current)}, messages
 
 

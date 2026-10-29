@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "at": "2026-10-29T08:43:09.351155+00:00",
+  "at": "2026-10-29T08:53:44.551369+00:00",
   "sources": {
     "registry": {
       "status": "ok",
@@ -719,7 +719,7 @@
         {
           "id": "01a186d3-5649-7faf-ba9e-a90057ac491e",
           "name": "scheduling-policy-drift",
-          "enabled": false,
+          "enabled": true,
           "runner": {
             "kind": "exec"
           }

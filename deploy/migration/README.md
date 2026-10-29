@@ -21,8 +21,11 @@ there are no wildcard exemptions. A native timer still fails even if its
 `.service` is the registered runner. Unknown/drift are observations, not
 permission to disable or migrate other jobs en masse.
 
-The Candybar-owned `deploy/policy/candybar.toml` direct-exec job emits only
-new/cleared condition notifications via the existing `33god-pm` route. Its
+The Candybar-owned `deploy/policy/candybar.toml` direct-exec job emits one
+aggregate count-only new/cleared condition notification per changed audit via
+the existing `33god-pm` route; no timer names, provider quotas, models, or
+job contents enter Telegram. It was registered disabled and drilled first;
+its committed manifest reflects the enabled production state. Its
 report is `/home/delorenj/.local/state/candybar-scheduling-policy/report.json`.
 AD-22's independent `candybar-watchdog.timer` remains outside Candybar because
 Candybar cannot watch its own clock. CI checks a clean fixture and proves a

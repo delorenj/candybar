@@ -12,6 +12,13 @@
       "reason": "AD-22 independent Candybar clock watchdog."
     },
     {
+      "id": "systemd:user:newapi-allowances.timer",
+      "owner": "AutomaticAI/Candybar migration",
+      "reason": "Exact native clock restored by migration rollback after scheduled Candybar failures; ledger status rolled-back, Candybar registration disabled. This does not exempt any future timer or authorize quota/model notifications.",
+      "ledger_id": "systemd:newapi-allowances",
+      "ledger_status": "rolled-back"
+    },
+    {
       "id": "systemd:user:infra-doctor.timer",
       "owner": "Candybar / infra owners",
       "reason": "Canonical cron-inventory exclusion (b): probes infrastructure Candybar depends on."
