@@ -38,6 +38,8 @@ def test_rogue_timer_and_registered_service_timer_still_fail():
 def test_rolled_back_native_clock_exact_exception_only():
     data = empty()
     data["sources"]["systemd-user"]["rows"] = [timer("newapi-allowances.timer")]
+    data["sources"]["registry"]["rows"] = [{"id": "01a1793a-d2a0-7070-b267-4f6d3e41a3b5", "enabled": False,
+                                              "runner": {"kind": "systemd", "unit": "newapi-allowances.service"}}]
     exceptions = policy.load_policy(Path(__file__).parents[1] / "deploy/scheduling-policy.json")
     assert policy.audit(data, exceptions)["status"] == "pass"
     assert exceptions["systemd:user:newapi-allowances.timer"]["ledger_status"] == "rolled-back"

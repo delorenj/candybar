@@ -27,7 +27,8 @@ def transition(report: dict, previous: dict) -> tuple[dict, list[str]]:
             prefixes = {"systemd-user": "systemd:user:", "systemd-system": "systemd:system:",
                         "crontab": "crontab:", "hermes": "hermes:", "n8n": "n8n:"}
             held = {key for key in old - current if any(key.startswith(prefixes.get(name, "unknown:" + name))
-                                                        for name in unavailable)}
+                                                        for name in unavailable)
+                    or any(item.startswith(key + ":") for item in report["unknown"])}
     current |= held
     introduced, cleared = current - old, old - current
     messages = []
@@ -53,9 +54,9 @@ def main() -> int:
     args = parser.parse_args()
     try:
         exceptions = policy.load_policy(args.policy)
-        inventory = json.loads(args.inventory.read_text()) if args.inventory else policy.collect(
-            os.environ.get("CANDYBAR_API_URL", "http://127.0.0.1:8700"), Path.home() / ".hermes")
-        report = policy.audit(inventory, exceptions)
+        base = os.environ.get("CANDYBAR_API_URL", "http://127.0.0.1:8700")
+        inventory = json.loads(args.inventory.read_text()) if args.inventory else policy.collect(base, Path.home() / ".hermes")
+        report = policy.audit(inventory, exceptions, base=None if args.inventory else base)
     except (OSError, ValueError, TypeError):
         report = {"status": "unknown", "violations": [], "unknown": ["policy/inventory unavailable"]}
     previous = json.loads(args.state_file.read_text()) if args.state_file.exists() else {"conditions": []}

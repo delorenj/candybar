@@ -1,8 +1,9 @@
-"""Run a stdout-transition detector without losing its state on delivery failure.
+"""Run a stdout-transition detector with a durable, ordered delivery outbox.
 
-The detector must accept --state-file and emit only new/recovered conditions.
-State is staged under the real detector's lock; only successful delivery commits
-it. No inference, scheduler, credentials or platform transport lives here.
+Persist payload and candidate state before transport; replay pending work before
+fresh detection, under the detector's existing lock. Delivery is at least once:
+a remote acceptance followed by a crash before local commit can duplicate it.
+No inference, scheduler or credentials live here.
 """
 from __future__ import annotations
 
@@ -35,6 +36,23 @@ def bounded(argv: list[str], timeout: float, body: str | None = None) -> tuple[i
         return child.returncode, raw.decode("utf-8", errors="strict")
 
 
+class PendingError(RuntimeError):
+    """Pending delivery is uncertain; preserve it for operator inspection."""
+
+
+def sync_directory(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def remove(path: Path) -> None:
+    path.unlink(missing_ok=True)
+    sync_directory(path.parent)
+
+
 def atomic(path: Path, content: bytes) -> None:
     with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as out:
         tmp = Path(out.name)
@@ -43,6 +61,7 @@ def atomic(path: Path, content: bytes) -> None:
             out.flush()
             os.fsync(out.fileno())
             os.replace(tmp, path)
+            sync_directory(path.parent)
         finally:
             tmp.unlink(missing_ok=True)
 
@@ -60,13 +79,57 @@ def notify(profile: str, target: str, message: str, timeout: float) -> None:
         raise RuntimeError("notification was not confirmed")
 
 
+def enqueue(path: Path, profile: str, target: str, message: str,
+            candidate: str | None) -> None:
+    # None denotes the wrapper's execution-failure notice, not detector state.
+    atomic(path, json.dumps({"version": 1, "profile": profile, "target": target,
+                            "message": message, "candidate": candidate}).encode())
+
+
+def replay(path: Path, state: Path, operational: Path, profile: str, target: str,
+           timeout: float, sender) -> int:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return 0
+    except OSError as exc:
+        raise PendingError("pending delivery unknown; cannot inspect outbox; retry after restoring access") from exc
+    try:
+        pending = json.loads(path.read_text())
+        if (not isinstance(pending, dict)
+                or set(pending) != {"version", "profile", "target", "message", "candidate"}
+                or type(pending["version"]) is not int or pending["version"] != 1
+                or pending["profile"] != profile or pending["target"] != target
+                or not isinstance(pending["message"], str) or not pending["message"].strip()):
+            raise ValueError("invalid outbox envelope or changed delivery route")
+        candidate = pending["candidate"]
+        if candidate is not None and (not isinstance(candidate, str)
+                                      or not isinstance(json.loads(candidate), dict)):
+            raise ValueError("invalid pending detector state")
+    except (OSError, ValueError, TypeError) as exc:
+        raise PendingError("pending delivery unknown; outbox preserved; inspect .pending.json before retry") from exc
+    sender(profile, target, pending["message"], timeout)
+    if candidate is None:
+        atomic(operational, b"failed\n")
+    else:
+        atomic(state, candidate.encode())
+        remove(operational)
+    # Commit precedes removal. Interruption in this window retries (may duplicate),
+    # never drops a transient event or skips its candidate state.
+    remove(path)
+    return 1
+
+
 def execute(command: list[str], state: Path, profile: str, target: str,
             timeout: float = 90, notify_timeout: float = 45, sender=notify) -> dict:
-    state = state.expanduser()
+    # Resolve aliases before choosing lock/outbox paths: one detector, one lock.
+    state = state.expanduser().resolve()
     state.parent.mkdir(parents=True, exist_ok=True)
     operational = state.with_name(state.name + ".delivery-health")
+    pending = state.with_name(state.name + ".pending.json")
     with open(str(state) + ".lock", "a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        delivered = replay(pending, state, operational, profile, target, notify_timeout, sender)
         with tempfile.TemporaryDirectory(prefix=".transition-", dir=state.parent) as directory:
             staged = Path(directory) / "state.json"
             if state.exists():
@@ -75,23 +138,24 @@ def execute(command: list[str], state: Path, profile: str, target: str,
                 rc, output = bounded([*command, "--state-file", str(staged)], timeout)
                 if rc:
                     raise RuntimeError(f"detector exited {rc}")
-                candidate = json.loads(staged.read_text())
-                if not isinstance(candidate, dict):
+                candidate = staged.read_text()
+                if not isinstance(json.loads(candidate), dict):
                     raise TypeError("detector state must be an object")
             except (OSError, ValueError, TypeError, RuntimeError) as exc:
                 if not operational.exists():
-                    sender(profile, target, "CANDYBAR TRANSITION TOOL FAILURE: detector execution unavailable; inspect Candybar invocation. No inference attempted.", notify_timeout)
-                    atomic(operational, b"failed\n")
+                    enqueue(pending, profile, target, "CANDYBAR TRANSITION TOOL FAILURE: detector execution unavailable; inspect Candybar invocation. No inference attempted.", None)
+                    replay(pending, state, operational, profile, target, notify_timeout, sender)
                 raise RuntimeError("detector execution failed; transition state preserved") from exc
             message = output.strip()
             if operational.exists():
                 message = "\n".join(filter(None, [message, "CANDYBAR TRANSITION RECOVERED: detector execution available."]))
             if message:
-                sender(profile, target, message, notify_timeout)
-            atomic(state, staged.read_bytes())
-            operational.unlink(missing_ok=True)
-            return {"status": "success", "message": "transitions delivered" if message else "silent: no transitions",
-                    "token_spend": 0, "delivery": "confirmed" if message else "silent"}
+                enqueue(pending, profile, target, message, candidate)
+                delivered += replay(pending, state, operational, profile, target, notify_timeout, sender)
+            else:
+                atomic(state, candidate.encode())
+            return {"status": "success", "message": "transitions delivered" if delivered else "silent: no transitions",
+                    "token_spend": 0, "delivery": "confirmed" if delivered else "silent"}
 
 
 def main() -> int:
@@ -109,6 +173,9 @@ def main() -> int:
     try:
         result = execute(command, args.state_file, args.profile, args.target, args.timeout, args.notify_timeout)
         code = 0
+    except PendingError as exc:
+        result = {"status": "fail", "message": str(exc), "delivery": "unknown", "token_spend": 0}
+        code = 1
     except (OSError, ValueError, TypeError, RuntimeError) as exc:
         result = {"status": "fail", "message": str(exc) if isinstance(exc, RuntimeError) else "transition execution failed", "token_spend": 0}
         code = 1

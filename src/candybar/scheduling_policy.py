@@ -6,14 +6,31 @@ systemd services are execution, not clocks; a timer is never blessed by its serv
 """
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
+import os
 import re
 import subprocess
+import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+
+from candybar.migration.ledger import LedgerError, load_ledger
+
+# Never honor CANDYBAR_LEDGER, inventory metadata or a policy-supplied ledger path
+# as rollback evidence: this checkout owns the canonical migration record.
+CANONICAL_LEDGER = Path(__file__).resolve().parents[2] / "deploy/migration/ledger.yaml"
+# A --policy override may remove an exemption (making it a violation), but must
+# never convert this protected application clock into an unconditional exemption.
+ROLLBACK_BINDINGS = {
+    "systemd:user:newapi-allowances.timer": {
+        "ledger_id": "systemd:newapi-allowances", "ledger_status": "rolled-back",
+        "candybar_id": "01a1793a-d2a0-7070-b267-4f6d3e41a3b5",
+    },
+}
 
 REQUIRED = {"registry", "systemd-user", "systemd-system", "crontab", "hermes"}
 REMEDY = "not a Candybar; register the recurring job in Candybar and retire its native clock"
@@ -191,16 +208,62 @@ def load_policy(path: Path) -> dict[str, dict]:
             raise ValueError("exception requires exact id, owner and reason")
         if entry["id"] in exceptions or any(c in entry["id"] for c in "*?["):
             raise ValueError("duplicate or wildcard scheduling exception")
-        if (any(key in entry for key in ("ledger_id", "ledger_status"))
+        if (any(key in entry for key in ("ledger_id", "ledger_status", "candybar_id"))
                 and (not all(isinstance(entry.get(key), str) and entry[key].strip()
-                             for key in ("ledger_id", "ledger_status"))
-                     or entry["ledger_status"] != "rolled-back")):
+                             for key in ("ledger_id", "ledger_status", "candybar_id"))
+                     or entry["ledger_status"] != "rolled-back"
+                     or not entry["id"].startswith("systemd:user:")
+                     or not entry["id"].endswith(".timer"))):
             raise ValueError("invalid rollback exception metadata")
+        binding = ROLLBACK_BINDINGS.get(entry["id"], {})
+        if any(entry.get(key) != value for key, value in binding.items()):
+            raise ValueError("protected rollback exception requires exact canonical identities")
         exceptions[entry["id"]] = entry
     return exceptions
 
 
-def audit(inventory: dict, exceptions: dict) -> dict:
+def rollback_evidence(exception: dict, registry_source: dict, base: str | None) -> tuple[str, str]:
+    """Verify exact native/API ownership, serialized with migration mutations.
+
+    Offline inventories supply registry observations, not ledger authority. Live
+    audits refresh registry inside the ledger directory's shared lock so an
+    in-progress migrate cannot be certified from mixed before/after snapshots.
+    """
+    try:
+        fd = os.open(CANONICAL_LEDGER.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            source = {"status": "ok", "rows": registry(base)} if base is not None else registry_source
+            if not isinstance(source, dict) or source.get("status") != "ok" or not isinstance(source.get("rows"), list):
+                return "unknown", "registry unavailable; rerun doctor --live before accepting rollback"
+            rows = source["rows"]
+            if any(not isinstance(row, dict) or not isinstance(row.get("id"), str)
+                   or type(row.get("enabled")) is not bool or not isinstance(row.get("runner"), dict) for row in rows):
+                return "unknown", "registry malformed; rerun doctor --live before accepting rollback"
+            owners = [row for row in rows if row["id"] == exception["candybar_id"]]
+            if len(owners) != 1:
+                return "unknown", "exact Candybar registration absent/ambiguous; inspect registry and retry"
+            if owners[0]["enabled"]:
+                return "fail", "duplicate native/Candybar clocks: disable exact Candybar registration via migrate rollback and verify"
+            ledger = load_ledger(CANONICAL_LEDGER)
+            entry = ledger.entry(exception["ledger_id"])
+            native = entry.native
+            if (entry.candybar_id != exception["candybar_id"] or native.kind != "systemd-timer"
+                    or exception["id"] != f"systemd:user:{native.unit}"
+                    or owners[0]["runner"] != entry.candybar.get("runner")):
+                return "unknown", "rollback identity mismatch; inspect canonical ledger and exact API registration"
+            if entry.disable_pending:
+                return "unknown", "rollback disable_pending=true; restore API access, rerun migrate rollback, then doctor --live"
+            if entry.status != "rolled-back":
+                return "fail", "canonical ledger is not rolled-back; native clock must not be exempted"
+            return "pass", "canonical rolled-back ledger and exact disabled registration verified"
+        finally:
+            os.close(fd)
+    except (OSError, LedgerError, ValueError, TypeError, KeyError, urllib.error.URLError):
+        return "unknown", "canonical rollback ledger/registry unavailable, malformed or migrating; inspect and retry doctor --live"
+
+
+def audit(inventory: dict, exceptions: dict, *, base: str | None = None) -> dict:
     violations, approved, unknown = [], [], []
     counts = {}
     try:
@@ -250,7 +313,21 @@ def audit(inventory: dict, exceptions: dict) -> dict:
                 if not active:
                     continue
                 if key in exceptions:
-                    approved.append(exceptions[key])
+                    exception = exceptions[key]
+                    if key in ROLLBACK_BINDINGS or "ledger_id" in exception:
+                        binding = ROLLBACK_BINDINGS.get(key, {})
+                        if any(exception.get(k) != v for k, v in binding.items()):
+                            unknown.append(f"{key}: protected rollback identity mismatch; inspect policy")
+                            continue
+                        status, detail = rollback_evidence(exception, sources.get("registry", {}), base)
+                        if status == "unknown":
+                            unknown.append(f"{key}: {detail}")
+                        elif status == "fail":
+                            violations.append({"id": key, "message": detail})
+                        else:
+                            approved.append({**exception, "evidence": detail})
+                    else:
+                        approved.append(exception)
                 else:
                     violations.append({"id": key, "message": REMEDY})
     except (ValueError, TypeError, KeyError, AttributeError):

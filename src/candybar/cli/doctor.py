@@ -33,12 +33,12 @@ def install(app: typer.Typer) -> None:
             if repo:
                 reports["repo"] = policy.repo_lint(repo, exceptions)
             if live or inventory:
-                data = policy.collect(os.environ.get("CANDYBAR_API_URL", "http://127.0.0.1:8700"),
-                                      Path.home() / ".hermes", n8n_export) if live else json.loads(Path(str(inventory)).read_text())
+                base = os.environ.get("CANDYBAR_API_URL", "http://127.0.0.1:8700")
+                data = policy.collect(base, Path.home() / ".hermes", n8n_export) if live else json.loads(Path(str(inventory)).read_text())
                 if write_inventory:
                     write_inventory.parent.mkdir(parents=True, exist_ok=True)
                     write_inventory.write_text(json.dumps(data, indent=2) + "\n")
-                reports["machine"] = policy.audit(data, exceptions)
+                reports["machine"] = policy.audit(data, exceptions, base=base if live else None)
         except (OSError, ValueError, TypeError):
             reports["input"] = {"status": "unknown", "unknown": ["policy or inventory unreadable/malformed"]}
         status = "unknown" if any(r["status"] == "unknown" for r in reports.values()) else "fail" if any(r["status"] == "fail" for r in reports.values()) else "pass"

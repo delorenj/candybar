@@ -43,6 +43,8 @@ Never: edit watchdog detection; claim its separate review accepted; change auth 
 - Given fixtures and live host, when doctor runs, then unauthorized clocks fail and unavailable sources stay unknown; remaining drift is reported without mutation.
 
 ## Implementation Notes
+CAND-50 independent HOLD repair (F1/F2), authorized by the delegated operator directive: persist payload plus candidate state before transport, replay before fresh detection, preserve uncertain pending data, and verify conditional rollback exemptions against fresh canonical ledger and exact disabled registry identity. At-least-once delivery only; rollback remains availability-first during API outage. Changes exclude CAND-49 scoped activation paths. Parent performs independent re-review; ticket remains in progress.
+
 Component board CAND-50, delegated owner. Component manifest has no projected PM. g33 preflight PASS (legacy board warning); CodeGraph status inspected, no sidecar index. The user's explicit sequential scope and deploy authorization resolve checkpoint decisions; no additional admin approval required.
 
 ## Verification

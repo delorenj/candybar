@@ -21,6 +21,32 @@ there are no wildcard exemptions. A native timer still fails even if its
 `.service` is the registered runner. Unknown/drift are observations, not
 permission to disable or migrate other jobs en masse.
 
+Rollback exceptions are **conditional**, not a policy label: doctor rereads this
+checkout's canonical `deploy/migration/ledger.yaml`, under the migration directory
+lock, and requires the exact ledger id, native timer, API UUID and runner identity,
+`status: rolled-back`, `disable_pending: false`, and an observed disabled
+registration. Live audits refresh the registry while holding that lock; an active
+migration, missing/malformed ledger or registry, or absent exact registration is
+unknown, never pass. An enabled exact registration plus native timer is a duplicate
+clock failure. Neither `CANDYBAR_LEDGER`, an alternate policy's ledger path nor an
+offline inventory's claimed ledger status is evidence. Offline fixtures supply only
+registry observations and still use the canonical ledger; they are not live-host
+certification.
+
+The stdout transition wrapper persists `<state-file>.pending.json` (payload,
+delivery route and candidate detector state), fsyncs file and directory **before**
+transport, and replays it under the existing detector lock before running a new
+check. After confirmation it commits that candidate, then checks current health;
+a recovered transient therefore yields the original alert followed by a separate,
+ordered recovery. Persistent failures retain the original pending bytes. Malformed
+pending data or a changed route is unknown and fails without overwriting the
+outbox: inspect and repair the file/route rather than deleting it to make green.
+Existing detector state and `.delivery-health` markers remain compatible; state
+symlink aliases use the same resolved lock/outbox. Delivery is **at least once**:
+remote acceptance followed by interruption before local commit/removal can cause
+a duplicate. The Hermes endpoint has no idempotency-key contract here; this is not
+exactly-once delivery and does not add a scheduler or inference.
+
 The Candybar-owned `deploy/policy/candybar.toml` direct-exec job emits one
 aggregate count-only new/cleared condition notification per changed audit via
 the existing `33god-pm` route; no timer names, provider quotas, models, or
@@ -138,8 +164,13 @@ scheduler is active again (a re-install resurrected it: two schedulers).
 **rollback** = run `rollback` and probe the native scheduler active, THEN
 disable the candybar. With the API down the native scheduler is still
 restored, the entry becomes `rolled-back` with `disable_pending: true`, and
-the CLI exits 3; re-run `rollback` when the API is back. Meanwhile the host
-executor skips any queued scheduled fire of a candybar it reads as disabled.
+the CLI exits 3; re-run `rollback` when the API is back. This is an
+**availability-first** rollback, not a strict single-clock guarantee under an
+API-only outage: Candybar may remain enabled while the restored native scheduler
+also fires. Doctor must fail/return actionable unknown until the exact registration
+is disabled and `disable_pending` clears; do not treat rollback-ready as proof of
+single-clock safety. The executor skips queued scheduled fires only when it can
+read the Candybar registration as disabled.
 If the restore itself fails, the candybar is NOT disabled (the job keeps one
 scheduler) and the CLI exits 1.
 
