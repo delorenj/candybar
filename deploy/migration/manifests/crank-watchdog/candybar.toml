@@ -1,0 +1,15 @@
+# CAND-50: no-agent detector, direct exec. Candybar owns the only clock.
+# Installed detector is separately reviewed; this adapter does not change detection.
+[candybar]
+name = "crank-watchdog"
+description = "LLM-free crank attendance, host saturation and pane-burn watchdog with transition-only Telegram delivery"
+tags = ["ops", "crank", "no-agent", "migrated"]
+schedule = "*/15 * * * *"
+timezone = "UTC"
+noise = true
+
+[candybar.runner]
+kind = "exec"
+argv = ["/home/delorenj/code/33GOD/candybar/.venv/bin/python", "-m", "candybar.transition_exec", "--state-file", "/home/delorenj/.local/state/zcrank/watchdog.json", "--profile", "33god-pm", "--target", "telegram:7564050286", "--", "/home/delorenj/.hermes/profiles/33god-pm/scripts/crank-watchdog.sh"]
+workdir = "/home/delorenj/code/33GOD/candybar"
+timeout_s = 180

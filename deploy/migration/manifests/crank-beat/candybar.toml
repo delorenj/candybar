@@ -2,8 +2,8 @@
 # The crank beat: zcrank-gate.sh monitors Workspace zellij panes; on change the
 # 33god-pm agent prods stalled panes forward. Hermes keeps the session,
 # monitor, economics and local delivery; candybar owns the schedule.
-# The deadman is the excluded hermes job crank-watchdog (061c4dbedc1c), which
-# reads this job's hermes output dir — still written on every attempt.
+# The deadman is the crank-watchdog exec candybar (CAND-50). It reads scanner
+# cadence dispositions and structured attendance, not Hermes output-file mtime.
 # 288 fires/day -> noise. Rollback: ledger entry hermes:33god-pm:777c511a009c.
 [candybar]
 name = "crank-beat"
