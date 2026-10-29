@@ -6,6 +6,13 @@ every downstream behavior (schedule evaluation, dispatch, execution,
 accounting, live-view updates) is a consumer of bus facts and commands. No
 crontab, no private timers, no scheduler libraries that own clocks.
 
+**Candybar is the single clock for all recurring work on this host.** Do not
+add a crontab entry, a new systemd `.timer`, a Hermes recurring job, an n8n
+Schedule Trigger or a private sleep/poll loop; register a candybar instead.
+Execution can still be a `.service`, an external-pinned Hermes job, an n8n
+webhook or any exec argv. See [`AGENTS.md`](AGENTS.md) for the operator
+rules and [Doctor](#doctor-scheduling-policy-lint) for the audit.
+
 Roles live in one Python asyncio deployable (heartbeat, dispatcher, executor,
 api), selected by CLI role flag; the Postgres registry is the sole inventory
 and the daemon its only writer.
@@ -69,6 +76,18 @@ noise = false              # optional
 uv run candybar daemon --roles api   # serves POST /candybars on 127.0.0.1:8700
 uv run candybar register ./my-job    # -> 201 + row + bloodbank.cron.candybar.created
 ```
+
+`register` is **create-only**: it never updates. To change an existing
+candybar use `candybar edit` (schedule, timezone, name, description, tags,
+noise) or `PATCH /candybars/<id>` (the runner). The `[candybar.runner]` table
+form is preferred over `entrypoint` for scripts, because the API validates an
+`entrypoint` file against its own filesystem.
+
+Where manifests live: a job's own repo (committed next to its source), or for
+migrated jobs `deploy/migration/manifests/<name>/candybar.toml`. Canaries are
+`deploy/smoke/*/`, and the policy-drift job is `deploy/policy/candybar.toml`.
+Some older registrations have their definition of record only in
+`deploy/migration/ledger.yaml`'s `candybar:` block.
 
 Invalid cron/name/timezone → `application/problem+json` (422); duplicate name → 409;
 bus down → 503 and no row. API bind: `CANDYBAR_API_HOST`/`CANDYBAR_API_PORT`;
@@ -154,9 +173,9 @@ timeout_s = 3600                       # default; bounds the wait (the client is
   delorenj/hermes-agent:
   - the job must be pinned `scheduler: external`
     (`hermes cron edit <id> --scheduler external`), or Hermes' own ticker would
-    fire it as well. The ticker honours the pin after the gateway restart that
-    story 7.17 batches; until then the pin is inert, so **do not cut over a
-    Hermes job before 7.17 deploys it**.
+    fire it as well. The ticker honours the pin (story 7.17 shipped it with the
+    batched gateway restart); a new pin on a running gateway needs
+    `hermes-gateway-restart --reason ...`, never a raw `systemctl` restart.
   - a trigger that finds the job already running **joins** that attempt instead
     of starting another: never two concurrent attempts of one job.
   The executor finds the CLI as `hermes` on its `PATH` (`~/.local/bin/hermes`
@@ -200,15 +219,14 @@ timeout_s = 3600                       # default; bounds the wait (the client is
   pages for itself), for a redelivery, and for a failure the executor's own
   shutdown caused.
 - **Overlap.** A unit that is already starting or running is refused, not
-  joined. Until AD-20's `skipped(reason=overlap)` lands, that is a recorded
-  failure.
+  joined. It is recorded as `skipped(reason=overlap)` (AD-20), not as a failure.
 - **Executor restart.** Stopping the executor terminates the `systemctl` client,
   not the unit: a long unit keeps running under systemd, and its invocation is
   recorded `failed` ("executor stopped").
 - Read what a candybar runs with `GET /candybars/<id>/runner`
   (`{runner, entrypoint}`, exactly one non-null); it is outside the Holocene
   contract. `PATCH` with a `runner` replaces the entrypoint and the other way
-  round. The hermes runner is Story 7.4's.
+  round.
 
 ## Timezones and DST (Story 7.1, AD-16)
 
@@ -483,6 +501,27 @@ Drives the committed ledger `deploy/migration/ledger.yaml` as a REST client of
 the api role (never a registry writer). Schema, guard window, per-kind
 commands and the by-hand rollback: [`deploy/migration/README.md`](deploy/migration/README.md).
 
+## Doctor: scheduling policy lint
+
+```bash
+cd ~/code/33GOD/candybar
+uv run candybar doctor --repo .                  # repo gate: new .timer files fail, .service is fine
+uv run candybar doctor --repo . --live --json    # read-only host audit
+```
+
+`doctor` enforces the single-clock rule. The live audit reads the registry,
+every Hermes profile job store, user and system systemd timers, and user and
+`/etc` crontabs, and reports native recurring clocks that are not Candybars.
+Exit 0 passes, 1 means bypass clocks were found, and 2 means an inventory
+source was unavailable (never read 2 as green). It does not cover remote hosts,
+other users' crontabs, or n8n without `--n8n-export`. Findings are
+observations: do not auto-disable or migrate unfamiliar timers. The policy
+code is `src/candybar/scheduling_policy.py`, `scheduling_drift.py`,
+`transition_exec.py` and `deploy/scheduling-policy.json` (exact-id exceptions,
+no wildcards; AD-22's `candybar-watchdog.timer` is the only standing one). The
+`scheduling-policy-drift` candybar (`deploy/policy/candybar.toml`) runs the
+audit on a schedule. Details: [`deploy/migration/README.md`](deploy/migration/README.md).
+
 ## Write a candybar in Python (SDK)
 
 `sdks/python` is the pip package `candybar-sdk` (import `candybar_sdk`, zero
@@ -554,7 +593,8 @@ Instead it is recorded as `bloodbank.cron.candybar.skipped` with
   and the Epic 5 schedule API compute the same fire times.
 
 Write a skip through `registry.store.add_occurrence_skip`. It is idempotent
-and rejects an unknown candybar. The HTTP endpoint lands with Story 5.6.
+and rejects an unknown candybar. The HTTP endpoints are `POST /candybars/{id}/skip`
+and `/skip-rest-of-day` (see the Definitions API) and `candybar skip`.
 
 **Skipping the rest of a day (AD-13).** A `skips` row with
 `kind=rest_of_day` and a `day` (a date in the candybar's timezone) suppresses
@@ -684,16 +724,16 @@ curl -s https://candybar.delo.sh/metrics | head   # Prometheus series
 - The entrypoint applies `alembic upgrade head` before exec'ing the daemon
   (the daemon is the registry's sole writer, so boot-time migration cannot
   race).
-- Registered entrypoints execute **inside** the container; put job scripts in
-  `~/candybar/jobs` (bind-mounted at the same absolute path in the container,
-  override with `CANDYBAR_JOBS_DIR`) and register them by that path.
-- Each invocation runs in its own cgroup v2 scope inside the container, which
-  is what memory/CPU metering reads. The container runs `privileged` with a
-  private cgroup namespace. As root, the entrypoint moves itself into
-  `/sys/fs/cgroup/daemon`, delegates `+memory +cpu` to
-  `/sys/fs/cgroup/candybar`, and then drops to uid 10001 with `setpriv`.
-  Without a writable cgroupfs it logs the fact and runs invocations unscoped,
-  with memory and CPU reported as 0. `CANDYBAR_CGROUP_ROOT=""` turns scoping off.
+- The container runs the control plane only (heartbeat, dispatcher, api). Jobs
+  execute on the **host**: `candybar-executor.service` is a `systemd --user`
+  unit (AD-17, `deploy/host/`), so a job can use `systemctl --user`, `op`,
+  docker, `~/` and the hermes CLI. See `deploy/README.md`.
+- Each invocation runs in its own cgroup v2 scope under the host executor
+  unit's delegated cgroup, which is what memory/CPU metering reads. The
+  container sets `CANDYBAR_CGROUP_ROOT=""` because nothing runs in it.
+- `~/candybar/jobs` is mounted read-only in the container only so the API can
+  check that a registered `entrypoint` file exists (the host executor runs the
+  same absolute path; override with `CANDYBAR_JOBS_DIR`).
 - `docker stop` completes in ~1s when idle: both pull-consumer roles
   unsubscribe before draining. Restart/rejoin duplicates nothing —
   idempotency keys plus durable consumers make redelivery a republish from
