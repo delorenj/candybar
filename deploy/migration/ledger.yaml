@@ -3884,3 +3884,61 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation 48f2f5f4-9158-56aa-bb0d-83649dd3e42c (scheduled) success exit=0 runtime=3542ms memory=31342592B cpu=0.185
+- id: hermes:33god-pm:061c4dbedc1c
+  wave: CAND-50
+  candybar:
+    name: crank-watchdog
+    description: LLM-free crank attendance, host saturation and pane-burn watchdog with transition-only Telegram delivery
+    tags:
+    - ops
+    - crank
+    - no-agent
+    - migrated
+    schedule: '*/15 * * * *'
+    timezone: UTC
+    noise: true
+    runner:
+      kind: exec
+      argv:
+      - /home/delorenj/code/33GOD/candybar/.venv/bin/python
+      - -m
+      - candybar.transition_exec
+      - --state-file
+      - /home/delorenj/.local/state/zcrank/watchdog.json
+      - --profile
+      - 33god-pm
+      - --target
+      - telegram:7564050286
+      - --
+      - /home/delorenj/.hermes/profiles/33god-pm/scripts/crank-watchdog.sh
+      workdir: /home/delorenj/code/33GOD/candybar
+      timeout_s: 180
+  native:
+    kind: hermes
+    schedule: every 15m
+    profile: 33god-pm
+    job_id: 061c4dbedc1c
+    jobs_file: /home/delorenj/.hermes/profiles/33god-pm/cron/jobs.json
+  deviations:
+  - Interval phase changes to UTC quarter-hours; cadence remains 15 minutes.
+  - 'Operator directive supersedes original exclusion: AD-22 Candybar self-watchdog remains independent.'
+  - Direct exec transaction stages detector state until confirmed Telegram delivery; failed notifier preserves prior state.
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/candybar
+    path: deploy/migration/manifests/crank-watchdog/candybar.toml
+    commit: 406e9034d2df1a0265a3fa65f5c303872198dd52
+  disable:
+  - hermes -p 33god-pm cron pause 061c4dbedc1c
+  - hermes -p 33god-pm cron edit 061c4dbedc1c --scheduler external
+  rollback:
+  - hermes -p 33god-pm cron edit 061c4dbedc1c --scheduler internal
+  - hermes -p 33god-pm cron resume 061c4dbedc1c
+  status: planned
+  candybar_id: 01a186c1-110c-768e-9407-a1a2abe2105b
+  history:
+  - at: '2026-10-29T08:22:43Z'
+    action: readiness
+    outcome: ok
+    detail: 'disabled manual fixture invocation 723ee0b2-04cf-4aed-9ad2-f63fb3091eb9 exec success exit=0 tokens=0; no transitions/no send; supported notifier controlled Telegram proof message_id=2891; route resolved with owning Hermes resolver: telegram:7564050286 no thread. Detection review separate, not accepted by this evidence.'
+
