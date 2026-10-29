@@ -125,7 +125,6 @@ jobs:
     action: source-of-truth
     outcome: updated
     detail: AutomaticAI-io/client-portal @ 0f79ec1d removed gateway/ops/systemd/newapi-vm-health.timer (candybar owns the schedule); rollback now restores the unit from f337c6f7 into ~/.config/systemd/user before enabling it
-
 - id: systemd:newapi-db-pull
   wave: '7.13'
   candybar:
@@ -3366,7 +3365,6 @@ jobs:
     action: disable
     outcome: ok
     detail: 'drift: the native timer was enabled and running again since 2026-10-27 16:02 UTC (a systemctl client in the agents'' zellij-ark cgroup; the james-brennan installer does not enable it), so the dashboard ran from both schedulers; re-applied this entry''s disable command'
-
 - id: systemd:james-brennan-billing-ledger.timer
   wave: '7.14'
   candybar:
@@ -3912,10 +3910,12 @@ jobs:
       - --
       - /home/delorenj/.hermes/profiles/33god-pm/scripts/crank-watchdog.sh
       workdir: /home/delorenj/code/33GOD/candybar
+      env: {}
       timeout_s: 180
   native:
     kind: hermes
     schedule: every 15m
+    jitter_s: 0
     profile: 33god-pm
     job_id: 061c4dbedc1c
     jobs_file: /home/delorenj/.hermes/profiles/33god-pm/cron/jobs.json
@@ -3934,11 +3934,20 @@ jobs:
   rollback:
   - hermes -p 33god-pm cron edit 061c4dbedc1c --scheduler internal
   - hermes -p 33god-pm cron resume 061c4dbedc1c
-  status: planned
+  status: cutover
   candybar_id: 01a186c1-110c-768e-9407-a1a2abe2105b
+  cutover_at: '2026-10-29T08:26:26.422643Z'
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
   history:
   - at: '2026-10-29T08:22:43Z'
     action: readiness
     outcome: ok
     detail: 'disabled manual fixture invocation 723ee0b2-04cf-4aed-9ad2-f63fb3091eb9 exec success exit=0 tokens=0; no transitions/no send; supported notifier controlled Telegram proof message_id=2891; route resolved with owning Hermes resolver: telegram:7564050286 no thread. Detection review separate, not accepted by this evidence.'
-
+  - at: '2026-10-29T08:26:26.422643Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a186c1-110c-768e-9407-a1a2abe2105b enabled; first fire 2026-10-29T08:30:00Z

@@ -112,6 +112,12 @@ def main() -> int:
     except (OSError, ValueError, TypeError, RuntimeError) as exc:
         result = {"status": "fail", "message": str(exc) if isinstance(exc, RuntimeError) else "transition execution failed", "token_spend": 0}
         code = 1
+    invocation_id = os.environ.get("CANDYBAR_INVOCATION_ID")
+    if invocation_id:
+        receipt = {**result, "invocation_id": invocation_id,
+                   "trigger": os.environ.get("CANDYBAR_TRIGGER")}
+        atomic(args.state_file.with_name(args.state_file.name + ".last-run.json"),
+               json.dumps(receipt).encode())
     result_file = os.environ.get("CANDYBAR_RESULT_FILE")
     if result_file:
         Path(result_file).write_text(json.dumps({k: v for k, v in result.items() if k != "delivery"}))
