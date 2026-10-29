@@ -83,7 +83,7 @@ jobs:
     schedule: OnBootSec=2min; OnActiveSec=2min; OnUnitActiveSec=5min; RandomizedDelaySec=20s; Persistent=true
     jitter_s: 20
     unit: newapi-vm-health.timer
-    unit_file: /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-vm-health.timer
+    unit_file: /home/delorenj/.config/systemd/user/newapi-vm-health.timer
   deviations:
   - RandomizedDelaySec=20s dropped
   - OnBootSec/OnActiveSec boot re-arm dropped
@@ -97,7 +97,9 @@ jobs:
   disable:
   - systemctl --user disable --now newapi-vm-health.timer
   rollback:
-  - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-vm-health.timer
+  - git -C /home/delorenj/code/client-portal show f337c6f7049094132085b332604f24c974d8de1a:gateway/ops/systemd/newapi-vm-health.timer > /home/delorenj/.config/systemd/user/newapi-vm-health.timer
+  - systemctl --user daemon-reload
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/newapi-vm-health.timer
   status: verified
   candybar_id: 01a1793b-612b-797c-8746-17759edbb316
   cutover_at: '2026-10-26T17:21:37.543548Z'
@@ -119,6 +121,11 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation 705d1f8f-e8f6-538e-8adf-7eb587cd0c8e (scheduled) success exit=0 runtime=4458ms memory=14807040B cpu=0.0205
+  - at: '2026-10-29T07:30:00Z'
+    action: source-of-truth
+    outcome: updated
+    detail: AutomaticAI-io/client-portal @ 0f79ec1d removed gateway/ops/systemd/newapi-vm-health.timer (candybar owns the schedule); rollback now restores the unit from f337c6f7 into ~/.config/systemd/user before enabling it
+
 - id: systemd:newapi-db-pull
   wave: '7.13'
   candybar:
@@ -3355,6 +3362,11 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation 1a05958c-8bf1-56af-a432-253770c412a9 (scheduled) success exit=0 runtime=31016ms memory=84455424B cpu=0.3972
+  - at: '2026-10-29T07:35:00Z'
+    action: disable
+    outcome: ok
+    detail: 'drift: the native timer was enabled and running again since 2026-10-27 16:02 UTC (a systemctl client in the agents'' zellij-ark cgroup; the james-brennan installer does not enable it), so the dashboard ran from both schedulers; re-applied this entry''s disable command'
+
 - id: systemd:james-brennan-billing-ledger.timer
   wave: '7.14'
   candybar:
