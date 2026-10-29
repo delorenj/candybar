@@ -14,7 +14,7 @@ timezone = "America/New_York"
 noise = true
 
 [candybar.runner]
-kind = "hermes"
-profile = "33god-pm"
-job_id = "777c511a009c"
-timeout_s = 1800
+kind = "exec"
+argv = ["/home/delorenj/code/33GOD/candybar/.venv/bin/python", "-B", "/home/delorenj/.hermes/profiles/33god-pm/runtime/candybar/crank-beat/3509618461f7831f43ac0c53f219f35492861647/launch.py"]
+workdir = "/home/delorenj"
+timeout_s = 1860
