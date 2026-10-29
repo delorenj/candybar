@@ -1,0 +1,21 @@
+# CAND-49 scoped activation evidence — 2026-10-29
+
+## Activated scope
+
+- Existing Candybar `01a1793b-6dcd-730f-8317-5975681f9792` (`crank-beat`) retained `*/5 * * * *`, `America/New_York`, enabled, original identity/tags/noise. Live runner changed only from `hermes(profile=33god-pm, job_id=777c511a009c, timeout_s=1800)` to the existing exec interface pointing to the commit-addressed adapter, `timeout_s=1860` (1800-second CLI wait plus 60-second overhead). `cron/jobs.json` continues to pin `scheduler=external`, `no_agent=false`, and the existing per-run/daily economics limits. Activation transaction and original runner for rollback: `/home/delorenj/.hermes/profiles/33god-pm/runtime/candybar/crank-beat/activation.json` (`status=activated`). Do not rerun cutover; it deliberately refuses a non-original runner.
+- Reviewed image commit `3509618461f7831f43ac0c53f219f35492861647`, archive SHA-256 `1bf0e82725e0e2e5faed430d25713f6b3c6582ff1e0c9253c5aba1ca9799e3cb`. Promoted read-only source has exactly 18,061 manifest-listed files, no extras, and each file hash was verified during promotion. The archived bytes at the durable runtime path still hash to that digest. No new venv, Hermes install, scheduler, gateway restart, executor restart, fleet-wide environment override, or test notification was introduced. The single-install guard returned `OK` with existing stale-wrapper/registry/running-gateway warnings; the gateway (PID 1489937) and Candybar executor (PID 97724) remained active.
+
+## Real correlated invocations
+
+| Trigger | Candybar invocation / tick | Adapter PID → reviewed Hermes PID | Hermes execution | Terminal result | Attendance |
+|---|---|---|---|---|---|
+| manual | `e054b0a5-44fc-46b4-a26a-ab8e300a87f0` / none | `4002798` → `4002807` | `5f51389e3aca4ff6b95d217772032b73` | Candybar success, exit 0, 0 tokens; Hermes ledger completed, delivery suppressed | **Refused before inference**: 10,000,000-token daily limit reached; no agent constructed. |
+| next scheduled | `2378e87a-4cf8-50c0-a49f-c1e9a8d93b0e` / `tick:29887755`, 09:15 UTC | `4085409` → `4085478` | `bb9ee80eba0e4efa8e93a7a99d2211d7` | Candybar success, exit 0, 0 tokens; Hermes ledger completed, delivery suppressed | **Refused before inference**: same daily limit; no agent constructed. |
+
+For both, `parent-start.json`, `worker.json`, `stdout.txt`, and `parent-result.json` under `/home/delorenj/.hermes/profiles/33god-pm/runtime/candybar/crank-beat/receipts/<Candybar invocation>/` correlate API invocation, process ancestry, `cron-run-result.execution_id`, and the profile-local `cron/executions.db` row. The worker actually imported `cron.scheduler`, `cron.monitor`, `cron.economics`, `run_agent`, `gateway.platforms.base`, `gateway.run_notifications`, `gateway.run_turn`, `gateway.run_voice`, and `hermes_cli.main` from the promoted source; each recorded SHA-256 matched `module-hashes.json`. Interpreter was `/home/delorenj/.hermes/hermes-agent/.venv/bin/python`; active HERMES_HOME was `/home/delorenj/.hermes/profiles/33god-pm`. The worker observed `run_one_job`, economics refusal, then return; no agent-construction event. These are dispatch/guard/provenance proofs, **not** successful agent attendance or monitor acknowledgement.
+
+The baseline alias and immutable snapshot SHA-256 remained `8a9b048257306832946d9c139489b4e546ed6e9b516b83ce5b8f02b77f34e4aa`; `last_output_hash` retained that value and `pending_output_hash` remained non-null following each refusal (latest observed `73687fc81c7d9dddaab3c49036d9b1238ca5898f775a349f1c987c24281120f6`). No cap/provider/auth change was made to force an agent run. The scheduler updates the pending hash as it evaluates subsequent output, so pending *identity* need not remain the same; the baseline and pending state did not vanish.
+
+## Verification and rollback
+
+`52 passed, 2 skipped` for scoped adapter and native Hermes-runner tests; Ruff and `git diff --check` passed. Live activation is real, but acknowledgement progression requires a later **admitted** run and must be verified separately. Rollback, if needed, is a supported PATCH of only this Candybar runner to the `original.runner` in `activation.json`, with a readback; retain the Candybar job enabled and its clock. No rollback was performed.

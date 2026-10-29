@@ -44,11 +44,11 @@ Never restart the shared gateway or executor, globally override CANDYBAR_HERMES,
 
 ## Tasks & Acceptance
 
-- [ ] `deploy/scoped/crank-beat/launch.py`: stdlib parent/worker adapter, canonical parser and durable per-invocation provenance; no scheduler implementation.
-- [ ] `deploy/scoped/crank-beat/activate.py`: exact source promotion and transactional supported REST activation; rollback readback.
-- [ ] `tests/test_scoped_crank.py`: parser/exit/identity/admission classification and worker ABI tests.
-- [ ] `deploy/migration/manifests/crank-beat/candybar.toml`: narrow exec runner, same job and timeout.
-- [ ] `_bmad-output/implementation-artifacts/cand-49-scoped-activation.md`: live correlated receipts, unchanged settings, rollback and limits.
+- [x] `deploy/scoped/crank-beat/launch.py`: stdlib parent/worker adapter, canonical parser and durable per-invocation provenance; no scheduler implementation.
+- [x] `deploy/scoped/crank-beat/activate.py`: exact source promotion and transactional supported REST activation; rollback readback.
+- [x] `tests/test_scoped_crank.py`: parser/exit/identity/admission classification and worker ABI tests.
+- [x] `deploy/migration/manifests/crank-beat/candybar.toml`: narrow exec runner, same job pin and bounded timeout.
+- [x] `_bmad-output/implementation-artifacts/cand-49-scoped-activation.md`: live correlated receipts, unchanged settings, rollback and limits.
 
 Acceptance: Given reviewed archive, when activated through existing Candybar, then actual scheduler/monitor/economics/agent/gateway module paths and hashes resolve in durable candidate source. Given refusal, when completed, then pending remains and report does not claim a successful crank. Given next scheduled tick, when it fires, then a correlated Candybar/Hermes receipt proves the continuing path. Given rollback, when original runner is restored, then no second clock exists.
 
