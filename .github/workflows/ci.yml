@@ -77,6 +77,17 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      - name: Scheduling ownership policy (CAND-50)
+        run: |
+          uv run candybar doctor --repo . --json
+          uv run candybar doctor --inventory tests/fixtures/scheduling-policy/clean.json --json
+          set +e
+          uv run candybar doctor --inventory tests/fixtures/scheduling-policy/rogue.json
+          result=$?
+          set -e
+          test "$result" -eq 1
+          uv run pytest -q tests/test_scheduling_policy.py tests/test_transition_exec.py tests/test_scheduling_drift.py
+
       # Story 4.2: candybar-sdk (npm). node:test over the protocol matrix and
       # the no-network guards, tsc over the hand-written .d.ts, and an empty
       # production dependency tree (nothing in it could open a NATS socket).

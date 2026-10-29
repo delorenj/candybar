@@ -80,12 +80,12 @@ def execute(command: list[str], state: Path, profile: str, target: str,
                     raise TypeError("detector state must be an object")
             except (OSError, ValueError, TypeError, RuntimeError) as exc:
                 if not operational.exists():
-                    sender(profile, target, "CRANK WATCHDOG TOOL FAILURE: detector execution unavailable; inspect Candybar invocation. No inference attempted.", notify_timeout)
+                    sender(profile, target, "CANDYBAR TRANSITION TOOL FAILURE: detector execution unavailable; inspect Candybar invocation. No inference attempted.", notify_timeout)
                     atomic(operational, b"failed\n")
                 raise RuntimeError("detector execution failed; transition state preserved") from exc
             message = output.strip()
             if operational.exists():
-                message = "\n".join(filter(None, [message, "CRANK WATCHDOG RECOVERED: detector execution available."]))
+                message = "\n".join(filter(None, [message, "CANDYBAR TRANSITION RECOVERED: detector execution available."]))
             if message:
                 sender(profile, target, message, notify_timeout)
             atomic(state, staged.read_bytes())

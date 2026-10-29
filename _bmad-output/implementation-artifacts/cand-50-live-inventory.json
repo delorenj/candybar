@@ -1,0 +1,1320 @@
+{
+  "version": 1,
+  "at": "2026-10-29T08:43:09.351155+00:00",
+  "sources": {
+    "registry": {
+      "status": "ok",
+      "rows": [
+        {
+          "id": "01a176ae-bd0a-7b8f-8e20-08665b8beb9a",
+          "name": "deploy-smoke",
+          "enabled": true,
+          "runner": {}
+        },
+        {
+          "id": "01a176d4-e9a3-726d-b63c-57c5a4a24a34",
+          "name": "hello-node",
+          "enabled": true,
+          "runner": {}
+        },
+        {
+          "id": "01a176ef-a1c6-7618-9dec-52dc31f7ae55",
+          "name": "gpu-burn",
+          "enabled": true,
+          "runner": {}
+        },
+        {
+          "id": "01a178c9-69e0-730c-b1a8-b920a839d9bf",
+          "name": "deploy-smoke-exec",
+          "enabled": true,
+          "runner": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "01a178c9-6c3e-748b-992b-606d5b3e8920",
+          "name": "deploy-smoke-systemd",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "candybar-smoke.service"
+          }
+        },
+        {
+          "id": "01a178e8-c733-7e48-a0ca-8204645e201d",
+          "name": "deploy-smoke-hermes",
+          "enabled": true,
+          "runner": {
+            "kind": "hermes",
+            "job_id": "e5b801fca664",
+            "profile": "default"
+          }
+        },
+        {
+          "id": "01a1791e-76b9-7883-b301-dbc3cfae6588",
+          "name": "watchdog-canary",
+          "enabled": true,
+          "runner": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "01a17938-39bc-74a6-a5d3-26e2d01f9f75",
+          "name": "intelliforia-pull-prod",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "intelliforia-pull-prod.service"
+          }
+        },
+        {
+          "id": "01a17938-5381-7f92-8f1e-6966648dd452",
+          "name": "tolt-forge-daily",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "tolt-forge-daily.service"
+          }
+        },
+        {
+          "id": "01a17938-56bc-7741-aba0-83c8ba8cf906",
+          "name": "intelliforia-client-health",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "intelliforia-client-health.service"
+          }
+        },
+        {
+          "id": "01a17938-5cb9-7594-a7a6-f6a3e96e3a4b",
+          "name": "intelliforia-client-health-monday",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "intelliforia-client-health-monday.service"
+          }
+        },
+        {
+          "id": "01a17938-6222-7abf-b39e-41495eff680f",
+          "name": "intelliforia-staging-track-main",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "intelliforia-staging-track-main.service"
+          }
+        },
+        {
+          "id": "01a17938-6fff-7821-bcf3-3048d43cce18",
+          "name": "tolt-items-daily",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "tolt-items-daily.service"
+          }
+        },
+        {
+          "id": "01a17938-75c4-7219-8204-dfa8d0572a1f",
+          "name": "pr-crusher",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "pr-crusher.service"
+          }
+        },
+        {
+          "id": "01a17938-961c-7581-b9c2-ec6f9e3a708a",
+          "name": "honda-hunt-daily-check",
+          "enabled": false,
+          "runner": {
+            "kind": "systemd",
+            "unit": "honda-hunt-daily-check.service"
+          }
+        },
+        {
+          "id": "01a17938-9a3b-71bc-b1b9-c0ceadfc86fe",
+          "name": "delodocs-wiki-self-tuning-weekly",
+          "enabled": false,
+          "runner": {
+            "kind": "systemd",
+            "unit": "delodocs-wiki-self-tuning-weekly.service"
+          }
+        },
+        {
+          "id": "01a17939-8d7e-7b6b-b51a-18f13c120eaf",
+          "name": "newapi-db-pull",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "newapi-db-pull.service"
+          }
+        },
+        {
+          "id": "01a17939-b32c-7c55-af69-f7aa768fbc15",
+          "name": "newapi-openrouter-sync",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "newapi-openrouter-sync.service"
+          }
+        },
+        {
+          "id": "01a17939-b676-7b1b-8232-ffd3ae91498c",
+          "name": "newapi-staff-sso",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "newapi-staff-sso.service"
+          }
+        },
+        {
+          "id": "01a17939-b9af-7316-bada-e543afdf55b9",
+          "name": "newapi-token-watch",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "newapi-token-watch.service"
+          }
+        },
+        {
+          "id": "01a17939-bd28-7d5a-ab3e-2d4a83e9f996",
+          "name": "aai-free-scout",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "aai-free-scout.service"
+          }
+        },
+        {
+          "id": "01a1793a-d2a0-7070-b267-4f6d3e41a3b5",
+          "name": "newapi-allowances",
+          "enabled": false,
+          "runner": {
+            "kind": "systemd",
+            "unit": "newapi-allowances.service"
+          }
+        },
+        {
+          "id": "01a1793b-612b-797c-8746-17759edbb316",
+          "name": "newapi-vm-health",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "newapi-vm-health.service"
+          }
+        },
+        {
+          "id": "01a1793b-64ce-7e0a-aea1-1b461ff550fe",
+          "name": "newapi-oauth-connections",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "newapi-oauth-connections.service"
+          }
+        },
+        {
+          "id": "01a1793b-6898-766c-8bbb-e5fa19dcef06",
+          "name": "newapi-claude-token",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "newapi-claude-token.service"
+          }
+        },
+        {
+          "id": "01a1793b-6dcd-730f-8317-5975681f9792",
+          "name": "crank-beat",
+          "enabled": true,
+          "runner": {
+            "kind": "hermes",
+            "job_id": "777c511a009c",
+            "profile": "33god-pm"
+          }
+        },
+        {
+          "id": "01a1793b-7e99-7b33-b53e-514014a99922",
+          "name": "aperture-lane-beat",
+          "enabled": true,
+          "runner": {
+            "kind": "hermes",
+            "job_id": "f3db72089593",
+            "profile": "33god-pm"
+          }
+        },
+        {
+          "id": "01a1793b-951c-7dbb-8aff-0abcb26bdf90",
+          "name": "delodocs-triage-second-pass",
+          "enabled": true,
+          "runner": {
+            "kind": "hermes",
+            "job_id": "fc39bd8b33c8",
+            "profile": "delodocs-pm"
+          }
+        },
+        {
+          "id": "01a1793b-e235-7efd-8719-d316aba335b4",
+          "name": "dumply-daily-story",
+          "enabled": true,
+          "runner": {
+            "kind": "hermes",
+            "job_id": "8aecd027dbd0",
+            "profile": "dumply"
+          }
+        },
+        {
+          "id": "01a1793b-f875-73c7-b1cd-4df0d7f28cbd",
+          "name": "token-usage-report",
+          "enabled": true,
+          "runner": {
+            "kind": "hermes",
+            "job_id": "b240575fae0c",
+            "profile": "peter-griffin"
+          }
+        },
+        {
+          "id": "01a1793c-0b29-7ef2-ac1d-aa1bc158ce1c",
+          "name": "token-optimization",
+          "enabled": true,
+          "runner": {
+            "kind": "hermes",
+            "job_id": "3684c5aa8eac",
+            "profile": "peter-griffin"
+          }
+        },
+        {
+          "id": "01a1793d-f18c-7e83-9080-f3e42a96bd1f",
+          "name": "hindsight-capture-sweep",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "hindsight-capture-sweep.service"
+          }
+        },
+        {
+          "id": "01a1793e-2686-796d-bc20-a620f13809b1",
+          "name": "hindsight-memory-analysis",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "hindsight-memory-analysis.service"
+          }
+        },
+        {
+          "id": "01a1793e-46ae-724c-9c34-eed9b832445b",
+          "name": "hindsight-template-sweep",
+          "enabled": false,
+          "runner": {
+            "kind": "systemd",
+            "unit": "hindsight-template-sweep.service"
+          }
+        },
+        {
+          "id": "01a17941-24c0-79c4-81d7-8fc3dcdadf06",
+          "name": "hindsight-write-probe",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "hindsight-write-probe.service"
+          }
+        },
+        {
+          "id": "01a17941-50aa-7b5e-a1f1-570707d1fd6d",
+          "name": "cache-prune-codex-tmp",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "cache-prune-codex-tmp.service"
+          }
+        },
+        {
+          "id": "01a17941-5493-76ad-9549-cd33cde24f58",
+          "name": "cache-prune-daily",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "cache-prune-daily.service"
+          }
+        },
+        {
+          "id": "01a17941-5879-7692-beb8-549ad17f3e8d",
+          "name": "cache-prune",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "cache-prune.service"
+          }
+        },
+        {
+          "id": "01a17941-5c4f-7445-a8c9-4f653505764c",
+          "name": "docker-prune",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "docker-prune.service"
+          }
+        },
+        {
+          "id": "01a17941-601b-745b-9070-d0f6fec1e893",
+          "name": "state-maintain",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "state-maintain.service"
+          }
+        },
+        {
+          "id": "01a17941-63ec-772d-a26f-101de7484056",
+          "name": "user-logrotate",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "user-logrotate.service"
+          }
+        },
+        {
+          "id": "01a17941-6796-736f-a679-79b1fd5fdfca",
+          "name": "gnome-shell-restart",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "gnome-shell-restart.service"
+          }
+        },
+        {
+          "id": "01a17941-6b32-7ab3-b126-f61d74d9593d",
+          "name": "srvls-metrics",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "srvls-metrics.service"
+          }
+        },
+        {
+          "id": "01a17941-6f01-7764-910f-b532a019fc48",
+          "name": "srvls-snapshot",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "srvls-snapshot.service"
+          }
+        },
+        {
+          "id": "01a17941-ac64-7f65-bd20-f20d8d84e0bf",
+          "name": "zellij-ark",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "zellij-ark-adopt.service"
+          }
+        },
+        {
+          "id": "01a17946-6d72-7091-8c78-aedca4bb4b29",
+          "name": "bloodbank-agent-hooks-health",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "bloodbank-agent-hooks-health.service"
+          }
+        },
+        {
+          "id": "01a17947-3ec2-7286-84ea-41f2ee8ba9ee",
+          "name": "holocene-pad-roster",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "holocene-pad-roster.service"
+          }
+        },
+        {
+          "id": "01a17947-520d-738a-9d21-e6de2dd10e64",
+          "name": "forever-ago-vault",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "forever-ago-vault.service"
+          }
+        },
+        {
+          "id": "01a17947-e1db-7c60-b307-8d663fca0ed3",
+          "name": "naipkins-registry-snapshot",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "naipkins-registry-snapshot.service"
+          }
+        },
+        {
+          "id": "01a17948-1e34-7611-a5c9-19ac51c114fb",
+          "name": "restic-vault",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "restic-vault.service"
+          }
+        },
+        {
+          "id": "01a17948-223b-7507-9eb4-2664bf0e787c",
+          "name": "backup-drill",
+          "enabled": false,
+          "runner": {
+            "kind": "systemd",
+            "unit": "backup-drill.service"
+          }
+        },
+        {
+          "id": "01a17948-25e8-7bd3-934b-24a81c94ba43",
+          "name": "delonet-n8n-workflows-sync",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "delonet-n8n-workflows-sync.service"
+          }
+        },
+        {
+          "id": "01a1794a-6458-74f6-8a3a-9520331b09a9",
+          "name": "hermes-single-install-guard",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "hermes-single-install-guard.service"
+          }
+        },
+        {
+          "id": "01a1794a-a292-774f-81ee-b7e62183fecd",
+          "name": "restic-dbdumps",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "restic-dbdumps.service"
+          }
+        },
+        {
+          "id": "01a1794a-a6ad-77ae-9993-72cdf80a0f62",
+          "name": "milkshake-ledger-backup",
+          "enabled": false,
+          "runner": {
+            "kind": "systemd",
+            "unit": "milkshake-ledger-backup.service"
+          }
+        },
+        {
+          "id": "01a1794a-aaf6-7d74-9978-64c569f0cff2",
+          "name": "ifvault-nightly",
+          "enabled": false,
+          "runner": {
+            "kind": "systemd",
+            "unit": "ifvault-nightly.service"
+          }
+        },
+        {
+          "id": "01a1794c-7f05-7a88-85b1-015808a818b8",
+          "name": "delodocs-inbox-cleanup",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "delodocs-inbox-cleanup.service"
+          }
+        },
+        {
+          "id": "01a1794c-b5e7-7f1c-a240-d08a5493beff",
+          "name": "skillex-hermes-resync",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "skillex-hermes-resync.service"
+          }
+        },
+        {
+          "id": "01a1794c-c058-7f06-ae67-2f47b5b32219",
+          "name": "sync-vault-to-drive",
+          "enabled": false,
+          "runner": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "01a1794c-ef7e-74e7-8084-c8d82bf70093",
+          "name": "candystore-project-sync",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "candystore-project-sync.service"
+          }
+        },
+        {
+          "id": "01a1794e-f599-791a-8124-8b1be3c81de7",
+          "name": "james-brennan-billing-ledger",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "james-brennan-billing-ledger.service"
+          }
+        },
+        {
+          "id": "01a1794e-fa97-7ce1-ba2e-728f2f612795",
+          "name": "activity-report-james-brennan",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "activity-report@james-brennan.service"
+          }
+        },
+        {
+          "id": "01a1794e-ff4b-76df-8851-99231980004b",
+          "name": "james-brennan-nightly-suite",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "james-brennan-nightly-suite.service"
+          }
+        },
+        {
+          "id": "01a1794f-0409-7e1b-9f3d-243f63edf8da",
+          "name": "james-brennan-daily-update",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "james-brennan-daily-update.service"
+          }
+        },
+        {
+          "id": "01a1794f-0892-771f-8913-9184703c932a",
+          "name": "james-brennan-nightly-fix",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "james-brennan-nightly-fix.service"
+          }
+        },
+        {
+          "id": "01a1794f-1662-7820-9977-fa78c32e699e",
+          "name": "dev-journal-reconcile",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "dev-journal-reconcile.service"
+          }
+        },
+        {
+          "id": "01a1794f-2891-7b02-aad7-ea8971e0c95a",
+          "name": "ipm-metrics",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "ipm-metrics.service"
+          }
+        },
+        {
+          "id": "01a1794f-2d49-7198-9039-57a6bbc85e42",
+          "name": "ipm-internal-dashboard",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "ipm-internal-dashboard.service"
+          }
+        },
+        {
+          "id": "01a1794f-e281-7276-ba6a-cd58a1050dd5",
+          "name": "sync-jim-dropbox",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "sync-jim-dropbox.service"
+          }
+        },
+        {
+          "id": "01a1794f-f807-772c-acd5-d61a583eba21",
+          "name": "sync-daily-reports-to-s3",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "sync-daily-reports-to-s3.service"
+          }
+        },
+        {
+          "id": "01a17950-506c-7218-bff4-c102e75c2c7e",
+          "name": "jev-rollup-cadence",
+          "enabled": true,
+          "runner": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "01a17951-0470-7f83-8bbd-dfa5c7ce30f2",
+          "name": "dev-journal-nightly",
+          "enabled": true,
+          "runner": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "01a17951-5b9a-7ce8-8bc5-e379b3d434fd",
+          "name": "dev-journal-ensure-nightly",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "dev-journal-ensure-nightly.service"
+          }
+        },
+        {
+          "id": "01a17952-2ab7-78f1-a008-f994a0aaf1c7",
+          "name": "telnyx-s3-intake",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "telnyx-s3-intake.service"
+          }
+        },
+        {
+          "id": "01a17953-d39d-708b-a96c-7cceefab032b",
+          "name": "gruvato-acoustid-check",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "gruvato-acoustid-check.service"
+          }
+        },
+        {
+          "id": "01a17954-67f1-75f3-8f29-19df110d8a9c",
+          "name": "mobile-deploy-hub-catchup",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "mobile-deploy-hub-catchup.service"
+          }
+        },
+        {
+          "id": "01a17954-c1ed-7e0a-9f4c-dc1213778ea4",
+          "name": "mobile-deploy-hub-macwatch",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "mobile-deploy-hub-macwatch.service"
+          }
+        },
+        {
+          "id": "01a1817f-d35d-79e0-8c65-7c1259347e6f",
+          "name": "forever-ago-voxxy-voices",
+          "enabled": true,
+          "runner": {
+            "kind": "systemd",
+            "unit": "forever-ago-voxxy-voices.service"
+          }
+        },
+        {
+          "id": "01a18226-0a51-7393-835e-1e19f71644a1",
+          "name": "deploy-smoke-n8n",
+          "enabled": true,
+          "runner": {
+            "kind": "n8n"
+          }
+        },
+        {
+          "id": "01a186c1-110c-768e-9407-a1a2abe2105b",
+          "name": "crank-watchdog",
+          "enabled": true,
+          "runner": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "01a186d3-5649-7faf-ba9e-a90057ac491e",
+          "name": "scheduling-policy-drift",
+          "enabled": false,
+          "runner": {
+            "kind": "exec"
+          }
+        }
+      ]
+    },
+    "systemd-user": {
+      "status": "ok",
+      "rows": [
+        {
+          "id": "systemd:user:asm-sweep.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:backup-drill.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:candybar-watchdog.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:delodocs-wiki-self-tuning-weekly.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:hermes-gateway-watchdog.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:hindsight-template-sweep.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:ifvault-nightly.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:infra-doctor-deadman.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:infra-doctor.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:launchpadlib-cache-clean.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:loopback-pins.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:milkshake-ledger-backup.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:newapi-allowances.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:op-token-guard.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:retire-original-intelliforia-mobile.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:snap.firmware-updater.firmware-notifier.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:systemd-tmpfiles-clean.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:ubuntu-2604-reminder.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:ubuntu-insights-collect.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:ubuntu-insights-upload.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:user:activity-report@.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:bloodbank-agent-hooks-health.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:delodocs-domain-triage.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:delodocs-inbox-cleanup.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:delodocs-inbox-router.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:delodocs-wiki-curator-daily.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:hermes-outbound-audio-drain@.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:hermes-single-install-guard.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:intelliforia-client-health-monday.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:intelliforia-client-health.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:intelliforia-demo-snapshot.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:intelliforia-pull-prod.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:intelliforia-staging-track-main.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:ipm-internal-dashboard.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:ipm-metrics.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:james-brennan-billing-ledger.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:james-brennan-daily-update.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:james-brennan-docs-sync.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:james-brennan-mirror-claim.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:james-brennan-mirror-sync-claim.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:james-brennan-nightly-fix.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:james-brennan-nightly-suite.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:mobile-deploy-hub-catchup.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:mobile-deploy-hub-macwatch.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:newapi-oauth-recovery.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:pr-crusher.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:sync-automaticai.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:sync-jamesbrennan.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:sync-jim-dropbox.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:sync-tailscale-files.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:team-update-nightly.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:team-update-weekly.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:telnyx-s3-intake.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:user:tiny-obsidian-transcripts-exclude.timer",
+          "active": false,
+          "enabled": false
+        }
+      ]
+    },
+    "systemd-system": {
+      "status": "ok",
+      "rows": [
+        {
+          "id": "systemd:system:anacron.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:apport-autoreport.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:apt-daily-upgrade.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:apt-daily.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:docker-stack-ssbnk-cleanup.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:dpkg-db-backup.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:e2scrub_all.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:fstrim.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:fwupd-refresh.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:locate.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:logrotate.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:man-db.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:motd-news.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:phpsessionclean.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:snapd.snap-repair.timer",
+          "active": false,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:sysstat-collect.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:sysstat-rotate.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:sysstat-summary.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:systemd-tmpfiles-clean.timer",
+          "active": true,
+          "enabled": false
+        },
+        {
+          "id": "systemd:system:tailscale-monitor.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:ua-timer.timer",
+          "active": true,
+          "enabled": true
+        },
+        {
+          "id": "systemd:system:pg_basebackup@.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:system:pg_compresswal@.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:system:pg_dump@.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:system:systemd-sysupdate-reboot.timer",
+          "active": false,
+          "enabled": false
+        },
+        {
+          "id": "systemd:system:systemd-sysupdate.timer",
+          "active": false,
+          "enabled": false
+        }
+      ]
+    },
+    "crontab": {
+      "status": "ok",
+      "rows": [
+        {
+          "id": "crontab:user:c6d5f330b0d75efe390e",
+          "active": true
+        },
+        {
+          "id": "crontab:/etc/crontab:30d41514f2972ba13119",
+          "active": true
+        },
+        {
+          "id": "crontab:/etc/crontab:4ec74d31d035346b3637",
+          "active": true
+        },
+        {
+          "id": "crontab:/etc/crontab:cd6e98e3e79362cfa232",
+          "active": true
+        },
+        {
+          "id": "crontab:/etc/crontab:00986f40c8a72c011456",
+          "active": true
+        },
+        {
+          "id": "crontab:/etc/cron.d/anacron:002cc02f9afab90f77c5",
+          "active": true
+        },
+        {
+          "id": "crontab:/etc/cron.d/e2scrub_all:31cb3dc787081f5a5261",
+          "active": true
+        },
+        {
+          "id": "crontab:/etc/cron.d/e2scrub_all:c7958183746b4c8f8a14",
+          "active": true
+        },
+        {
+          "id": "crontab:/etc/cron.d/php:14dbe97bfd44d77560a1",
+          "active": true
+        },
+        {
+          "id": "crontab:/etc/cron.d/sysstat:fa1df2e7f5c95b97638c",
+          "active": true
+        },
+        {
+          "id": "crontab:/etc/cron.d/sysstat:9bc29b7d8f08fda9dda4",
+          "active": true
+        }
+      ]
+    },
+    "hermes": {
+      "status": "ok",
+      "rows": [
+        {
+          "id": "hermes:default:e5b801fca664",
+          "profile": "default",
+          "job_id": "e5b801fca664",
+          "enabled": true,
+          "recurring": true,
+          "scheduler": "external"
+        },
+        {
+          "id": "hermes:33god-pm:8da3f24263f9",
+          "profile": "33god-pm",
+          "job_id": "8da3f24263f9",
+          "enabled": false,
+          "recurring": true,
+          "scheduler": "external"
+        },
+        {
+          "id": "hermes:33god-pm:aec0b33a1d07",
+          "profile": "33god-pm",
+          "job_id": "aec0b33a1d07",
+          "enabled": false,
+          "recurring": true,
+          "scheduler": "internal"
+        },
+        {
+          "id": "hermes:33god-pm:10e403479c01",
+          "profile": "33god-pm",
+          "job_id": "10e403479c01",
+          "enabled": false,
+          "recurring": true,
+          "scheduler": "internal"
+        },
+        {
+          "id": "hermes:33god-pm:777c511a009c",
+          "profile": "33god-pm",
+          "job_id": "777c511a009c",
+          "enabled": true,
+          "recurring": true,
+          "scheduler": "external"
+        },
+        {
+          "id": "hermes:33god-pm:061c4dbedc1c",
+          "profile": "33god-pm",
+          "job_id": "061c4dbedc1c",
+          "enabled": false,
+          "recurring": true,
+          "scheduler": "external"
+        },
+        {
+          "id": "hermes:33god-pm:9b5dadbd1e4d",
+          "profile": "33god-pm",
+          "job_id": "9b5dadbd1e4d",
+          "enabled": false,
+          "recurring": true,
+          "scheduler": "external"
+        },
+        {
+          "id": "hermes:33god-pm:f3db72089593",
+          "profile": "33god-pm",
+          "job_id": "f3db72089593",
+          "enabled": true,
+          "recurring": true,
+          "scheduler": "external"
+        },
+        {
+          "id": "hermes:dumply:8aecd027dbd0",
+          "profile": "dumply",
+          "job_id": "8aecd027dbd0",
+          "enabled": true,
+          "recurring": true,
+          "scheduler": "external"
+        },
+        {
+          "id": "hermes:peter-griffin:b240575fae0c",
+          "profile": "peter-griffin",
+          "job_id": "b240575fae0c",
+          "enabled": true,
+          "recurring": true,
+          "scheduler": "external"
+        },
+        {
+          "id": "hermes:peter-griffin:3684c5aa8eac",
+          "profile": "peter-griffin",
+          "job_id": "3684c5aa8eac",
+          "enabled": true,
+          "recurring": true,
+          "scheduler": "external"
+        },
+        {
+          "id": "hermes:pile-of-dumb-things-pm:b57a1f0a168c",
+          "profile": "pile-of-dumb-things-pm",
+          "job_id": "b57a1f0a168c",
+          "enabled": false,
+          "recurring": true,
+          "scheduler": "internal"
+        },
+        {
+          "id": "hermes:rererere:0593d5261d65",
+          "profile": "rererere",
+          "job_id": "0593d5261d65",
+          "enabled": false,
+          "recurring": true,
+          "scheduler": "internal"
+        },
+        {
+          "id": "hermes:rererere:28df06f1ea3d",
+          "profile": "rererere",
+          "job_id": "28df06f1ea3d",
+          "enabled": false,
+          "recurring": true,
+          "scheduler": "internal"
+        },
+        {
+          "id": "hermes:rererere:2fb3a631dbf8",
+          "profile": "rererere",
+          "job_id": "2fb3a631dbf8",
+          "enabled": false,
+          "recurring": true,
+          "scheduler": "internal"
+        }
+      ]
+    }
+  },
+  "scope": "current-user and system timers; current-user plus /etc crontabs; all local Hermes profiles; optional n8n export",
+  "not_audited": [
+    "remote hosts",
+    "other users' private crontabs",
+    "n8n"
+  ]
+}

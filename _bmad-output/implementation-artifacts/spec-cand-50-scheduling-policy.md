@@ -35,10 +35,10 @@ Never: edit watchdog detection; claim its separate review accepted; change auth 
 - Installed `~/.hermes/profiles/33god-pm/scripts/crank-watchdog.{sh,py}`: reuse unchanged, transitions on stdout exit 0; supports isolated state/source fixtures.
 
 ## Tasks & Acceptance
-- [ ] `src/candybar/transition_exec.py`, manifest and tests: bounded transition delivery through supported `hermes -p 33god-pm send`, transactional state and silence proof.
-- [ ] `deploy/migration/ledger.yaml`, crank manifest and evidence report: disabled registration, test, cutover, scheduled proof, rollback commands.
-- [ ] `src/candybar/scheduling_policy.py`, CLI, policy config and tests: repo-unit lint and live read-only systemd/crontab/all-profile Hermes inventory; optional explicit n8n export; unknown on failed probes.
-- [ ] `.github/workflows/ci.yml`, README: fixture/repo gate and reusable exact command for fleet policy; Candybar drift job with transition-only ops notification.
+- [x] `src/candybar/transition_exec.py`, manifest and tests: bounded transition delivery through supported `hermes -p 33god-pm send`, transactional state and silence proof.
+- [x] `deploy/migration/ledger.yaml`, crank manifest and evidence report: disabled registration, test, cutover, scheduled proof, rollback commands.
+- [x] `src/candybar/scheduling_policy.py`, CLI, policy config and tests: repo-unit lint and live read-only systemd/crontab/all-profile Hermes inventory; optional explicit n8n export; unknown on failed probes.
+- [x] `.github/workflows/ci.yml`, README: fixture/repo gate and reusable exact command for fleet policy; Candybar drift job with transition-only ops notification.
 - Given migration ready, when cutover executes, then legacy clock is disabled/external and only Candybar fires the watchdog with real runner/result evidence.
 - Given fixtures and live host, when doctor runs, then unauthorized clocks fail and unavailable sources stay unknown; remaining drift is reported without mutation.
 

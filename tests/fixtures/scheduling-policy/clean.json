@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "sources": {
+    "registry": {
+      "status": "ok",
+      "rows": []
+    },
+    "systemd-user": {
+      "status": "ok",
+      "rows": []
+    },
+    "systemd-system": {
+      "status": "ok",
+      "rows": []
+    },
+    "crontab": {
+      "status": "ok",
+      "rows": []
+    },
+    "hermes": {
+      "status": "ok",
+      "rows": []
+    }
+  }
+}

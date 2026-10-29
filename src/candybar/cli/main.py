@@ -23,7 +23,7 @@ from uuid import UUID
 import typer
 
 from candybar import __version__
-from candybar.cli import control
+from candybar.cli import control, doctor
 from candybar.cli.migrate import migrate_app
 
 app = typer.Typer(
@@ -36,6 +36,7 @@ DEFAULT_API_URL = "http://127.0.0.1:8700"
 
 app.add_typer(migrate_app, name="migrate")
 control.install(app)
+doctor.install(app)
 
 
 def _version_callback(value: bool) -> None:

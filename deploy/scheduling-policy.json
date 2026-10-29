@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "exceptions": [
+    {
+      "id": "repo:deploy/watchdog/candybar-watchdog.timer",
+      "owner": "Candybar",
+      "reason": "AD-22: independent watchdog for the Candybar clock; cannot watch its own clock."
+    },
+    {
+      "id": "systemd:user:candybar-watchdog.timer",
+      "owner": "Candybar / infra owners",
+      "reason": "AD-22 independent Candybar clock watchdog."
+    },
+    {
+      "id": "systemd:user:infra-doctor.timer",
+      "owner": "Candybar / infra owners",
+      "reason": "Canonical cron-inventory exclusion (b): probes infrastructure Candybar depends on."
+    },
+    {
+      "id": "systemd:user:infra-doctor-deadman.timer",
+      "owner": "Candybar / infra owners",
+      "reason": "Canonical exclusion (b): independent infra-doctor deadman."
+    },
+    {
+      "id": "systemd:user:hermes-gateway-watchdog.timer",
+      "owner": "Candybar / infra owners",
+      "reason": "Canonical exclusion (b): recovers Hermes gateway execution dependency."
+    },
+    {
+      "id": "systemd:user:op-token-guard.timer",
+      "owner": "Candybar / infra owners",
+      "reason": "Canonical exclusion (b): repairs executor credential plumbing."
+    },
+    {
+      "id": "systemd:user:asm-sweep.timer",
+      "owner": "Candybar / infra owners",
+      "reason": "Canonical exclusion (c): sub-minute 15s agent liveness guard."
+    },
+    {
+      "id": "systemd:user:launchpadlib-cache-clean.timer",
+      "owner": "OS/vendor",
+      "reason": "Canonical cron-inventory exclusion (a): vendor/user maintenance timer; exact identity only."
+    },
+    {
+      "id": "systemd:user:snap.firmware-updater.firmware-notifier.timer",
+      "owner": "OS/vendor",
+      "reason": "Canonical cron-inventory exclusion (a): vendor/user maintenance timer; exact identity only."
+    },
+    {
+      "id": "systemd:user:systemd-tmpfiles-clean.timer",
+      "owner": "OS/vendor",
+      "reason": "Canonical cron-inventory exclusion (a): vendor/user maintenance timer; exact identity only."
+    },
+    {
+      "id": "systemd:user:ubuntu-2604-reminder.timer",
+      "owner": "OS/vendor",
+      "reason": "Canonical cron-inventory exclusion (a): vendor/user maintenance timer; exact identity only."
+    },
+    {
+      "id": "systemd:user:ubuntu-insights-collect.timer",
+      "owner": "OS/vendor",
+      "reason": "Canonical cron-inventory exclusion (a): vendor/user maintenance timer; exact identity only."
+    },
+    {
+      "id": "systemd:user:ubuntu-insights-upload.timer",
+      "owner": "OS/vendor",
+      "reason": "Canonical cron-inventory exclusion (a): vendor/user maintenance timer; exact identity only."
+    },
+    {
+      "id": "systemd:system:sysstat-collect.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:phpsessionclean.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:fwupd-refresh.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:motd-news.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:apt-daily.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:apport-autoreport.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:apt-daily-upgrade.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:anacron.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:ua-timer.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:man-db.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:systemd-tmpfiles-clean.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:dpkg-db-backup.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:locate.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:sysstat-rotate.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:sysstat-summary.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:logrotate.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:e2scrub_all.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:fstrim.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "systemd:system:snapd.snap-repair.timer",
+      "owner": "OS/vendor admin",
+      "reason": "Exact vendor maintenance timer; not an application scheduling exemption."
+    },
+    {
+      "id": "crontab:user:c6d5f330b0d75efe390e",
+      "owner": "infra",
+      "reason": "Canonical exclusion (b): independent Traefik/Candybar upstream recovery."
+    },
+    {
+      "id": "crontab:/etc/crontab:30d41514f2972ba13119",
+      "owner": "OS/vendor admin",
+      "reason": "Canonical cron-inventory exclusion (a): exact packaged crontab entry; changed commands require review."
+    },
+    {
+      "id": "crontab:/etc/crontab:4ec74d31d035346b3637",
+      "owner": "OS/vendor admin",
+      "reason": "Canonical cron-inventory exclusion (a): exact packaged crontab entry; changed commands require review."
+    },
+    {
+      "id": "crontab:/etc/crontab:cd6e98e3e79362cfa232",
+      "owner": "OS/vendor admin",
+      "reason": "Canonical cron-inventory exclusion (a): exact packaged crontab entry; changed commands require review."
+    },
+    {
+      "id": "crontab:/etc/crontab:00986f40c8a72c011456",
+      "owner": "OS/vendor admin",
+      "reason": "Canonical cron-inventory exclusion (a): exact packaged crontab entry; changed commands require review."
+    },
+    {
+      "id": "crontab:/etc/cron.d/anacron:002cc02f9afab90f77c5",
+      "owner": "OS/vendor admin",
+      "reason": "Canonical cron-inventory exclusion (a): exact packaged crontab entry; changed commands require review."
+    },
+    {
+      "id": "crontab:/etc/cron.d/e2scrub_all:31cb3dc787081f5a5261",
+      "owner": "OS/vendor admin",
+      "reason": "Canonical cron-inventory exclusion (a): exact packaged crontab entry; changed commands require review."
+    },
+    {
+      "id": "crontab:/etc/cron.d/e2scrub_all:c7958183746b4c8f8a14",
+      "owner": "OS/vendor admin",
+      "reason": "Canonical cron-inventory exclusion (a): exact packaged crontab entry; changed commands require review."
+    },
+    {
+      "id": "crontab:/etc/cron.d/php:14dbe97bfd44d77560a1",
+      "owner": "OS/vendor admin",
+      "reason": "Canonical cron-inventory exclusion (a): exact packaged crontab entry; changed commands require review."
+    },
+    {
+      "id": "crontab:/etc/cron.d/sysstat:fa1df2e7f5c95b97638c",
+      "owner": "OS/vendor admin",
+      "reason": "Canonical cron-inventory exclusion (a): exact packaged crontab entry; changed commands require review."
+    },
+    {
+      "id": "crontab:/etc/cron.d/sysstat:9bc29b7d8f08fda9dda4",
+      "owner": "OS/vendor admin",
+      "reason": "Canonical cron-inventory exclusion (a): exact packaged crontab entry; changed commands require review."
+    }
+  ]
+}

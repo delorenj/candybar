@@ -1,0 +1,16 @@
+# This drift audit has no independent native clock. AD-22 self-watchdog is separate.
+[candybar]
+name = "scheduling-policy-drift"
+description = "Read-only recurring scheduling ownership audit; reports bypass and unknown transitions only"
+tags = ["ops", "policy", "no-agent"]
+schedule = "7,22,37,52 * * * *"
+timezone = "UTC"
+noise = false
+# Registered disabled for safe manual drills; production state enabled via API.
+enabled = true
+
+[candybar.runner]
+kind = "exec"
+argv = ["/home/delorenj/code/33GOD/candybar/.venv/bin/python", "-m", "candybar.transition_exec", "--state-file", "/home/delorenj/.local/state/candybar-scheduling-policy/transitions.json", "--profile", "33god-pm", "--target", "telegram:7564050286", "--timeout", "120", "--", "/home/delorenj/code/33GOD/candybar/.venv/bin/python", "-m", "candybar.scheduling_drift", "--policy", "/home/delorenj/code/33GOD/candybar/deploy/scheduling-policy.json", "--report", "/home/delorenj/.local/state/candybar-scheduling-policy/report.json"]
+workdir = "/home/delorenj/code/33GOD/candybar"
+timeout_s = 210

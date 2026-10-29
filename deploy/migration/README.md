@@ -1,5 +1,37 @@
 # deploy/migration — the cron-migration ledger (Story 7.5, AD-21)
 
+## Scheduling ownership policy (CAND-50)
+
+Candybar owns recurring application clocks. Run `uv run candybar doctor --repo .` in CI
+and before adding a timer; use `uv run candybar doctor --repo . --live --json`
+for a **read-only** host audit. Exit 0 means the audited scope passes, 1 means
+bypass clocks were found, and 2 means an inventory source is unavailable or
+malformed (never treat 2 as green). `--write-inventory /absolute/path.json`
+saves an identity-only snapshot. `--inventory /path.json` audits an offline
+fixture. An optional `--n8n-export /path/to/workflows.json` checks active
+ScheduleTrigger/cron nodes without assuming access to an n8n API.
+
+The repo gate flags new `.timer` files but accepts `.service` units, including
+Candybar-owned runners. The live audit covers all local Hermes profile job
+stores, current-user and system systemd timers, current-user and `/etc`
+crontabs. It does **not** cover other users' private crontabs, remote hosts, or
+n8n without an export. Existing approved independent clocks and vendor/admin
+maintenance have *exact* owner/reason exemptions in `deploy/scheduling-policy.json`;
+there are no wildcard exemptions. A native timer still fails even if its
+`.service` is the registered runner. Unknown/drift are observations, not
+permission to disable or migrate other jobs en masse.
+
+The Candybar-owned `deploy/policy/candybar.toml` direct-exec job emits only
+new/cleared condition notifications via the existing `33god-pm` route. Its
+report is `/home/delorenj/.local/state/candybar-scheduling-policy/report.json`.
+AD-22's independent `candybar-watchdog.timer` remains outside Candybar because
+Candybar cannot watch its own clock. CI checks a clean fixture and proves a
+rogue-timer fixture exits 1; machine drift is reported, not an automatic CI
+failure for unrelated existing clocks. Fleet agents can run the exact doctor
+command above; global agent instructions belong to Flume, not this repo.
+
+## Ledger
+
 `ledger.yaml` is the committed record of every job moved off its native
 scheduler (systemd user timer, user crontab line, Hermes ticker) onto
 candybar. One entry per inventory id from
