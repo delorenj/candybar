@@ -3396,7 +3396,7 @@ jobs:
   - systemctl --user disable --now james-brennan-billing-ledger.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/james-brennan-billing-ledger.timer
-  status: verified
+  status: decommissioned
   candybar_id: 01a1794e-f599-791a-8124-8b1be3c81de7
   cutover_at: '2026-10-26T17:43:00.814762Z'
   verification:
@@ -3417,6 +3417,14 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation 59ad9862-9f18-5656-9636-c94f9adbe653 (scheduled) success exit=0 runtime=2419ms memory=36081664B cpu=0.1216
+  - at: '2026-10-30T02:00:13.541367Z'
+    action: decommission
+    outcome: ok
+    detail: Milkshake Story 10.4 retires the billing/v1 push; Milkshake's milkshake/v1 snapshot carries cash and inference (docs/farm-commands.md section 15)
+  - at: '2026-10-30T02:00:13.725829Z'
+    action: decommission
+    outcome: ok
+    detail: candybar 01a1794e-f599-791a-8124-8b1be3c81de7 disabled
 - id: systemd:sync-jim-dropbox
   wave: '7.14'
   candybar:
