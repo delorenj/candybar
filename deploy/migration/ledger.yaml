@@ -3995,9 +3995,9 @@ jobs:
   - systemctl --user disable --now loopback-pins.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/loopback-pins.timer
-  status: planned
-  candybar_id: null
-  cutover_at: null
+  status: cutover
+  candybar_id: 01a19295-b2fe-76e4-9910-6a479982132e
+  cutover_at: '2026-10-31T15:30:47.368242Z'
   verification:
     invocation_id: null
     result: null
@@ -4008,3 +4008,7 @@ jobs:
     action: plan
     outcome: written
     detail: default disable/rollback commands for systemd-timer
+  - at: '2026-10-31T15:30:47.368242Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a19295-b2fe-76e4-9910-6a479982132e enabled; first fire 2026-11-01T09:20:00Z
