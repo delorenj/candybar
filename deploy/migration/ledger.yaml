@@ -3963,3 +3963,48 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation 80dfbf16-87da-5c68-8400-b378caf3d7f1 (scheduled) success exit=0 runtime=9667ms memory=186404864B cpu=0.4741
+- id: systemd:loopback-pins.timer
+  wave: CAND-50
+  candybar:
+    name: loopback-pins
+    description: Pin locally served delo.sh hosts to 127.0.0.1 in /etc/hosts (migrated from loopback-pins.timer)
+    tags:
+    - migrated
+    - infra
+    - traefik
+    schedule: 20 4 * * *
+    timezone: America/New_York
+    runner:
+      kind: systemd
+      unit: loopback-pins.service
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=5min; OnCalendar=*-*-* 04:20; Persistent=true
+    jitter_s: 0
+    unit: loopback-pins.timer
+    unit_file: /home/delorenj/.config/systemd/user/loopback-pins.timer
+  deviations:
+  - OnBootSec=5min boot run dropped (a reboot no longer refreshes the pins until 04:20)
+  - Persistent=true catch-up replaced by candybar misfire policy
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/DeLoContainers
+    path: systemd/user/loopback-pins.service
+    commit: cb664319f4c21bd069f102c20a46ff01e9960a4d
+  disable:
+  - systemctl --user disable --now loopback-pins.timer
+  rollback:
+  - systemctl --user enable --now /home/delorenj/.config/systemd/user/loopback-pins.timer
+  status: planned
+  candybar_id: null
+  cutover_at: null
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-10-31T15:30:41.415595Z'
+    action: plan
+    outcome: written
+    detail: default disable/rollback commands for systemd-timer
