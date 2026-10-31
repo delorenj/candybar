@@ -60,11 +60,6 @@
       "reason": "Canonical cron-inventory exclusion (a): vendor/user maintenance timer; exact identity only."
     },
     {
-      "id": "systemd:user:ubuntu-2604-reminder.timer",
-      "owner": "OS/vendor",
-      "reason": "Canonical cron-inventory exclusion (a): vendor/user maintenance timer; exact identity only."
-    },
-    {
       "id": "systemd:user:ubuntu-insights-collect.timer",
       "owner": "OS/vendor",
       "reason": "Canonical cron-inventory exclusion (a): vendor/user maintenance timer; exact identity only."
