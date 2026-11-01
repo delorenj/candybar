@@ -2069,9 +2069,9 @@ jobs:
   - systemctl --user disable --now hindsight-template-sweep.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/stacks/ai/hindsight/systemd/hindsight-template-sweep.timer
-  status: rolled-back
+  status: cutover
   candybar_id: 01a1793e-46ae-724c-9c34-eed9b832445b
-  cutover_at: '2026-10-26T17:24:47.477082Z'
+  cutover_at: '2026-11-01T18:51:01.419157Z'
   verification:
     invocation_id: null
     result: null
@@ -2094,6 +2094,10 @@ jobs:
     action: rollback
     outcome: ok
     detail: candybar 01a1793e-46ae-724c-9c34-eed9b832445b disabled
+  - at: '2026-11-01T18:51:01.419157Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793e-46ae-724c-9c34-eed9b832445b enabled; first fire 2026-11-02T09:30:00Z
 - id: systemd:forever-ago-vault.timer
   wave: '7.9'
   candybar:
