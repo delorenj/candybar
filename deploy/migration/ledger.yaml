@@ -2426,9 +2426,9 @@ jobs:
   - systemctl --user disable --now ifvault-nightly.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/ifvault-nightly.timer
-  status: rolled-back
+  status: cutover
   candybar_id: 01a1794a-aaf6-7d74-9978-64c569f0cff2
-  cutover_at: '2026-10-26T17:38:19.561984Z'
+  cutover_at: '2026-11-01T18:51:12.076535Z'
   verification:
     invocation_id: null
     result: null
@@ -2455,6 +2455,10 @@ jobs:
     action: rollback
     outcome: ok
     detail: candybar 01a1794a-aaf6-7d74-9978-64c569f0cff2 disabled
+  - at: '2026-11-01T18:51:12.076535Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794a-aaf6-7d74-9978-64c569f0cff2 enabled; first fire 2026-11-02T06:40:00Z
 - id: systemd:delodocs-inbox-cleanup.timer
   wave: '7.9'
   candybar:
