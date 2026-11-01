@@ -2234,9 +2234,9 @@ jobs:
   - systemctl --user disable --now backup-drill.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/backup-drill.timer
-  status: rolled-back
+  status: cutover
   candybar_id: 01a17948-223b-7507-9eb4-2664bf0e787c
-  cutover_at: '2026-10-26T17:35:33.452250Z'
+  cutover_at: '2026-11-01T18:50:40.391791Z'
   verification:
     invocation_id: null
     result: null
@@ -2263,6 +2263,10 @@ jobs:
     action: rollback
     outcome: ok
     detail: candybar 01a17948-223b-7507-9eb4-2664bf0e787c disabled
+  - at: '2026-11-01T18:50:40.391791Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17948-223b-7507-9eb4-2664bf0e787c enabled; first fire 2026-12-01T14:00:00Z
 - id: systemd:restic-dbdumps
   wave: '7.9'
   candybar:
