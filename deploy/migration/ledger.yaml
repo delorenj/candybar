@@ -2364,9 +2364,9 @@ jobs:
   - systemctl --user disable --now milkshake-ledger-backup.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/docker/systemd/user/milkshake-ledger-backup.timer
-  status: rolled-back
+  status: cutover
   candybar_id: 01a1794a-a6ad-77ae-9993-72cdf80a0f62
-  cutover_at: '2026-10-26T17:38:18.438810Z'
+  cutover_at: '2026-11-01T18:51:24.672251Z'
   verification:
     invocation_id: null
     result: null
@@ -2393,6 +2393,10 @@ jobs:
     action: rollback
     outcome: ok
     detail: candybar 01a1794a-a6ad-77ae-9993-72cdf80a0f62 disabled
+  - at: '2026-11-01T18:51:24.672251Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1794a-a6ad-77ae-9993-72cdf80a0f62 enabled; first fire 2026-11-02T07:30:00Z
 - id: systemd:ifvault-nightly.timer
   wave: '7.9'
   candybar:
