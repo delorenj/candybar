@@ -951,9 +951,9 @@ jobs:
   - systemctl --user disable --now delodocs-wiki-self-tuning-weekly.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/.config/systemd/user/delodocs-wiki-self-tuning-weekly.timer
-  status: rolled-back
+  status: cutover
   candybar_id: 01a17938-9a3b-71bc-b1b9-c0ceadfc86fe
-  cutover_at: '2026-10-26T17:18:35.830721Z'
+  cutover_at: '2026-11-01T18:50:51.390243Z'
   verification:
     invocation_id: null
     result: null
@@ -976,6 +976,10 @@ jobs:
     action: rollback
     outcome: ok
     detail: candybar 01a17938-9a3b-71bc-b1b9-c0ceadfc86fe disabled
+  - at: '2026-11-01T18:50:51.390243Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a17938-9a3b-71bc-b1b9-c0ceadfc86fe enabled; first fire 2026-11-02T13:45:00Z
 - id: hermes:33god-pm:777c511a009c
   wave: '7.17'
   candybar:
