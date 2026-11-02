@@ -121,10 +121,11 @@ def replay(path: Path, state: Path, operational: Path, profile: str, target: str
     return 1
 
 
-def local_report(state: Path, conditions: list[str], output: str, error: str | None) -> None:
+def local_report(state: Path, conditions: list[str], output: str, error: str | None,
+                 details: dict | None = None) -> None:
     """Durable local evidence only; never create or consume a delivery outbox."""
     report = {"version": 1, "timestamp": time.time(), "conditions": conditions,
-              "output": output, "error": error}
+              "output": output, "error": error, "condition_details": details or {}}
     encoded = json.dumps(report).encode()
     # Append raw transitions/faults before replacing the gate's current snapshot.
     with open(str(state) + ".local-events.jsonl", "ab") as log:
@@ -161,7 +162,7 @@ def execute_local(command: list[str], state: Path, timeout: float) -> dict:
                     isinstance(key, str) for key in data["conditions"]
                 ):
                     raise ValueError("invalid detector conditions")
-                local_report(state, data["conditions"], output, None)
+                local_report(state, data["conditions"], output, None, data.get("condition_details"))
                 atomic(state, candidate)
         except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as exc:
             local_report(state, conditions if isinstance(conditions, list) else [], output,

@@ -127,3 +127,8 @@ def test_local_failure_and_pending_cannot_send(tmp_path, monkeypatch, pending):
     if pending is not None:
         assert outbox.read_bytes() == pending
     assert json.loads(Path(str(state) + ".local-report.json").read_text())["error"]
+
+
+def test_local_mode_refuses_explicit_route(tmp_path):
+    with pytest.raises(ValueError, match="forbids"):
+        execute([], tmp_path / "watchdog.json", "profile", "telegram:target", local_only=True)
