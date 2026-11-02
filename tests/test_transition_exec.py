@@ -79,3 +79,51 @@ def test_no_false_delivery_receipts(monkeypatch):
         monkeypatch.setattr(transition_exec, "bounded", lambda *a, value=output: (0, value))
         with pytest.raises(RuntimeError, match="not confirmed"):
             transition_exec.notify("profile", "telegram", "body", 1)
+
+
+@pytest.mark.parametrize("conditions,output", [
+    (["unattended:test"], "CRANK PROJECT UNATTENDED: test"),
+    ([], "CRANK WATCHDOG RECOVERED: unattended:test cleared."),
+    (["telemetry:redis"], ""),
+])
+def test_local_only_never_sends(tmp_path, monkeypatch, conditions, output):
+    from candybar import transition_exec as mod
+    state = tmp_path / "watchdog.json"
+    state.write_text('{"conditions": [], "first_seen": {"test": "unchanged"}}')
+    def forbidden(*args):
+        pytest.fail("local-only reached transport")
+    monkeypatch.setattr(mod, "notify", forbidden)
+    monkeypatch.setattr(mod, "replay", forbidden)
+    command = [sys.executable, "-c", ("import sys,json;from pathlib import Path;"
+               f"Path(sys.argv[-1]).write_text({json.dumps({'conditions': conditions, 'first_seen': {'test': 'unchanged'}})!r});"
+               f"print({output!r})")]
+    for _ in range(2):
+        result = execute(command, state, None, None, sender=forbidden, local_only=True)
+        assert result["delivery"] == "local"
+        assert json.loads(state.read_text())["first_seen"] == {"test": "unchanged"}
+    report = json.loads(Path(str(state) + ".local-report.json").read_text())
+    assert report["conditions"] == conditions
+    assert report["output"].strip() == output
+    assert report["error"] is None
+
+
+@pytest.mark.parametrize("pending", [None, b'{"target":"telegram:old"}', b'not json'])
+def test_local_failure_and_pending_cannot_send(tmp_path, monkeypatch, pending):
+    from candybar import transition_exec as mod
+    state = tmp_path / "watchdog.json"
+    original = b'{"conditions":["host:saturation"],"first_seen":{"test":"old"}}'
+    state.write_bytes(original)
+    outbox = Path(str(state) + ".pending.json")
+    if pending is not None:
+        outbox.write_bytes(pending)
+    def forbidden(*args):
+        pytest.fail("local-only reached transport")
+    monkeypatch.setattr(mod, "notify", forbidden)
+    monkeypatch.setattr(mod, "replay", forbidden)
+    with pytest.raises(RuntimeError):
+        execute([sys.executable, "-c", "raise SystemExit(2)"], state,
+                None, None, sender=forbidden, local_only=True)
+    assert state.read_bytes() == original
+    if pending is not None:
+        assert outbox.read_bytes() == pending
+    assert json.loads(Path(str(state) + ".local-report.json").read_text())["error"]

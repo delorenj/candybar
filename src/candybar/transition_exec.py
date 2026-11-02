@@ -14,6 +14,7 @@ import os
 import signal
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 MAX_OUTPUT = 65536
@@ -120,8 +121,65 @@ def replay(path: Path, state: Path, operational: Path, profile: str, target: str
     return 1
 
 
+def local_report(state: Path, conditions: list[str], output: str, error: str | None) -> None:
+    """Durable local evidence only; never create or consume a delivery outbox."""
+    report = {"version": 1, "timestamp": time.time(), "conditions": conditions,
+              "output": output, "error": error}
+    encoded = json.dumps(report).encode()
+    # Append raw transitions/faults before replacing the gate's current snapshot.
+    with open(str(state) + ".local-events.jsonl", "ab") as log:
+        log.write(encoded + b"\n")
+        log.flush()
+        os.fsync(log.fileno())
+    atomic(state.with_name(state.name + ".local-report.json"), encoded)
+
+
+def execute_local(command: list[str], state: Path, timeout: float) -> dict:
+    state = state.expanduser().resolve()
+    state.parent.mkdir(parents=True, exist_ok=True)
+    with open(str(state) + ".lock", "a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        conditions = []
+        output = ""
+        try:
+            if state.exists():
+                conditions = json.loads(state.read_text()).get("conditions", [])
+            pending = state.with_name(state.name + ".pending.json")
+            # lexists also catches dangling symlinks. Keep legacy bytes untouched.
+            if os.path.lexists(pending):
+                raise PendingError("local-only route mismatch; legacy outbox preserved, not replayed")
+            with tempfile.TemporaryDirectory(prefix=".transition-", dir=state.parent) as directory:
+                staged = Path(directory) / "state.json"
+                if state.exists():
+                    staged.write_bytes(state.read_bytes())
+                rc, output = bounded([*command, "--state-file", str(staged)], timeout)
+                if rc:
+                    raise RuntimeError(f"detector exited {rc}")
+                candidate = staged.read_bytes()
+                data = json.loads(candidate)
+                if not isinstance(data, dict) or not isinstance(data.get("conditions"), list) or not all(
+                    isinstance(key, str) for key in data["conditions"]
+                ):
+                    raise ValueError("invalid detector conditions")
+                local_report(state, data["conditions"], output, None)
+                atomic(state, candidate)
+        except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as exc:
+            local_report(state, conditions if isinstance(conditions, list) else [], output,
+                         f"{type(exc).__name__}: {exc}")
+            if isinstance(exc, PendingError):
+                raise
+            raise RuntimeError("local detector execution failed; transition state preserved") from exc
+    return {"status": "success", "message": "recorded locally; no transport",
+            "token_spend": 0, "delivery": "local"}
+
+
 def execute(command: list[str], state: Path, profile: str, target: str,
-            timeout: float = 90, notify_timeout: float = 45, sender=notify) -> dict:
+            timeout: float = 90, notify_timeout: float = 45, sender=notify,
+            *, local_only: bool = False) -> dict:
+    if local_only:
+        if profile or target:
+            raise ValueError("local-only mode forbids a delivery route")
+        return execute_local(command, state, timeout)
     # Resolve aliases before choosing lock/outbox paths: one detector, one lock.
     state = state.expanduser().resolve()
     state.parent.mkdir(parents=True, exist_ok=True)
@@ -161,8 +219,9 @@ def execute(command: list[str], state: Path, profile: str, target: str,
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-file", type=Path, required=True)
-    parser.add_argument("--profile", required=True)
-    parser.add_argument("--target", required=True)
+    parser.add_argument("--local-only", action="store_true")
+    parser.add_argument("--profile")
+    parser.add_argument("--target")
     parser.add_argument("--timeout", type=float, default=90)
     parser.add_argument("--notify-timeout", type=float, default=45)
     parser.add_argument("command", nargs=argparse.REMAINDER)
@@ -170,8 +229,13 @@ def main() -> int:
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command or "--state-file" in command or args.timeout <= 0 or args.notify_timeout <= 0:
         parser.error("detector command required; wrapper owns --state-file; timeouts must be positive")
+    if args.local_only and (args.profile or args.target):
+        parser.error("local-only mode forbids --profile and --target")
+    if not args.local_only and not (args.profile and args.target):
+        parser.error("notification mode requires --profile and --target")
     try:
-        result = execute(command, args.state_file, args.profile, args.target, args.timeout, args.notify_timeout)
+        result = execute(command, args.state_file, args.profile, args.target, args.timeout,
+                         args.notify_timeout, local_only=args.local_only)
         code = 0
     except PendingError as exc:
         result = {"status": "fail", "message": str(exc), "delivery": "unknown", "token_spend": 0}
