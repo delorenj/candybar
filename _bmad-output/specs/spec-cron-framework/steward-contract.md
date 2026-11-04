@@ -151,6 +151,8 @@ Minimal deviations made while building it, each the smallest change that works:
   types are exactly four tokens (`docs/event-naming.md`), so the entity is one token, `steward_task`. The command is
   `bloodbank.cron.candybar.steward` as written. Bus payloads use the bus's snake_case (`task_id`, `candybar_id`,
   `parent_task_id`, ...) plus the candybar's `name`; the REST shapes stay camelCase as above.
+  Registered in Bloodbank (entity `steward_task`, event action `queued`, command action `steward`; schemas under
+  `schemas/bloodbank/cron/`) in bloodbank `38633e9`.
 - **OpenCode service file:** the background service's URL and password live in
   `$XDG_STATE_HOME/opencode/service.json` (default `~/.local/state/...`), the file the `opencode` client itself
   maintains (its URL moves on restart). `~/.config/opencode/service.json` holds only a password and is a fallback for
