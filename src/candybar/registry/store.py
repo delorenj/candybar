@@ -855,6 +855,7 @@ async def insert_steward_task(
     action: str,
     model: str,
     parent_task_id: UUID | None = None,
+    created_at: datetime | None = None,
 ) -> StewardTask:
     """Insert one `queued` task. Caller commits.
 
@@ -868,7 +869,7 @@ async def insert_steward_task(
         status="queued",
         model=model,
         parent_task_id=parent_task_id,
-        created_at=datetime.now(UTC),
+        created_at=created_at or datetime.now(UTC),
     )
     session.add(row)
     try:

@@ -8,6 +8,7 @@ pass registry rows in and get contract JSON out.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -171,6 +172,27 @@ def profile_changes(update: ProfileUpdate) -> dict[str, Any]:
     return out
 
 
+@dataclass
+class DraftTask:
+    """A task not stored yet: what its `queued` fact describes before the insert."""
+
+    id: UUID
+    candybar_id: UUID
+    action: str
+    model: str
+    created_at: datetime
+    status: str = "queued"
+    parent_task_id: UUID | None = None
+    session_id: str | None = None
+    outcome: str | None = None
+    summary: str | None = None
+    report_key: str | None = None
+    invocation_id: UUID | None = None
+    error: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
 def _iso(value: datetime | None) -> str | None:
     return value.astimezone(UTC).isoformat() if value is not None else None
 
@@ -291,6 +313,7 @@ __all__ = [
     "TERMINAL_STATUSES",
     "Axes",
     "Axis",
+    "DraftTask",
     "Evaluation",
     "EvaluationVerdict",
     "Overview",

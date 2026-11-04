@@ -54,6 +54,16 @@ Story 7.5 (AD-21) adds the `enabled` flag: `POST /candybars/{id}/enabled`
 register accepts `enabled: false` so a migration cutover can register a job
 before retiring its native scheduler. A disabled candybar is listed with
 `enabled: false`, never dispatched, and has no upcoming `/schedule` rows.
+The steward contract (steward-contract.md, 2026-11-03) adds: `POST
+/candybars/{id}/archived` `{archived}` (archiving also disables, in one
+`updated` fact; enabling an archived candybar is a 409), the per-candybar
+profile (`GET`/`PUT /candybars/{id}/profile`, `GET /profiles`; overview and
+evaluation validated against the contract shapes), and steward tasks: `POST
+/candybars/{id}/steward` `{action}` publishes the
+`bloodbank.cmd.cron.candybar.steward` command and the `steward_task.queued`
+fact FIRST, then stores the queued task (202); `GET
+/candybars/{id}/steward/tasks`, `GET /steward/tasks` and the worker's `PATCH
+/steward/tasks/{taskId}`, which publishes the status fact before the write.
 All errors are RFC 7807 problem+json. Epic 5 adds the rest of the CAP-8 read surface.
 """
 
@@ -65,7 +75,7 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 import nats.errors
@@ -79,27 +89,39 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from candybar.dispatcher.schedule import group_skips, widen_skip_window
 from candybar.events.builders import (
+    STEWARD_FACT_FOR_STATUS,
     build_candybar_created,
     build_candybar_invoke,
     build_candybar_skipped,
+    build_candybar_steward,
     build_candybar_updated,
+    build_steward_task_fact,
 )
 from candybar.events.vocabulary import tick_id_for_minute
 from candybar.registry import (
     INVOCATION_LIST_MAX,
     SKIP_OCCURRENCE,
     SKIP_REST_OF_DAY,
+    STEWARD_TASK_LIST_MAX,
     CandybarManifest,
+    DuplicateActiveTaskError,
     DuplicateNameError,
+    UnknownCandybarError,
+    active_steward_task,
     add_occurrence_skip,
     add_rest_of_day_skip,
     fire_results,
     get_candybar,
     get_invocation,
+    get_profile,
+    get_steward_task,
     insert_candybar,
+    insert_steward_task,
     list_candybars,
     list_invocations,
+    list_profiles,
     list_skips,
+    list_steward_tasks,
     lock_candybar,
     lock_noise_batch,
     name_taken,
@@ -107,7 +129,21 @@ from candybar.registry import (
     rest_of_day_skip_id,
     skip_stored,
     update_candybar,
+    update_steward_task,
+    upsert_profile,
     uuid7,
+)
+from candybar.steward.model import (
+    MODEL_FOR_ACTION,
+    TASK_COLUMNS,
+    DraftTask,
+    ProfileUpdate,
+    profile_changes,
+    profile_json,
+    stamp_transition,
+    task_fact_data,
+    task_json,
+    transition_problem,
 )
 
 from .schedule import (
@@ -210,6 +246,44 @@ class EnabledRequest(BaseModel):
     enabled: bool
 
 
+class ArchivedRequest(BaseModel):
+    """POST /candybars/{id}/archived body (steward contract section 1): the wanted state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    archived: bool
+
+
+class StewardRequest(BaseModel):
+    """POST /candybars/{id}/steward body. `refactor` is never requested (an evaluate queues it)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["enrich", "fix", "evaluate"]
+
+
+class TaskPatchRequest(BaseModel):
+    """PATCH /steward/tasks/{taskId} body: any non-empty subset (worker-only by convention)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["queued", "running", "succeeded", "failed"] = Field(default=None)  # type: ignore[assignment]
+    sessionId: str | None = None
+    outcome: str | None = None
+    summary: str | None = None
+    reportKey: str | None = None
+    invocationId: UUID | None = None
+    error: str | None = None
+    startedAt: AwareDatetime | None = None
+    finishedAt: AwareDatetime | None = None
+
+
+# Steward task list bounds (contract section 3).
+CANDYBAR_TASKS_DEFAULT = 20
+CANDYBAR_TASKS_MAX = 200
+ALL_TASKS_DEFAULT = 100
+
+
 class SkipRequest(BaseModel):
     """POST /candybars/{id}/skip body (contract: `{ fireTime: <ts> }`).
 
@@ -235,7 +309,7 @@ class SkipDayRequest(BaseModel):
     date: date
 
 
-def problem(status: int, title: str, detail: str) -> JSONResponse:
+def problem(status: int, title: str, detail: str, **extra: Any) -> JSONResponse:
     return JSONResponse(
         status_code=status,
         media_type=PROBLEM_JSON,
@@ -244,6 +318,7 @@ def problem(status: int, title: str, detail: str) -> JSONResponse:
             "title": title,
             "status": status,
             "detail": detail,
+            **extra,
         },
     )
 
@@ -541,6 +616,13 @@ def create_app(
             if row is None:
                 return problem(
                     404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                )
+            if flag == "enabled" and value and getattr(row, "archived", False):
+                # Steward contract section 1: unarchive first.
+                return problem(
+                    409,
+                    "Candybar is archived",
+                    f"{row.name} is archived; unarchive it before enabling it",
                 )
             if getattr(row, flag) == value:
                 # Already in that state: no fact, no write.
@@ -885,5 +967,214 @@ def create_app(
                 return problem(422, "Invalid schedule window", str(exc))
         frames = live.frames(last_event_id=request.headers.get("last-event-id"), window=window)
         return StreamingResponse(frames, media_type=STREAM_MEDIA_TYPE, headers=STREAM_HEADERS)
+
+    # ------------------------------------------------------------------
+    # Steward contract (steward-contract.md): archive, profiles, tasks.
+
+    @app.post("/candybars/{candybar_id}/archived")
+    async def set_archived(candybar_id: UUID, body: ArchivedRequest) -> JSONResponse:
+        """Archive (also disables, one write) or unarchive (stays disabled) a candybar."""
+        async with session_factory() as session:
+            row = await lock_candybar(session, candybar_id)
+            if row is None:
+                return problem(
+                    404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                )
+            wanted = {"archived": True, "enabled": False} if body.archived else {"archived": False}
+            changes = {k: v for k, v in wanted.items() if getattr(row, k, None) != v}
+            if not changes:
+                return JSONResponse(content=candybar_detail_json(row))
+            event = build_candybar_updated(candybar_id=candybar_id, name=row.name, changes=changes)
+            try:
+                await sink.publish(event)
+            except BUS_ERRORS as exc:
+                log.error("failed to publish candybar.updated (archived) for %s: %s", candybar_id, exc)
+                return problem(
+                    503,
+                    "Event bus unavailable",
+                    "could not publish candybar.updated; the archived flag is unchanged",
+                )
+            row = await update_candybar(session, row, changes)
+            result = candybar_detail_json(row)
+        return JSONResponse(content=result)
+
+    @app.get("/candybars/{candybar_id}/profile")
+    async def profile_of(candybar_id: UUID) -> JSONResponse:
+        """The candybar's profile, or an empty one (all nulls) when none exists yet."""
+        async with session_factory() as session:
+            if await get_candybar(session, candybar_id) is None:
+                return problem(
+                    404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                )
+            body = profile_json(candybar_id, await get_profile(session, candybar_id))
+        return JSONResponse(content=body)
+
+    @app.put("/candybars/{candybar_id}/profile")
+    async def put_profile(candybar_id: UUID, body: ProfileUpdate) -> JSONResponse:
+        """Merge per top-level key; `overview` and `evaluation` are contract-validated (422)."""
+        changes = profile_changes(body)
+        if not changes:
+            return problem(422, "Invalid profile update", "no fields to update")
+        try:
+            async with session_factory() as session:
+                if await get_candybar(session, candybar_id) is None:
+                    return problem(
+                        404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                    )
+                row = await upsert_profile(session, candybar_id, changes)
+                result = profile_json(candybar_id, row)
+        except UnknownCandybarError:
+            return problem(404, "Candybar not found", f"no candybar registered with id {candybar_id}")
+        return JSONResponse(content=result)
+
+    @app.get("/profiles")
+    async def profiles() -> JSONResponse:
+        """Every stored profile, in one call for list views."""
+        async with session_factory() as session:
+            body = [profile_json(row.candybar_id, row) for row in await list_profiles(session)]
+        return JSONResponse(content={"profiles": body})
+
+    @app.post("/candybars/{candybar_id}/steward", status_code=202)
+    async def request_steward(candybar_id: UUID, body: StewardRequest) -> JSONResponse:
+        """Queue one steward task: command and `queued` fact first, then the row (202)."""
+        action = body.action
+        try:
+            async with session_factory() as session:
+                # The candybar lock serializes requests for one candybar, so the
+                # active-task check below cannot race a twin request.
+                row = await lock_candybar(session, candybar_id)
+                if row is None:
+                    return problem(
+                        404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                    )
+                if action == "fix" and getattr(row, "archived", False):
+                    return problem(
+                        409,
+                        "Candybar is archived",
+                        f"{row.name} is archived; archived candybars may be enriched and "
+                        "evaluated, not fixed",
+                    )
+                active = await active_steward_task(session, candybar_id, action)
+                if active is not None:
+                    return problem(
+                        409,
+                        "Steward task already active",
+                        f"{row.name} already has a {active.status} {action} task",
+                        taskId=str(active.id),
+                    )
+                task_id = uuid7()
+                draft = DraftTask(
+                    id=task_id,
+                    candybar_id=candybar_id,
+                    action=action,
+                    model=MODEL_FOR_ACTION[action],
+                    created_at=datetime.now(UTC),
+                )
+                command = build_candybar_steward(
+                    task_id=task_id, candybar_id=candybar_id, action=action
+                )
+                fact = build_steward_task_fact(
+                    STEWARD_FACT_FOR_STATUS["queued"], task_fact_data(draft, row.name)
+                )
+                try:
+                    # The command first: a failed fact then leaves only a
+                    # command for a task that was never stored, which the
+                    # steward drops.
+                    await sink.publish(command)
+                    await sink.publish(fact)
+                except BUS_ERRORS as exc:
+                    log.error("failed to publish the steward command for %s: %s", candybar_id, exc)
+                    return problem(
+                        503,
+                        "Event bus unavailable",
+                        "could not publish the steward command; no task was queued",
+                    )
+                task = await insert_steward_task(
+                    session,
+                    task_id=task_id,
+                    candybar_id=candybar_id,
+                    action=action,
+                    model=draft.model,
+                    created_at=draft.created_at,
+                )
+                result = task_json(task)
+        except DuplicateActiveTaskError:
+            async with session_factory() as session:
+                active = await active_steward_task(session, candybar_id, action)
+            return problem(
+                409,
+                "Steward task already active",
+                f"a {action} task is already active for {candybar_id}",
+                taskId=str(active.id) if active is not None else None,
+            )
+        except UnknownCandybarError:
+            return problem(404, "Candybar not found", f"no candybar registered with id {candybar_id}")
+        log.info("steward %s of %s queued: task %s", action, candybar_id, result["id"])
+        return JSONResponse(status_code=202, content=result)
+
+    @app.get("/candybars/{candybar_id}/steward/tasks")
+    async def candybar_tasks(
+        candybar_id: UUID,
+        limit: int = Query(CANDYBAR_TASKS_DEFAULT, ge=1, le=CANDYBAR_TASKS_MAX),
+    ) -> JSONResponse:
+        """A candybar's steward tasks, newest first."""
+        async with session_factory() as session:
+            if await get_candybar(session, candybar_id) is None:
+                return problem(
+                    404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                )
+            rows = await list_steward_tasks(session, candybar_id=candybar_id, limit=limit)
+            body = [task_json(row) for row in rows]
+        return JSONResponse(content={"candybarId": str(candybar_id), "tasks": body})
+
+    @app.get("/steward/tasks")
+    async def all_tasks(
+        active: bool = False,
+        limit: int = Query(ALL_TASKS_DEFAULT, ge=1, le=STEWARD_TASK_LIST_MAX),
+    ) -> JSONResponse:
+        """`active=1`: every queued and running task; else the newest `limit` across all."""
+        async with session_factory() as session:
+            rows = await list_steward_tasks(
+                session, active=active, limit=STEWARD_TASK_LIST_MAX if active else limit
+            )
+            body = [task_json(row) for row in rows]
+        return JSONResponse(content={"tasks": body})
+
+    @app.patch("/steward/tasks/{task_id}")
+    async def patch_task(task_id: UUID, body: TaskPatchRequest) -> JSONResponse:
+        """Update a task (worker-only by convention); a status move publishes its fact first."""
+        patch = body.model_dump(exclude_unset=True)
+        if not patch:
+            return problem(422, "Invalid task update", "no fields to update")
+        if "status" in patch and patch["status"] is None:
+            return problem(422, "Invalid task update", "status cannot be null")
+        changes = {TASK_COLUMNS[key]: value for key, value in patch.items()}
+        async with session_factory() as session:
+            task = await get_steward_task(session, task_id, lock=True)
+            if task is None:
+                return problem(404, "Steward task not found", f"no steward task with id {task_id}")
+            status = changes.get("status", task.status)
+            refusal = transition_problem(task.status, status)
+            if refusal is not None:
+                return problem(409, "Invalid task transition", refusal)
+            changes = stamp_transition(task.status, changes)
+            if status != task.status:
+                candybar = await get_candybar(session, task.candybar_id)
+                name = candybar.name if candybar is not None else "unknown"
+                fact = build_steward_task_fact(
+                    STEWARD_FACT_FOR_STATUS[status], task_fact_data(task, name, changes)
+                )
+                try:
+                    await sink.publish(fact)
+                except BUS_ERRORS as exc:
+                    log.error("failed to publish the %s fact of task %s: %s", status, task_id, exc)
+                    return problem(
+                        503,
+                        "Event bus unavailable",
+                        f"could not publish the {status} fact; the task is unchanged",
+                    )
+            task = await update_steward_task(session, task, changes)
+            result = task_json(task)
+        return JSONResponse(content=result)
 
     return app
