@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import itertools
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from candybar.dispatcher.firetimes import fire_times
 from candybar.tui.schedule import (
     PRESETS,
     build_cron,
@@ -101,3 +103,33 @@ def test_next_fires_excludes_the_current_minute() -> None:
 
 def test_next_fires_never_firing_cron_is_empty() -> None:
     assert next_fires("0 0 30 2 *", "UTC") == []
+
+
+@pytest.mark.parametrize(
+    "cron",
+    [f"*/{n} * * * *" for n in range(2, 60)] + [f"0 */{n} * * *" for n in range(2, 24)],
+)
+def test_every_n_descriptions_match_the_real_fire_gaps(cron: str) -> None:
+    """A wrong description is worse than the raw cron: 'every N' must mean equal gaps of N."""
+    text = describe_schedule(cron)
+    if text == cron:
+        return
+    n = int(text.split()[1])
+    unit = timedelta(hours=1) if text.split()[2] == "hours" else timedelta(minutes=1)
+    start = datetime(2026, 3, 1, tzinfo=UTC)
+    fires = list(fire_times(cron, UTC, start, start + timedelta(days=2)))
+    gaps = {b - a for a, b in itertools.pairwise(fires)}
+    assert gaps == {n * unit}, (cron, text, gaps)
+
+
+@pytest.mark.parametrize(
+    ("cron", "expected"),
+    [
+        ("*/7 * * * *", "*/7 * * * *"),
+        ("0 */5 * * *", "0 */5 * * *"),
+        ("0 8 * * 0,7", "0 8 * * 0,7"),
+        ("0 9 31 * *", "On the 31st of each month that has one, at 09:00"),
+    ],
+)
+def test_descriptions_never_overclaim(cron: str, expected: str) -> None:
+    assert describe_schedule(cron) == expected

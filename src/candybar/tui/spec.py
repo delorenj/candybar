@@ -53,7 +53,7 @@ class Answers:
     description: str = ""
     tags: str = ""  # comma separated
     schedule: str = ""
-    timezone: str = DEFAULT_TIMEZONE
+    timezone: str = ""  # "" = not chosen: the host's zone is offered
     kind: str = ""  # one of KINDS, "" = not chosen yet
     command: str = ""  # exec: command line
     workdir: str = ""
@@ -105,14 +105,14 @@ def parse_tags(text: str) -> list[str]:
 def parse_env(lines: Iterable[str]) -> dict[str, str]:
     env: dict[str, str] = {}
     for raw in lines:
-        line = raw.strip()
-        if not line or line.startswith("#"):
+        line = raw.rstrip("\r\n")
+        if not line.strip() or line.strip().startswith("#"):
             continue
         key, sep, value = line.partition("=")
         key = key.strip()
         if not sep or not _ENV_KEY_RE.match(key):
-            raise SpecError("env", f"env line {line!r} must look like KEY=value")
-        env[key] = value
+            raise SpecError("env", f"env line {line.strip()!r} must look like KEY=value")
+        env[key] = value  # the value exactly as typed: spaces can be meaningful
     return env
 
 
@@ -213,6 +213,14 @@ def build_runner(a: Answers) -> dict[str, Any] | None:
     """The runner table for `a`, or None for the script-entrypoint kind. Raises SpecError."""
     kind = a.kind
     runner: dict[str, Any]
+    # Say so instead of silently dropping an answer the chosen kind has no use for.
+    if kind in KINDS and kind != "exec":
+        if a.workdir.strip():
+            raise SpecError("workdir", f"a {_kind_word(kind)} has no working directory; workdir is for exec")
+        if any(line.strip() and not line.strip().startswith("#") for line in a.env):
+            raise SpecError("env", f"a {_kind_word(kind)} takes no env literals; env is for exec")
+    if kind in KINDS and kind != "n8n" and a.data.strip():
+        raise SpecError("data", f"a {_kind_word(kind)} takes no data; data is for n8n")
     if kind == "exec":
         runner = {"kind": "exec", "argv": split_command(a.command)}
         if a.workdir.strip():
@@ -234,6 +242,8 @@ def build_runner(a: Answers) -> dict[str, Any] | None:
         target = a.target.strip()
         if not target:
             raise SpecError("target", "a webhook path or URL is required")
+        if "://" in target and not is_url(target):
+            raise SpecError("target", f"an n8n URL must be http(s)://..., got {target!r}")
         runner = {"kind": "n8n", "url" if is_url(target) else "webhook": target}
         if a.data.strip():
             try:
@@ -284,17 +294,34 @@ def _probe(runner: dict[str, Any]) -> dict[str, Any]:
     return probe
 
 
+_RUNNER_KEY_FIELD = {
+    "workdir": "workdir", "env": "env", "timeout_s": "timeout", "on_failure": "on_failure",
+    "webhook": "target", "url": "target", "data": "data", "unit": "unit",
+    "profile": "profile", "job_id": "job_id", "argv": "command",
+}
+
+
+def _kind_word(kind: str) -> str:
+    return "script entrypoint" if kind == "entrypoint" else f"{kind} runner"
+
+
 def _blame(kind: str, message: str) -> str:
-    """Pick the Answers field a runner validation message is about."""
-    lowered = message.lower()
-    for word, field_name in (
-        ("workdir", "workdir"), ("env", "env"), ("timeout", "timeout"), ("on_failure", "on_failure"),
-        ("webhook", "target"), ("url", "target"), ("data", "data"), ("unit", "unit"),
-        ("profile", "profile"), ("job_id", "job_id"), ("argv", "command"),
-    ):
-        if word in lowered:
-            return field_name
-    return {"exec": "command", "systemd": "unit", "hermes": "profile", "n8n": "target"}.get(kind, "kind")
+    """Pick the Answers field a runner validation message is about.
+
+    Only the error's location is read (`runners._readable` writes
+    `<kind>.<key>[.<i>]: message`), never the message text, which echoes the
+    user's own value and would blame whatever field name it happens to contain.
+    """
+    fallback = {"exec": "command", "systemd": "unit", "hermes": "profile", "n8n": "target"}.get(kind, "kind")
+    for part in message.split("; "):
+        where, sep, _ = part.partition(":")
+        if not sep or " " in where:
+            continue
+        for key in where.split("."):
+            if key in _RUNNER_KEY_FIELD:
+                return _RUNNER_KEY_FIELD[key]
+        return fallback
+    return fallback
 
 
 def build_spec(a: Answers) -> dict[str, Any]:

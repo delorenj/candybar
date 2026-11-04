@@ -50,7 +50,7 @@ from candybar.project import (
     load_project,
     plan_write,
 )
-from candybar.timezones import DEFAULT_TIMEZONE, resolve_timezone
+from candybar.timezones import resolve_timezone
 from candybar.tui.schedule import (
     DAYS,
     PRESET_NEEDS,
@@ -138,7 +138,7 @@ class CreateApp(App[CreateResult | None]):
         super().__init__()
         self.project = project
         self.a = answers or Answers()
-        if not self.a.timezone or self.a.timezone == DEFAULT_TIMEZONE:
+        if not self.a.timezone:
             self.a.timezone = host_timezone()
         self.dest_choice = dest_choice if project is not None else "custom"
         self.custom_path = custom_path
@@ -439,13 +439,25 @@ class CreateApp(App[CreateResult | None]):
         self.query_one("#step-error", Static).update("")
 
     def _show_errors(self, errors: dict[str, str]) -> None:
-        stray = []
+        """Inline errors under their fields, and always a summary in the fixed error bar.
+
+        The bar is the one place that is visible on any terminal size and for
+        a field whose box is hidden; focus jumps to the first bad field.
+        """
         for field, message in errors.items():
             if field in ERROR_FIELDS:
                 self._set_err(field, message)
-            else:
-                stray.append(message)
-        self.query_one("#step-error", Static).update(escape("; ".join(stray)) if stray else "")
+        summary = "; ".join(f"{field}: {message}" for field, message in errors.items())
+        self.query_one("#step-error", Static).update(escape(summary))
+        for field in errors:
+            try:
+                widget = self.query_one(f"#{field}")
+            except NoMatches:
+                continue
+            if self._shown(widget) and widget.focusable:
+                widget.focus()
+                widget.scroll_visible()
+                break
 
     # --- live reactions ------------------------------------------------------------
 

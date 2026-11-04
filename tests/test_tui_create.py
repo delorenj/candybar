@@ -401,3 +401,11 @@ def test_switch_defaults_follow_prefill(project: Project) -> None:
         await pilot.press("escape")
 
     assert drive(app, script) is None
+
+
+def test_an_explicit_utc_prefill_is_not_replaced_by_the_host_zone(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TZ", "America/New_York")
+    assert CreateApp(project, Answers(timezone="UTC"), unit_loader=None).a.timezone == "UTC"
+    assert CreateApp(project, Answers(), unit_loader=None).a.timezone == "America/New_York"

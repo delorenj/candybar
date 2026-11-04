@@ -104,14 +104,15 @@ def describe_schedule(cron: str) -> str:
         n = int(step.group(1))
         if n == 1:
             return "Every minute"
-        return f"Every {n} minutes" if 1 < n < 60 else cron
+        # `*/7` restarts at :00 every hour (…:49, :56, :00): only a divisor of 60 is "every N".
+        return f"Every {n} minutes" if 1 < n < 60 and 60 % n == 0 else cron
     m = _num(minute, 0, 59)
     if m is None:
         return cron
     if (hour, dom, dow) == ("*", "*", "*"):
         return "Every hour, on the hour" if m == 0 else f"Every hour at {m} minutes past"
     hstep = re.fullmatch(r"\*/(\d+)", hour)
-    if hstep and (dom, dow) == ("*", "*") and 1 < int(hstep.group(1)) < 24:
+    if hstep and (dom, dow) == ("*", "*") and 1 < int(hstep.group(1)) < 24 and 24 % int(hstep.group(1)) == 0:
         return f"Every {int(hstep.group(1))} hours at {m:02d} minutes past"
     h = _num(hour, 0, 23)
     if h is None:
@@ -121,7 +122,7 @@ def describe_schedule(cron: str) -> str:
         return f"Every day at {at}"
     if dom == "*" and dow in ("1-5", "MON-FRI"):
         return f"Weekdays at {at}"
-    if dom == "*" and dow in ("0,6", "6,0", "6-7", "0,7"):
+    if dom == "*" and dow in ("0,6", "6,0", "6-7", "6,7", "7,6"):
         return f"Weekends at {at}"
     if dom == "*":
         d = _num(dow, 0, 7)
@@ -130,6 +131,8 @@ def describe_schedule(cron: str) -> str:
         return cron
     day = _num(dom, 1, 31)
     if day is not None and dow == "*":
+        if day > 28:
+            return f"On the {_ordinal(day)} of each month that has one, at {at}"
         return f"On the {_ordinal(day)} of every month at {at}"
     return cron
 

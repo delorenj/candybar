@@ -27,6 +27,7 @@ from candybar.project import (
     plan_write,
     write,
 )
+from candybar.tui.schedule import next_fires
 from candybar.tui.spec import (
     Answers,
     CreateResult,
@@ -75,7 +76,7 @@ def _answers_from_flags(
         description=description or "",
         tags=tags or "",
         schedule=schedule or "",
-        timezone=timezone or host_timezone(),
+        timezone=timezone or "",  # "" = not given: the host's zone (wizard and flags alike)
         workdir=workdir or "",
         env=list(env),
         data=data or "",
@@ -190,7 +191,10 @@ def create(
     if print_:
         typer.echo(planned.text, nl=False)
         return
-    path = write(planned)
+    try:
+        path = write(planned)
+    except OSError as exc:
+        raise _fail(f"cannot write {planned.path}: {exc}", 1) from exc
     name_ = result.spec["name"]
     typer.echo(f"appended {name_} to {path}" if planned.appended else f"wrote {path}")
     if register:
@@ -220,9 +224,13 @@ def _from_flags(
         missing.append("a runner (--exec, --systemd, --hermes, --n8n or --entrypoint)")
     if missing:
         raise _fail("missing: " + ", ".join(missing) + " (or run without --no-tui for the wizard)")
+    if not a.timezone:
+        a.timezone = host_timezone()
     for problem in (name_error(a.name), schedule_error(a.schedule), timezone_error(a.timezone)):
         if problem:
             raise _fail(problem)
+    if not next_fires(a.schedule, a.timezone, count=1):
+        typer.echo(f"warning: {a.schedule!r} never fires (no such date); writing it anyway", err=True)
     try:
         spec = build_spec(a)
     except SpecError as exc:

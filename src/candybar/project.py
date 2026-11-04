@@ -570,6 +570,13 @@ def plan_write(
     """
     dest = Path(dest)
     name = spec.get("name")
+    if dest.is_dir():
+        raise WriteError(f"{dest} is a directory; name a file")
+    ancestor = dest.parent
+    while not ancestor.exists() and ancestor != ancestor.parent:
+        ancestor = ancestor.parent
+    if not ancestor.is_dir() or not os.access(ancestor, os.W_OK | os.X_OK):
+        raise WriteError(f"cannot create {dest}: {ancestor} is not a writable directory")
     append = dest.name == PROJECT_FILE
     block = render(spec, style="multi" if append else "single", comment=comment)
     if append and dest.is_file():

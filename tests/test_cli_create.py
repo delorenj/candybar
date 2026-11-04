@@ -423,3 +423,62 @@ def test_list_user_units_parses_and_never_raises() -> None:
     assert list_user_units(boom) == []
     assert list_user_units(lambda *a, **k: SimpleNamespace(returncode=1, stdout="a.service x")) == []
     assert spec_mod.KINDS[0] == "exec"
+
+
+# --- review round 1 regressions ----------------------------------------------------
+
+
+def test_runner_errors_are_blamed_by_location_not_by_the_users_value() -> None:
+    from candybar.tui.spec import _blame
+
+    message = "systemd.unit: Value error, unit must be a <name>.service systemd unit name, got 'env-timeout-data'"
+    assert _blame("systemd", message) == "unit"
+    assert _blame("exec", "exec.workdir: Value error, workdir must be absolute, got 'env'") == "workdir"
+    assert _blame("n8n", "something odd without a location") == "target"
+
+
+def test_env_values_keep_their_spaces() -> None:
+    from candybar.tui.spec import parse_env
+
+    assert parse_env(["  KEY= padded value \n", "# comment", "", "A=b=c"]) == {"KEY": " padded value ", "A": "b=c"}
+
+
+@pytest.mark.parametrize(
+    ("flags", "needle"),
+    [
+        (["--systemd", "x.service", "--workdir", "/tmp"], "workdir is for exec"),
+        (["--systemd", "x.service", "--env", "A=1"], "env is for exec"),
+        (["--exec", "true", "--data", "{}"], "data is for n8n"),
+        (["--n8n", "ftp://host/x"], "must be http(s)"),
+    ],
+)
+def test_flags_the_runner_cannot_use_are_refused(project: Path, flags: list[str], needle: str) -> None:
+    result = run(*BASE, "--name", "x", *flags)
+    assert result.exit_code == 2 and needle in result.output
+    assert not (project / ".candybars").exists()
+
+
+def test_a_foreign_project_tag_is_refused(project: Path) -> None:
+    result = run(*BASE, "--name", "x", "--exec", "true", "--tags", "a,project:other")
+    assert result.exit_code == 2 and "added automatically" in result.output
+
+
+def test_out_naming_a_directory_fails_cleanly(project: Path) -> None:
+    (project / "somedir").mkdir()
+    result = run(*BASE, "--name", "x", "--exec", "true", "--out", "somedir")
+    assert result.exit_code == 2 and "is a directory" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_a_cron_that_never_fires_is_written_with_a_warning(project: Path) -> None:
+    result = run("create", "--no-tui", "--name", "x", "--exec", "true", "--schedule", "0 0 30 2 *")
+    assert result.exit_code == 0, result.output
+    assert "never fires" in result.output
+
+
+def test_explicit_utc_survives_a_non_utc_host(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TZ", "America/New_York")
+    run(*BASE, "--name", "utc", "--exec", "true", "--timezone", "UTC")
+    assert "timezone" not in written(project / ".candybars" / "utc.candybar.toml")["candybar"]
+    run(*BASE, "--name", "local", "--exec", "true")
+    assert written(project / ".candybars" / "local.candybar.toml")["candybar"]["timezone"] == "America/New_York"
