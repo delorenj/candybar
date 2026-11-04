@@ -1,0 +1,43 @@
+# Candybar steward, host role (steward-contract.md section 4).
+#
+# An event-driven worker, not a clock: it consumes
+# bloodbank.cmd.cron.candybar.steward (durable `candybar-steward`) and runs
+# each enrich / fix / evaluate / refactor task through the user's OpenCode
+# background service. It runs on the host because the tasks need the host:
+# the repo checkouts under ~/code, `systemctl --user cat`, the Hermes job
+# files, git push, `mc` and the OpenCode service on loopback.
+#
+# Install / pair-deploy: deploy/host/install.sh, deploy/README.md.
+# Linked (not copied) into ~/.config/systemd/user, so this file stays the
+# source of truth.
+
+[Unit]
+Description=Candybar steward (host role, steward contract)
+Documentation=file://%h/code/33GOD/candybar/deploy/README.md
+# Like the executor: NATS and Postgres are services a user unit cannot order
+# against; the steward retries the bus and its schema guard waits on the
+# registry. A container redeploy must not bounce it.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/33GOD/candybar
+# DATABASE_URL and CANDYBAR_JEV_KEY (resolved op:// references), rendered by
+# install.sh; mode 600, outside the repo. Required: a missing file fails the
+# start loudly.
+EnvironmentFile=%h/.config/candybar/steward.env
+Environment=NATS_URL=nats://localhost:4222
+Environment=PYTHONUNBUFFERED=1
+# The agents' tools: the repo venv (candybar CLI), mise shims, ~/.local/bin
+# (op, hermes), then the user manager's usual tail (git, mc, systemctl).
+Environment=PATH=%h/code/33GOD/candybar/.venv/bin:%h/.local/share/mise/shims:%h/.local/bin:%h/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=%h/code/33GOD/candybar/deploy/host/run-steward.sh
+Restart=always
+RestartSec=3
+# SIGTERM: the steward interrupts each in-flight OpenCode session and records
+# the task failed (a blocked HTTP long poll ends within ~35s).
+KillMode=mixed
+TimeoutStopSec=60
+
+[Install]
+WantedBy=default.target

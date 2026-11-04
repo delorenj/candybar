@@ -293,6 +293,46 @@ The body is the wanted state, not a toggle; the noise flow applies (one
 when nothing changes; 404 / 422 / 503 as on the noise routes). `POST
 /candybars` accepts `"enabled": false`. `candybar migrate` (below) drives it.
 
+### Archive, profiles and the steward (steward-contract.md)
+
+```bash
+curl -X POST https://candybar.delo.sh/candybars/<id>/archived \
+  -H 'content-type: application/json' -d '{"archived":true}'     # 200, single shape
+curl -X POST https://candybar.delo.sh/candybars/<id>/steward \
+  -H 'content-type: application/json' -d '{"action":"evaluate"}'  # 202 Task (queued)
+curl https://candybar.delo.sh/candybars/<id>/profile             # overview, project, evaluation
+curl 'https://candybar.delo.sh/steward/tasks?active=1'           # queued + running tasks
+```
+
+The full contract (shapes, status codes, behavior) is
+[`steward-contract.md`](_bmad-output/specs/spec-cron-framework/steward-contract.md).
+In short:
+
+- **Archive.** `archived: true` also disables the candybar in one write (one
+  `updated` fact, `changes: {archived, enabled}`); unarchiving leaves it
+  disabled, and `POST /enabled {enabled:true}` on an archived candybar is a
+  409 (unarchive first). Archived candybars are still listed with
+  `archived: true`; `candybar ls` and Holocene hide them.
+- **Profile.** One per candybar, created lazily: the steward's `overview`
+  (template v1, every field required), the `project` (ledger, Jev or a
+  manual override that enrich never replaces) and the latest `evaluation`.
+  `PUT /candybars/{id}/profile` merges per top-level key and validates both
+  shapes (422).
+- **Steward tasks.** `enrich`, `fix` and `evaluate` are requested here
+  (`refactor` only ever comes from an evaluate). The API publishes the
+  `bloodbank.cmd.cron.candybar.steward` command and the
+  `bloodbank.cron.steward_task.queued` fact first, then stores the task; a
+  second queued-or-running task of the same action is a 409 carrying the
+  active `taskId`, and an archived candybar cannot be fixed (409).
+- **The steward role** (`candybar-steward.service` on the host, below) runs
+  each task through an OpenCode session in the job's own repo checkout and
+  applies the answer. Evaluate writes
+  `~/code/DeLoDocs/Reports/<NY date>/candybar-evaluate-<name>.{md,json}`,
+  copies both to `delo/daily-reports/<date>/`, and runs the follow-up:
+  Suboptimal queues a `refactor`, Drifted a `fix`, Orphaned archives,
+  Nominal does nothing. A fix the agent reports repaired is proven by one
+  manual run, waited on (`outcome: fixed | not_fixed`).
+
 ### Noise collection (Story 5.5)
 
 ```bash
@@ -470,13 +510,17 @@ CANDYBAR_API_URL=https://candybar.delo.sh` off-box), and prints JSON with
 --wait`), 2 unknown candybar or bad arguments, 3 `run --wait` timed out.
 
 ```bash
-candybar ls [--all] [--tag T] [--hide-noise]     # registered candybars (paused hidden unless --all)
+candybar ls [--all] [--archived] [--tag T] [--hide-noise]   # paused hidden unless --all, archived unless --archived
 candybar show <name> [-n 5]                      # definition, runner, totals, latest runs
 candybar next                                    # the single next fire
 candybar schedule [--ahead 12] [--back 2] [-c <name>] [--hide-noise]   # fires around now, with results
 candybar history <name> [-n 20] [--failed]       # runs with runtime, memory, CPU, tokens, error
 candybar run <name> [--wait] [--timeout 3600]    # fire now; --wait prints the result
 candybar pause|resume <name>                     # stop/restart scheduling (POST /enabled)
+candybar archive|unarchive <name>                # archive (also pauses) / unarchive (stays paused)
+candybar steward enrich|fix|evaluate <name> [--wait]   # queue a steward task; --wait follows it
+candybar steward tasks [--active] [-c <name>]    # steward tasks, newest first
+candybar profile <name>                          # overview, project, latest evaluation
 candybar skip <name> [--at TIME | --today | --date YYYY-MM-DD]   # default: its next unskipped fire
 candybar edit <name> [--schedule ..] [--timezone ..] [--name ..] [--description ..] [--tags a,b] [--noise/--no-noise]
 candybar tail [--hide-noise] [--ticks] [--json]  # live invocations, skips, definition changes (SSE)

@@ -35,11 +35,14 @@ other exception is an exact, owner-approved entry in
 
 One Python asyncio deployable (`src/candybar/`), roles chosen by
 `candybar daemon --roles ...`: `heartbeat` (ticks), `dispatcher` (schedule
-evaluation), `executor` (runs the job), `api` (registry writes and reads). The
-Postgres registry is the sole inventory and the daemon its only writer. The
-container runs heartbeat, dispatcher and api; the executor runs on the host as
-`candybar-executor.service` (a `systemd --user` unit) so jobs can reach
-`systemctl --user`, `op`, docker and the hermes CLI.
+evaluation), `executor` (runs the job), `api` (registry writes and reads),
+`steward` (enrich / fix / evaluate tasks through OpenCode,
+`_bmad-output/specs/spec-cron-framework/steward-contract.md`). The Postgres
+registry is the sole inventory and the daemon its only writer. The container
+runs heartbeat, dispatcher and api; the executor and the steward run on the
+host as `candybar-executor.service` and `candybar-steward.service`
+(`systemd --user` units) so jobs and agents can reach `systemctl --user`,
+`op`, docker, the repo checkouts and the hermes CLI.
 
 ## Registering a job
 

@@ -753,3 +753,43 @@ def test_the_role_is_registered() -> None:
 
     assert "steward" in ROLES
     assert os.environ.get("CANDYBAR_SCHEMA_GUARD") == "off"  # conftest keeps the unit suite DB-free
+
+
+# ---------------------------------------------------------------------------
+# Host deploy files (deploy/host/).
+
+HOST_DIR = Path(__file__).resolve().parent.parent / "deploy" / "host"
+
+
+def test_steward_unit_runs_only_the_steward_role() -> None:
+    import re
+
+    text = (HOST_DIR / "candybar-steward.service").read_text()
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")]
+    assert "ExecStart=%h/code/33GOD/candybar/deploy/host/run-steward.sh" in lines
+    assert "EnvironmentFile=%h/.config/candybar/steward.env" in lines
+    assert "Restart=always" in lines and "WantedBy=default.target" in lines
+    assert not re.search(r"^(Requires|BindsTo|OnCalendar|OnUnitActiveSec)=", text, re.MULTILINE)
+    wrapper = (HOST_DIR / "run-steward.sh").read_text()
+    assert "--roles steward" in wrapper and wrapper.count("--roles") == 1
+    assert os.access(HOST_DIR / "run-steward.sh", os.X_OK)
+    assert not list(HOST_DIR.glob("candybar-steward*.timer"))  # a worker, never a clock
+
+
+def test_steward_env_template_holds_only_references() -> None:
+    import re
+
+    template = (HOST_DIR / "steward.env.template").read_text()
+    assigned = [ln for ln in template.splitlines() if ln and not ln.startswith("#")]
+    assert assigned == [
+        "DATABASE_URL=op://DeLoSecrets/sxnfrbik4osfovqgofyuuszqda/dsn",
+        "CANDYBAR_JEV_KEY=op://DeLoSecrets/icxowfdsbslgo2yyqfxuxhqaym/credential",
+    ]
+    assert not re.search(r"://[^/\s]*:[^/\s@]+@", template)
+
+
+def test_install_script_renders_and_starts_the_steward() -> None:
+    text = (HOST_DIR / "install.sh").read_text()
+    assert "steward.env.template:$steward_env" in text
+    assert '"$here/candybar-steward.service"' in text
+    assert "restart candybar-executor.service candybar-steward.service" in text

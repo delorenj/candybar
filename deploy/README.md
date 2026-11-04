@@ -98,6 +98,46 @@ pinned `scheduler: external`, and that pin only takes effect in the gateway afte
 the batched `hermes-gateway-restart` of wave 7.17, so no Hermes job is cut over
 before then. `deploy/smoke/hermes/` is the live canary (README there).
 
+## Host steward (steward-contract.md section 4)
+
+`host/candybar-steward.service` runs `candybar daemon --roles steward` from the
+repo checkout's `.venv`: an event-driven worker, not a clock. It attaches the
+`candybar-steward` durable on `BLOODBANK_COMMANDS` (filter
+`bloodbank.cmd.cron.candybar.steward`, disjoint from the executor's), runs at
+most two tasks at a time, and is schema-gated like the executor (it consumes
+nothing until the registry's alembic head matches its checkout).
+
+| file | role |
+|---|---|
+| `host/candybar-steward.service` | the unit (linked into `~/.config/systemd/user`) |
+| `host/run-steward.sh` | `ExecStart`: execs the steward role from `.venv` |
+| `host/steward.env.template` | `DATABASE_URL` and `CANDYBAR_JEV_KEY` as `op://` references (by item UUID) |
+| `steward/templates/{enrich,fix,evaluate,refactor}.md` | the versioned prompts (front matter `template_version`) |
+
+- **OpenCode:** the steward drives the user's OpenCode background service
+  over its v2 HTTP API, reading the URL and Basic-auth secret from
+  `~/.local/state/opencode/service.json` (the file the `opencode` client
+  maintains; the URL moves when the service restarts) on every session.
+  Models: `automaticai/auto` for evaluate, `automaticai/auto/fast` for the
+  rest. Budgets: enrich 15 min, evaluate 20 min, fix and refactor 30 min,
+  then the session is interrupted and the task fails.
+- **Jev:** enrich's project classification uses the steward's own LiteLLM
+  virtual key on the jev-litellm ingress (alias `candybar-steward`, $1/day,
+  120 rpm; vault item `icxowfdsbslgo2yyqfxuxhqaym`). A ledger repo checkout
+  that is a pjangler project wins without a Jev call.
+- **Reports:** evaluate writes `~/code/DeLoDocs/Reports/<date>/` and `mc cp`s
+  to `delo/daily-reports/<date>/` (the unit's PATH has `/usr/local/bin/mc`).
+- **Failures** never wedge the consumer: any exception fails the task with an
+  `error` and acks. A redelivered command whose task is `running` (the steward
+  died mid-task) is failed as abandoned, never re-run.
+- **Logs:** `journalctl --user -u candybar-steward -f`; the task list is
+  `candybar steward tasks --active`.
+
+`host/install.sh` renders `~/.config/candybar/steward.env` beside
+`executor.env`, links and enables the unit, and restarts it with the executor.
+A pair deploy therefore restarts all three: the container (migrations), then
+`systemctl --user restart candybar-executor candybar-steward`.
+
 ## Off-candybar watchdog (Story 7.6, AD-22)
 
 `watchdog/` is a `systemd --user` timer (every 2 min) that watches candybar
@@ -117,12 +157,13 @@ a new migration is applied before the executor's guard looks:
 ```bash
 ~/docker/stacks/_lib/op-inject.sh deploy/.env.template deploy/.env   # gitignored, mode 600
 docker compose -f deploy/compose.yml up -d --build                   # control plane (+ alembic upgrade head)
-systemctl --user restart candybar-executor                           # executor, same git SHA
+systemctl --user restart candybar-executor candybar-steward          # host roles, same git SHA
 ```
 
 The first time on a host, `deploy/host/install.sh` does the unit installs and
 the restart. A change to the registry (a new migration, such as 0006's `runner`
-column or 0007's `enabled` flag) is why the order is container first. Then prove it: `curl -s https://candybar.delo.sh/healthz`, and
+column, 0007's `enabled` flag or 0008's archive flag, profiles and steward
+tasks) is why the order is container first. Then prove it: `curl -s https://candybar.delo.sh/healthz`, and
 the next minute tick must show a `deploy-smoke` invocation
 (`journalctl --user -u candybar-executor` or
 `GET /candybars/<id>/invocations`).

@@ -101,7 +101,8 @@ Task = {
   `GET /steward/tasks?limit=N` → the newest N across all (default 100, max 500).
 - `PATCH /steward/tasks/{taskId}` with any of `{status, sessionId, outcome, summary, reportKey, invocationId, error,
   startedAt, finishedAt}` → 200 Task. Worker-only by convention.
-- Facts: `bloodbank.cron.steward.task.queued|started|completed|failed` with the Task (schemas in `schemas/cron/`).
+- Facts: `bloodbank.cron.steward_task.queued|started|completed|failed` with the Task (schemas in `schemas/cron/`;
+  see Implementation notes for the entity spelling).
 
 ## 4. The steward role
 
@@ -114,8 +115,8 @@ clock). It consumes the command with a durable consumer, at most 2 tasks at a ti
    (results, exit codes, error tails); the profile.
 2. Picks the working directory: the ledger repo's local checkout, else an exec `workdir`/argv path's git root, else a
    hermes job `workdir`, else this repo.
-3. Opens an OpenCode session over the v2 HTTP API on the host (`~/.config/opencode/service.json` gives the background
-   service's URL and Basic-auth password) with `location.directory` = the working directory and the task's model,
+3. Opens an OpenCode session over the v2 HTTP API on the host (`~/.local/state/opencode/service.json` gives the
+   background service's URL and Basic-auth password; see Implementation notes) with `location.directory` = the working directory and the task's model,
    sends the prompt rendered from `deploy/steward/templates/<action>.md`, and waits (enrich 15 min, fix and refactor
    30 min, evaluate 20 min; then `interrupt` and fail).
 4. Reads the last fenced ```json block of the final answer, validates it, and applies it:
@@ -141,3 +142,30 @@ secret value, and to end with exactly one fenced ```json block.
 
 Run health is not stored: Holocene reads the last 30 invocations per candybar and draws a micro timeline, oldest
 left (success green, fail red, running neutral).
+
+## Implementation notes (candybar, 2026-11-03)
+
+Minimal deviations made while building it, each the smallest change that works:
+
+- **Fact types** are `bloodbank.cron.steward_task.{queued,started,completed,failed}`, not `steward.task.*`: Bloodbank
+  types are exactly four tokens (`docs/event-naming.md`), so the entity is one token, `steward_task`. The command is
+  `bloodbank.cron.candybar.steward` as written. Bus payloads use the bus's snake_case (`task_id`, `candybar_id`,
+  `parent_task_id`, ...) plus the candybar's `name`; the REST shapes stay camelCase as above.
+- **OpenCode service file:** the background service's URL and password live in
+  `$XDG_STATE_HOME/opencode/service.json` (default `~/.local/state/...`), the file the `opencode` client itself
+  maintains (its URL moves on restart). `~/.config/opencode/service.json` holds only a password and is a fallback for
+  it. `CANDYBAR_OPENCODE_URL` / `CANDYBAR_OPENCODE_SERVICE_FILE` override.
+- **Empty profile:** `GET /candybars/{id}/profile` with no stored profile answers every field null, `updatedAt` too.
+- **Working directory:** the ledger repo's checkout is found under `~/code` (and one level below) by name, or as the
+  git root of a path the ledger entry names (unit file, jobs file, rollback commands), and is accepted only when its
+  `origin` points at that repo. Between the hermes step and "this repo", a `systemd` runner falls back to the git root
+  of the script its `ExecStart` runs.
+- **Answers:** an answer that does not validate gets one repair turn in the same session before the task fails.
+- **Enrich project:** a stored `method: "manual"` project is never replaced; a Jev or registry outage leaves the stored
+  project unchanged (the overview is still written) and says so in the task summary.
+- **Evaluate:** the follow-up is derived from the outcome (the agent's `followUp` is ignored). A failed report upload
+  fails the task before anything is stored.
+- **Tasks:** `PATCH /steward/tasks/{id}` refuses an impossible status move (409: a terminal task never changes, a
+  queued one cannot succeed without running) and stamps `startedAt` / `finishedAt` when the caller does not. A
+  redelivered command whose task is already `running` (the steward died mid-task) fails it as abandoned instead of
+  running it twice. A refactor request is a 422 (the body only accepts enrich, fix, evaluate).
