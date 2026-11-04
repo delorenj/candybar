@@ -698,12 +698,12 @@ jobs:
   wave: '7.16'
   candybar:
     name: tolt-forge-daily
-    description: Daily Foundry run of Tower of Lost Things on headless Claude Code (subscription)
+    description: "Foundry game loop of Tower of Lost Things on headless Claude Code (subscription): sessions back to back, up to 4 fresh games a day"
     tags:
     - migrated
     - llm
     - personal
-    schedule: 0 16 * * *
+    schedule: 0 */2 * * *
     timezone: America/New_York
     runner:
       kind: systemd
