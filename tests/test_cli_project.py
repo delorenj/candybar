@@ -772,3 +772,13 @@ def test_ls_json_global_is_the_raw_registry(repo: Path, defs: dict[str, Candybar
     synced(fake, defs)
     out = json.loads(run("ls", "--json", "-g").stdout)
     assert [r["id"] for r in out] == [ALPHA, BETA, GAMMA]
+
+
+def test_prune_works_after_the_last_file_is_gone(repo: Path, defs: dict[str, CandybarDef], fake: FakeApi) -> None:
+    synced(fake, defs)
+    (repo / ".candybar.toml").unlink()
+    (repo / ".candybars" / "gamma.candybar.toml").unlink()
+    assert run("register").exit_code == 2
+    result = run("register", "--prune")
+    assert result.exit_code == 0, result.output
+    assert sorted(cid for cid, _ in fake.of("archive")) == sorted([ALPHA, BETA, GAMMA])

@@ -42,6 +42,7 @@ share it, so a file the TUI writes is exactly a file `register` accepts.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import tomllib
@@ -83,10 +84,13 @@ class Project:
     """A directory that can own candybars."""
 
     root: Path
+    # The project's identity when it is not the root's basename: a linked git
+    # worktree is still its main repo's project.
+    label: str | None = None
 
     @property
     def name(self) -> str:
-        return self.root.name
+        return self.label or self.root.name
 
     @property
     def tag(self) -> str:
@@ -111,10 +115,15 @@ class Project:
 
     def owns(self, path: Path) -> bool:
         """True when `path` is one of this project's candybar files (by location, not existence)."""
-        path = path.resolve()
-        if path == self.project_file.resolve():
-            return True
-        return path.parent == self.candybars_dir.resolve() and path.name.endswith(FILE_SUFFIX)
+        for candidate, project_file, candybars_dir in (
+            (_absolute(path), _absolute(self.project_file), _absolute(self.candybars_dir)),
+            (path.resolve(), self.project_file.resolve(), self.candybars_dir.resolve()),
+        ):
+            if candidate == project_file:
+                return True
+            if candidate.parent == candybars_dir and candidate.name.endswith(FILE_SUFFIX):
+                return True
+        return False
 
     def default_file_for(self, name: str) -> Path:
         """Where `candybar create` puts a new one-candybar file."""
@@ -133,16 +142,49 @@ def project_of_tags(tags: Iterable[str]) -> str | None:
     return None
 
 
-def _git_toplevel(start: Path) -> Path | None:
+def _absolute(path: Path) -> Path:
+    """`path` made absolute and normalised WITHOUT following symlinks.
+
+    A project's `.venv/bin/python` must stay that path: resolving it would
+    register the interpreter the venv links to and silently drop the venv.
+    """
+    return Path(os.path.normpath(os.path.abspath(path)))
+
+
+def _git(start: Path, *args: str) -> str | None:
     try:
         out = subprocess.run(
-            ["git", "-C", str(start), "rev-parse", "--show-toplevel"],
+            ["git", "-C", str(start), *args],
             capture_output=True, text=True, timeout=10, check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return None
-    top = out.stdout.strip()
-    return Path(top) if out.returncode == 0 and top else None
+    value = out.stdout.strip()
+    return value if out.returncode == 0 and value else None
+
+
+def _git_toplevel(start: Path) -> Path | None:
+    top = _git(start, "rev-parse", "--show-toplevel")
+    return Path(top) if top else None
+
+
+def _git_project_name(start: Path, top: Path) -> str | None:
+    """The repo's name for a linked worktree (its main checkout's basename), else None.
+
+    `--git-common-dir` is `<main>/.git` for a worktree of `<main>`, and the
+    worktree's own `.git` (or `.git/modules/<name>` for a submodule) otherwise.
+    """
+    common = _git(start, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common is None:
+        return None
+    common_path = Path(common)
+    if common_path.name == ".git":
+        name = common_path.parent.name
+    elif common_path.parent.name == "modules":
+        return None  # a submodule: its toplevel basename is already its name
+    else:
+        name = common_path.name.removesuffix(".git")  # a bare repo's worktree
+    return name if name and name != top.name else None
 
 
 def find_project(start: Path | str | None = None) -> Project | None:
@@ -152,11 +194,18 @@ def find_project(start: Path | str | None = None) -> Project | None:
         here = here.parent
     top = _git_toplevel(here)
     if top is not None:
-        return Project(top.resolve())
+        return Project(top.resolve(), _git_project_name(here, top))
     for candidate in (here, *here.parents):
         if (candidate / CANDYBARS_DIR).is_dir() or (candidate / PROJECT_FILE).is_file():
             return Project(candidate)
     return None
+
+
+def project_at(directory: Path | str) -> Project:
+    """`directory` as a project root (keeping its git identity when it is a toplevel)."""
+    root = Path(directory).resolve()
+    found = find_project(root)
+    return found if found is not None and found.root == root else Project(root)
 
 
 # --- loading -----------------------------------------------------------------
@@ -189,35 +238,50 @@ class LoadResult:
 
 
 def _abs_against(value: str, base: Path) -> str:
-    return value if value.startswith("/") else str((base / value).resolve())
+    return value if value.startswith("/") else str(_absolute(base / value))
 
 
 def _resolve_project_paths(table: dict[str, Any], project: Project) -> dict[str, Any]:
     """Project-file path rules: relative paths resolve against the project root."""
     table = dict(table)
     runner = table.get("runner")
-    if isinstance(runner, dict) and runner.get("kind") == "exec":
+    if isinstance(runner, dict):
         runner = dict(runner)
-        for key in ("argv", "on_failure"):
+        keys = ("argv", "on_failure") if runner.get("kind") == "exec" else ("on_failure",)
+        for key in keys:
             argv = runner.get(key)
             if isinstance(argv, list) and argv and isinstance(argv[0], str) and "/" in argv[0]:
                 runner[key] = [_abs_against(argv[0], project.root), *argv[1:]]
-        workdir = runner.get("workdir")
-        if workdir is None:
-            runner["workdir"] = str(project.root)
-        elif isinstance(workdir, str) and workdir.strip():
-            runner["workdir"] = _abs_against(workdir, project.root)
+        if runner.get("kind") == "exec":
+            workdir = runner.get("workdir")
+            if workdir is None:
+                runner["workdir"] = str(project.root)
+            elif isinstance(workdir, str) and workdir.strip():
+                runner["workdir"] = _abs_against(workdir, project.root)
         table["runner"] = runner
     tags = table.get("tags", [])
-    if isinstance(tags, list) and project.tag not in tags:
-        table["tags"] = [*tags, project.tag]
+    if isinstance(tags, list):
+        foreign = [t for t in tags if isinstance(t, str) and t.startswith(PROJECT_TAG_PREFIX) and t != project.tag]
+        if foreign:
+            raise ManifestError(
+                f"tag(s) {', '.join(map(repr, foreign))} name another project; "
+                f"{project.tag!r} is added automatically, drop the `project:` tags"
+            )
+        if project.tag not in tags:
+            table["tags"] = [*tags, project.tag]
     return table
 
 
-def _tables(raw: dict[str, Any], path: Path, errors: list[str]) -> list[tuple[str, dict[str, Any]]]:
-    """The candybar tables in one parsed file, each with its `[header]` label."""
+def _tables(
+    raw: dict[str, Any], path: Path, errors: list[str], *, strict: bool
+) -> list[tuple[str, dict[str, Any]]]:
+    """The candybar tables in one parsed file, each with its `[header]` label.
+
+    `strict` (project files) refuses unknown top-level keys; a legacy
+    `candybar.toml` keeps AD-8's tolerance of other tables.
+    """
     found: list[tuple[str, dict[str, Any]]] = []
-    unknown = sorted(set(raw) - _TOP_LEVEL)
+    unknown = sorted(set(raw) - _TOP_LEVEL) if strict else []
     if unknown:
         errors.append(
             f"{path}: unknown top-level key(s) {', '.join(map(repr, unknown))}; "
@@ -271,16 +335,25 @@ def parse_text(
         result.errors.append(f"{path}: invalid TOML: {exc}")
         return result
     base = project.root if project is not None else (base or path.parent)
-    for label, table in _tables(raw, path, result.errors):
+    for label, table in _tables(raw, path, result.errors, strict=project is not None):
         if project is not None:
-            table = _resolve_project_paths(table, project)
+            try:
+                table = _resolve_project_paths(table, project)
+            except ManifestError as exc:
+                result.errors.append(f"{path} {label}: {exc}")
+                continue
         try:
             manifest = CandybarManifest.model_validate(table)
         except ValueError as exc:
             result.errors.append(f"{path} {label}: {_short(exc)}")
             continue
         if manifest.entrypoint is not None:
-            entrypoint = Path(_abs_against(manifest.entrypoint, base))
+            # Legacy files keep AD-8's resolve(); project files keep symlinks.
+            entrypoint = (
+                Path(_abs_against(manifest.entrypoint, base))
+                if project is not None
+                else (base / manifest.entrypoint).resolve()
+            )
             if not entrypoint.is_file():
                 result.errors.append(
                     f"{path} {label}: entrypoint is not an existing file: {manifest.entrypoint!r}"
@@ -349,7 +422,7 @@ def load_path(path: Path) -> LoadResult:
         if legacy.is_file():
             path = legacy
         else:
-            project = Project(path.resolve())
+            project = project_at(path)
             if project.files():
                 return load_project(project)
             raise ManifestError(
@@ -501,6 +574,16 @@ def plan_write(
     block = render(spec, style="multi" if append else "single", comment=comment)
     if append and dest.is_file():
         existing = dest.read_text(encoding="utf-8")
+        try:
+            present = tomllib.loads(existing)
+        except tomllib.TOMLDecodeError as exc:
+            raise WriteError(f"{dest}: invalid TOML, fix it before appending: {exc}") from exc
+        table = present.get(MULTI_TABLE)
+        single = present.get(SINGLE_TABLE)
+        if (isinstance(table, dict) and name in table) or (
+            isinstance(single, dict) and single.get("name") == name
+        ):
+            raise WriteError(f"{dest} already defines {name!r}")
         sep = "" if not existing else ("\n" if existing.endswith("\n") else "\n\n")
         text = existing + sep + block
     else:
@@ -548,6 +631,7 @@ __all__ = [
     "load_project",
     "parse_text",
     "plan_write",
+    "project_at",
     "project_of_tags",
     "project_tag",
     "render",

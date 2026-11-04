@@ -37,6 +37,7 @@ from candybar.project import (
     find_project,
     load_path,
     load_project,
+    project_at,
     project_of_tags,
 )
 
@@ -376,7 +377,7 @@ def _project_footer(project: Project, entries: list[dict[str, Any]]) -> str:
         hints.append(f"{behind} unregistered/drifted; `candybar register` syncs them")
     if any(s.startswith("drift:") for s in syncs):
         hints.append("`--update` applies drift")
-    if (orphans := syncs.count("orphan")):
+    if (orphans := sum(1 for e in entries if e["sync"] == "orphan" and e["state"] != "archived")):
         hints.append(f"{orphans} orphaned; `candybar register --prune` archives them")
     if (unowned := syncs.count("unowned")):
         hints.append(f"{unowned} not owned by a project; `candybar register --update` adopts them")
@@ -391,7 +392,7 @@ def _project_of_path(path: Path) -> tuple[Project | None, bool]:
     if path.is_dir():
         if (path / "candybar.toml").is_file():
             return None, False
-        return Project(path.resolve()), True
+        return project_at(path), True
     found = find_project(path.parent)
     return (found, False) if found is not None and found.owns(path) else (None, False)
 
@@ -409,7 +410,7 @@ def register_candybars(
         if project is None:
             typer.echo("not inside a project; pass a path", err=True)
             raise typer.Exit(code=2)
-        if not project.files():
+        if not project.files() and not prune:
             typer.echo(
                 f"no candybars in project {project.name}: add a .candybar.toml or "
                 ".candybars/<name>.candybar.toml (`candybar create` writes one)",

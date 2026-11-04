@@ -689,3 +689,61 @@ def test_steward_manifest_names_cover_both_formats(repo: Path) -> None:
     assert _manifest_names(single) == {"gamma"}
     assert _manifest_names(legacy) == {"delta"}
     assert _manifest_names(repo / "missing.toml") == set()
+
+
+# --- review round 1 regressions ----------------------------------------------------
+
+
+def test_symlinked_argv0_is_not_resolved(repo: Path) -> None:
+    """`.venv/bin/python` must stay the venv's path, not the interpreter it links to."""
+    target = script(repo, "real/python")
+    link = repo / ".venv" / "bin" / "python"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target)
+    put(repo / ".candybar.toml", multi("venv", argv='["./.venv/bin/python", "-V"]'))
+    (d,) = load_project(Project(repo)).defs
+    assert d.manifest.runner["argv"][0] == str(repo / ".venv" / "bin" / "python")
+
+
+def test_linked_worktree_keeps_the_main_repo_name(tmp_path: Path) -> None:
+    main = git_repo(tmp_path / "mainrepo")
+    subprocess.run(["git", "-C", str(main), "commit", "-q", "--allow-empty", "-m", "x"], check=True,
+                   env={"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+                        "GIT_COMMITTER_EMAIL": "t@t", "PATH": "/usr/bin:/bin"})
+    wt = tmp_path / "feature-wt"
+    subprocess.run(["git", "-C", str(main), "worktree", "add", "-q", str(wt)], check=True)
+    found = find_project(wt)
+    assert found is not None and found.root == wt.resolve()
+    assert found.name == "mainrepo" and found.tag == "project:mainrepo"
+    assert find_project(main).name == "mainrepo"
+
+
+def test_legacy_manifest_tolerates_other_top_level_tables(tmp_path: Path, no_git: None) -> None:
+    script(tmp_path, "run.sh")
+    put(tmp_path / "candybar.toml",
+        '[meta]\nowner = "x"\n[candybar]\nname = "legacy"\nschedule = "* * * * *"\nentrypoint = "./run.sh"\n')
+    result = load_path(tmp_path)
+    assert result.ok, result.errors
+    assert result.defs[0].manifest.tags == []
+
+
+def test_a_foreign_project_tag_is_refused(repo: Path) -> None:
+    put(repo / ".candybar.toml", multi("x").replace('schedule', 'tags = ["project:other"]\nschedule'))
+    result = load_project(Project(repo))
+    assert not result.defs
+    assert any("project:other" in e and "added automatically" in e for e in result.errors)
+
+
+def test_on_failure_resolves_for_every_runner_kind(repo: Path) -> None:
+    put(repo / ".candybar.toml",
+        '[candybars.svc]\nschedule = "* * * * *"\n[candybars.svc.runner]\nkind = "systemd"\n'
+        'unit = "x.service"\non_failure = ["./bin/alert", "--now"]\n')
+    (d,) = load_project(Project(repo)).defs
+    assert d.manifest.runner["on_failure"] == [str(repo / "bin" / "alert"), "--now"]
+
+
+def test_append_of_an_existing_name_says_so(repo: Path) -> None:
+    put(repo / ".candybar.toml", multi("dup"))
+    with pytest.raises(WriteError, match="already defines 'dup'"):
+        plan_write({"name": "dup", "schedule": "* * * * *", "runner": {"kind": "exec", "argv": ["true"]}},
+                   repo / ".candybar.toml", project=Project(repo))
