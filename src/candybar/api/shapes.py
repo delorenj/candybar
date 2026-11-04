@@ -31,5 +31,8 @@ def candybar_row_json(row: Any) -> dict[str, Any]:
         # Story 7.5 (AD-21): a disabled candybar is still listed, flagged here.
         # Rows built from a pre-7.5 fact carry no flag and read as enabled.
         "enabled": getattr(row, "enabled", True),
+        # Steward contract section 1: an archived candybar is still listed,
+        # flagged here; rows built from facts that predate it read as false.
+        "archived": getattr(row, "archived", False),
         "createdAt": utc_iso(row.created_at),
     }

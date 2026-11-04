@@ -634,7 +634,7 @@ def test_created_before_commit_builds_the_definition_from_the_fact(world: World)
         [definition] = [f for f in frames if f["event"] == EVENT_DEFINITION_CHANGED]
         assert definition["data"]["definition"] == {
             "id": str(ghost.id), "name": "delta", "description": "", "tags": ["ops"],
-            "schedule": "*/30 * * * *", "timezone": "UTC", "noise": False, "enabled": True,
+            "schedule": "*/30 * * * *", "timezone": "UTC", "noise": False, "enabled": True, "archived": False,
             "createdAt": at(9, 59, 30).isoformat(),
         }
         assert [r["fireTime"] for r in definition["data"]["rows"]] == [

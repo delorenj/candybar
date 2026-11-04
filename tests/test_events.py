@@ -16,13 +16,16 @@ from candybar.events import (
     COMMAND_TYPES,
     EVENT_TYPES,
     STDERR_TAIL_MAX,
+    StewardTaskData,
     build_candybar_completed,
     build_candybar_created,
     build_candybar_failed,
     build_candybar_invoke,
     build_candybar_invoked,
     build_candybar_skipped,
+    build_candybar_steward,
     build_candybar_updated,
+    build_steward_task_fact,
     build_tick_fired,
     parse_envelope,
 )
@@ -104,6 +107,28 @@ def _invoke_scheduled():
     )
 
 
+def _steward_command():
+    return build_candybar_steward(task_id=uuid4(), candybar_id=CB_ID, action="evaluate")
+
+
+def _steward_fact(type_: str, status: str):
+    def build():
+        return build_steward_task_fact(
+            type_,
+            StewardTaskData(
+                task_id=uuid4(),
+                candybar_id=CB_ID,
+                name=CB_NAME,
+                action="evaluate",
+                status=status,
+                model="automaticai/auto",
+                created_at=MINUTE,
+            ),
+        )
+
+    return build
+
+
 _BUILDERS = [
     ("tick.fired", lambda: build_tick_fired(MINUTE)),
     ("candybar.created", _created),
@@ -113,12 +138,17 @@ _BUILDERS = [
     ("candybar.failed", _failed),
     ("candybar.skipped", _skipped),
     ("candybar.invoke", _invoke_scheduled),
+    ("candybar.steward", _steward_command),
+    ("steward_task.queued", _steward_fact("bloodbank.cron.steward_task.queued", "queued")),
+    ("steward_task.started", _steward_fact("bloodbank.cron.steward_task.started", "running")),
+    ("steward_task.completed", _steward_fact("bloodbank.cron.steward_task.completed", "succeeded")),
+    ("steward_task.failed", _steward_fact("bloodbank.cron.steward_task.failed", "failed")),
 ]
 ALL_BUILDERS = [pytest.param(build, id=name) for name, build in _BUILDERS]
 
 
 class TestVocabulary:
-    def test_exactly_the_locked_eight_types(self):
+    def test_exactly_the_locked_types(self):
         assert EVENT_TYPES == {
             "bloodbank.cron.tick.fired",
             "bloodbank.cron.candybar.created",
@@ -127,9 +157,14 @@ class TestVocabulary:
             "bloodbank.cron.candybar.completed",
             "bloodbank.cron.candybar.failed",
             "bloodbank.cron.candybar.skipped",
+            # steward-contract.md section 3
+            "bloodbank.cron.steward_task.queued",
+            "bloodbank.cron.steward_task.started",
+            "bloodbank.cron.steward_task.completed",
+            "bloodbank.cron.steward_task.failed",
         }
-        assert COMMAND_TYPES == {"bloodbank.cron.candybar.invoke"}
-        assert len(ALL_TYPES) == 8
+        assert COMMAND_TYPES == {"bloodbank.cron.candybar.invoke", "bloodbank.cron.candybar.steward"}
+        assert len(ALL_TYPES) == 13
 
     def test_types_match_contract_regex(self):
         pattern = re.compile(r"^bloodbank\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
@@ -367,9 +402,14 @@ class TestRoundTrip:
 class TestDraftSchemas:
     DRAFT_DIR = Path(__file__).resolve().parent.parent / "schemas" / "cron"
 
-    def test_all_eight_drafts_exist(self):
+    def test_every_draft_exists(self):
         names = {p.name for p in self.DRAFT_DIR.glob("*.json")}
         assert names == {
+            "candybar.steward.json",
+            "steward_task.queued.json",
+            "steward_task.started.json",
+            "steward_task.completed.json",
+            "steward_task.failed.json",
             "tick.fired.json",
             "candybar.created.json",
             "candybar.updated.json",

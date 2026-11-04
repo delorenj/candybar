@@ -8,7 +8,7 @@ enforce the trigger/tick coupling of the invoke command (AD-5, AD-12).
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from . import vocabulary as voc
 from .envelope import (
@@ -24,10 +24,17 @@ from .envelope import (
     CandybarInvokedEvent,
     CandybarSkippedData,
     CandybarSkippedEvent,
+    CandybarStewardCommand,
+    CandybarStewardData,
     CandybarUpdatedData,
     CandybarUpdatedEvent,
     FailureDetail,
     InvocationMetrics,
+    StewardTaskCompletedEvent,
+    StewardTaskData,
+    StewardTaskFailedEvent,
+    StewardTaskQueuedEvent,
+    StewardTaskStartedEvent,
     TickFiredData,
     TickFiredEvent,
 )
@@ -316,5 +323,94 @@ def build_candybar_invoke(
             invocation_id=invocation_id or uuid4(),
             trigger=trigger,  # type: ignore[arg-type]
             tick_id=tick_id,
+        ),
+    )
+
+
+# --------------------------------------------------------------------------
+# Steward (steward-contract.md sections 3-4).
+# --------------------------------------------------------------------------
+
+# Task-fact ids are UUIDv5 of `<type>:<task_id>`: one fact per transition, so
+# a republication (a retried write, a redelivered command) dedupes on the
+# broker's Nats-Msg-Id.
+STEWARD_NAMESPACE = UUID("3a7d2c1e-6b4f-4f0e-9c8a-5d2e1b0f7a64")
+
+_STEWARD_FACT_MODELS = {
+    voc.TYPE_STEWARD_TASK_QUEUED: StewardTaskQueuedEvent,
+    voc.TYPE_STEWARD_TASK_STARTED: StewardTaskStartedEvent,
+    voc.TYPE_STEWARD_TASK_COMPLETED: StewardTaskCompletedEvent,
+    voc.TYPE_STEWARD_TASK_FAILED: StewardTaskFailedEvent,
+}
+
+# The fact a task status is announced with.
+STEWARD_FACT_FOR_STATUS = {
+    "queued": voc.TYPE_STEWARD_TASK_QUEUED,
+    "running": voc.TYPE_STEWARD_TASK_STARTED,
+    "succeeded": voc.TYPE_STEWARD_TASK_COMPLETED,
+    "failed": voc.TYPE_STEWARD_TASK_FAILED,
+}
+
+
+def steward_fact_id(type_: str, task_id: UUID) -> UUID:
+    return uuid5(STEWARD_NAMESPACE, f"{type_}:{task_id}")
+
+
+def build_steward_task_fact(
+    type_: str,
+    data: StewardTaskData,
+    *,
+    correlationid: UUID | None = None,
+    causationid: UUID | None = None,
+) -> StewardTaskQueuedEvent | StewardTaskStartedEvent | StewardTaskCompletedEvent | StewardTaskFailedEvent:
+    """Build one task lifecycle fact (`queued|started|completed|failed`) carrying the task.
+
+    Correlates on the task id (a follow-up passes its evaluate's), ordered
+    with every other fact of the candybar.
+    """
+    model = _STEWARD_FACT_MODELS.get(type_)
+    if model is None:
+        raise ValueError(f"not a steward task fact: {type_!r}")
+    eid = steward_fact_id(type_, data.task_id)
+    return model(
+        id=eid,
+        subject=voc.subject_for(type_, "event"),
+        dataschema=voc.dataschema_for(type_),
+        schemaref=voc.schemaref_for(type_),
+        correlationid=correlationid or data.task_id,
+        causationid=causationid,
+        ordering_key=voc.candybar_ordering_key(data.candybar_id),
+        data=data,
+    )
+
+
+def build_candybar_steward(
+    *,
+    task_id: UUID,
+    candybar_id: UUID,
+    action: str,
+    correlationid: UUID | None = None,
+    causationid: UUID | None = None,
+) -> CandybarStewardCommand:
+    """Build the steward command for one task (contract section 3).
+
+    The task id is the envelope id, the command id and the idempotency key,
+    so a re-sent publish dedupes on Nats-Msg-Id and a redelivery names the
+    same task.
+    """
+    return CandybarStewardCommand(
+        id=task_id,
+        subject=voc.subject_for(voc.TYPE_CANDYBAR_STEWARD, "command"),
+        dataschema=voc.dataschema_for(voc.TYPE_CANDYBAR_STEWARD),
+        schemaref=voc.schemaref_for(voc.TYPE_CANDYBAR_STEWARD),
+        correlationid=correlationid or task_id,
+        causationid=causationid,
+        command_id=task_id,
+        idempotency_key=str(task_id),
+        delivery="single_consumer",
+        data=CandybarStewardData(
+            task_id=task_id,
+            candybar_id=candybar_id,
+            action=action,  # type: ignore[arg-type]
         ),
     )

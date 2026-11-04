@@ -15,6 +15,9 @@ DOMAIN = "cron"
 
 ENTITY_TICK = "tick"
 ENTITY_CANDYBAR = "candybar"
+# Steward tasks (steward-contract.md section 3). One entity token: Bloodbank
+# types are exactly four tokens, so `steward.task` is spelled `steward_task`.
+ENTITY_STEWARD_TASK = "steward_task"
 
 ACTION_FIRED = "fired"
 ACTION_CREATED = "created"
@@ -24,6 +27,9 @@ ACTION_COMPLETED = "completed"
 ACTION_FAILED = "failed"
 ACTION_SKIPPED = "skipped"
 ACTION_INVOKE = "invoke"
+ACTION_QUEUED = "queued"
+ACTION_STARTED = "started"
+ACTION_STEWARD = "steward"  # imperative: "steward this candybar" (the steward command)
 
 TYPE_TICK_FIRED = f"bloodbank.{DOMAIN}.{ENTITY_TICK}.{ACTION_FIRED}"
 TYPE_CANDYBAR_CREATED = f"bloodbank.{DOMAIN}.{ENTITY_CANDYBAR}.{ACTION_CREATED}"
@@ -33,6 +39,11 @@ TYPE_CANDYBAR_COMPLETED = f"bloodbank.{DOMAIN}.{ENTITY_CANDYBAR}.{ACTION_COMPLET
 TYPE_CANDYBAR_FAILED = f"bloodbank.{DOMAIN}.{ENTITY_CANDYBAR}.{ACTION_FAILED}"
 TYPE_CANDYBAR_SKIPPED = f"bloodbank.{DOMAIN}.{ENTITY_CANDYBAR}.{ACTION_SKIPPED}"
 TYPE_CANDYBAR_INVOKE = f"bloodbank.{DOMAIN}.{ENTITY_CANDYBAR}.{ACTION_INVOKE}"
+TYPE_CANDYBAR_STEWARD = f"bloodbank.{DOMAIN}.{ENTITY_CANDYBAR}.{ACTION_STEWARD}"
+TYPE_STEWARD_TASK_QUEUED = f"bloodbank.{DOMAIN}.{ENTITY_STEWARD_TASK}.{ACTION_QUEUED}"
+TYPE_STEWARD_TASK_STARTED = f"bloodbank.{DOMAIN}.{ENTITY_STEWARD_TASK}.{ACTION_STARTED}"
+TYPE_STEWARD_TASK_COMPLETED = f"bloodbank.{DOMAIN}.{ENTITY_STEWARD_TASK}.{ACTION_COMPLETED}"
+TYPE_STEWARD_TASK_FAILED = f"bloodbank.{DOMAIN}.{ENTITY_STEWARD_TASK}.{ACTION_FAILED}"
 
 EVENT_TYPES: frozenset[str] = frozenset(
     {
@@ -43,9 +54,13 @@ EVENT_TYPES: frozenset[str] = frozenset(
         TYPE_CANDYBAR_COMPLETED,
         TYPE_CANDYBAR_FAILED,
         TYPE_CANDYBAR_SKIPPED,
+        TYPE_STEWARD_TASK_QUEUED,
+        TYPE_STEWARD_TASK_STARTED,
+        TYPE_STEWARD_TASK_COMPLETED,
+        TYPE_STEWARD_TASK_FAILED,
     }
 )
-COMMAND_TYPES: frozenset[str] = frozenset({TYPE_CANDYBAR_INVOKE})
+COMMAND_TYPES: frozenset[str] = frozenset({TYPE_CANDYBAR_INVOKE, TYPE_CANDYBAR_STEWARD})
 ALL_TYPES: frozenset[str] = EVENT_TYPES | COMMAND_TYPES
 
 # Contract §5 tense: events past participle, commands imperative present.
@@ -58,9 +73,11 @@ EVENT_ACTIONS: frozenset[str] = frozenset(
         ACTION_COMPLETED,
         ACTION_FAILED,
         ACTION_SKIPPED,
+        ACTION_QUEUED,
+        ACTION_STARTED,
     }
 )
-COMMAND_ACTIONS: frozenset[str] = frozenset({ACTION_INVOKE})
+COMMAND_ACTIONS: frozenset[str] = frozenset({ACTION_INVOKE, ACTION_STEWARD})
 
 _TYPE_RE = re.compile(r"^bloodbank\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
 _SUBJECT_RE = re.compile(

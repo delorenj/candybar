@@ -39,10 +39,13 @@ from .manifest import CandybarManifest
 from .models import (
     SKIP_OCCURRENCE,
     SKIP_REST_OF_DAY,
+    STEWARD_ACTIVE_STATUSES,
     Candybar,
+    CandybarProfile,
     DispatchCursor,
     Invocation,
     Skip,
+    StewardTask,
 )
 
 DATABASE_URL_ENV = "DATABASE_URL"
@@ -372,6 +375,7 @@ async def insert_candybar(
         runner=dict(manifest.runner) if manifest.runner is not None else None,
         noise=manifest.noise,
         enabled=manifest.enabled,
+        archived=False,
         total_invoked=0,
         total_successful=0,
         created_at=now,
@@ -443,6 +447,8 @@ UPDATABLE_FIELDS = (
     "runner",
     "noise",
     "enabled",
+    # Steward contract section 1: set only by POST /candybars/{id}/archived.
+    "archived",
 )
 
 
@@ -753,3 +759,187 @@ async def record_terminal_invocation(session: AsyncSession, record: TerminalInvo
         if "invocations_idempotency_key_key" in str(exc):
             raise DuplicateInvocationError(record.idempotency_key) from exc
         raise
+
+
+# ---------------------------------------------------------------------------
+# Steward contract: profiles (section 2) and steward tasks (section 3).
+
+
+class DuplicateActiveTaskError(Exception):
+    """The candybar already has a queued or running task of this action.
+
+    Raised from the insert when the partial unique index
+    `steward_tasks_active` fires (a race the API's pre-check lost).
+    """
+
+    def __init__(self, candybar_id: UUID, action: str) -> None:
+        super().__init__(f"{action} already active for {candybar_id}")
+        self.candybar_id = candybar_id
+        self.action = action
+
+
+# The profile columns a writer may set (PUT /candybars/{id}/profile merges per
+# top-level key); `candybar_id` and `updated_at` are registry-owned.
+PROFILE_FIELDS = (
+    "overview",
+    "template_version",
+    "project",
+    "enriched_at",
+    "enrich_task_id",
+    "evaluation",
+)
+
+# The task columns a writer may change after the insert (PATCH /steward/tasks/{id}).
+STEWARD_TASK_FIELDS = (
+    "status",
+    "session_id",
+    "outcome",
+    "summary",
+    "report_key",
+    "invocation_id",
+    "error",
+    "started_at",
+    "finished_at",
+)
+
+# Upper bound for one page of steward tasks (the API enforces it too).
+STEWARD_TASK_LIST_MAX = 500
+
+
+async def get_profile(session: AsyncSession, candybar_id: UUID) -> CandybarProfile | None:
+    """A candybar's profile row, or None when it has none yet."""
+    return await session.get(CandybarProfile, candybar_id, populate_existing=True)
+
+
+async def list_profiles(session: AsyncSession) -> list[CandybarProfile]:
+    """Every stored profile, ordered by candybar id."""
+    result = await session.scalars(select(CandybarProfile).order_by(CandybarProfile.candybar_id))
+    return list(result.all())
+
+
+async def upsert_profile(
+    session: AsyncSession, candybar_id: UUID, changes: dict[str, object]
+) -> CandybarProfile:
+    """Merge `changes` into the candybar's profile, creating it lazily. Caller commits.
+
+    Per top-level key: a key not in `changes` keeps its stored value. One
+    atomic `INSERT .. ON CONFLICT DO UPDATE`, so two writers never lose each
+    other's keys. Raises ValueError for an unknown key and UnknownCandybarError
+    when the candybar is not registered.
+    """
+    unknown = set(changes) - set(PROFILE_FIELDS)
+    if unknown:
+        raise ValueError(f"not a profile field: {sorted(unknown)}")
+    now = datetime.now(UTC)
+    stmt = pg_insert(CandybarProfile).values(candybar_id=candybar_id, updated_at=now, **changes)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[CandybarProfile.candybar_id],
+        set_={**{key: stmt.excluded[key] for key in changes}, "updated_at": now},
+    )
+    try:
+        await session.execute(stmt)
+    except IntegrityError as exc:
+        if "candybar_profiles_candybar_id_fkey" in str(exc):
+            raise UnknownCandybarError(str(candybar_id)) from exc
+        raise
+    row = await session.get(CandybarProfile, candybar_id, populate_existing=True)
+    assert row is not None
+    return row
+
+
+async def insert_steward_task(
+    session: AsyncSession,
+    *,
+    task_id: UUID,
+    candybar_id: UUID,
+    action: str,
+    model: str,
+    parent_task_id: UUID | None = None,
+) -> StewardTask:
+    """Insert one `queued` task. Caller commits.
+
+    Raises DuplicateActiveTaskError when the (candybar, action) already has a
+    queued or running task, and UnknownCandybarError for an unknown candybar.
+    """
+    row = StewardTask(
+        id=task_id,
+        candybar_id=candybar_id,
+        action=action,
+        status="queued",
+        model=model,
+        parent_task_id=parent_task_id,
+        created_at=datetime.now(UTC),
+    )
+    session.add(row)
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        if "steward_tasks_active" in str(exc):
+            raise DuplicateActiveTaskError(candybar_id, action) from exc
+        if "steward_tasks_candybar_id_fkey" in str(exc):
+            raise UnknownCandybarError(str(candybar_id)) from exc
+        raise
+    return row
+
+
+async def get_steward_task(
+    session: AsyncSession, task_id: UUID, *, lock: bool = False
+) -> StewardTask | None:
+    """One task row (locked FOR UPDATE until commit when `lock`), or None."""
+    return await session.get(
+        StewardTask, task_id, with_for_update=lock or None, populate_existing=True
+    )
+
+
+async def active_steward_task(
+    session: AsyncSession, candybar_id: UUID, action: str
+) -> StewardTask | None:
+    """The candybar's queued-or-running task of `action`, or None (index steward_tasks_active)."""
+    result = await session.scalars(
+        select(StewardTask).where(
+            StewardTask.candybar_id == candybar_id,
+            StewardTask.action == action,
+            StewardTask.status.in_(STEWARD_ACTIVE_STATUSES),
+        )
+    )
+    return result.first()
+
+
+async def list_steward_tasks(
+    session: AsyncSession,
+    *,
+    candybar_id: UUID | None = None,
+    active: bool = False,
+    limit: int = 100,
+) -> list[StewardTask]:
+    """Tasks newest first: one candybar's or every candybar's, optionally only active ones."""
+    if not 1 <= limit <= STEWARD_TASK_LIST_MAX:
+        raise ValueError(f"limit must be within 1..{STEWARD_TASK_LIST_MAX}, got {limit}")
+    query = select(StewardTask)
+    if candybar_id is not None:
+        query = query.where(StewardTask.candybar_id == candybar_id)
+    if active:
+        query = query.where(StewardTask.status.in_(STEWARD_ACTIVE_STATUSES))
+    result = await session.scalars(
+        query.order_by(StewardTask.created_at.desc(), StewardTask.id.desc()).limit(limit)
+    )
+    return list(result.all())
+
+
+async def update_steward_task(
+    session: AsyncSession, row: StewardTask, changes: dict[str, object]
+) -> StewardTask:
+    """Apply `changes` to a (locked) task row and flush. Caller commits.
+
+    Free text is scrubbed of NUL/lone surrogates, so an agent's answer can
+    never make the write fail.
+    """
+    unknown = set(changes) - set(STEWARD_TASK_FIELDS)
+    if unknown:
+        raise ValueError(f"not updatable: {sorted(unknown)}")
+    for field_name, value in changes.items():
+        if field_name in ("summary", "error", "outcome", "session_id", "report_key"):
+            value = scrub_optional(value)  # type: ignore[arg-type]
+        setattr(row, field_name, value)
+    await session.flush()
+    return row

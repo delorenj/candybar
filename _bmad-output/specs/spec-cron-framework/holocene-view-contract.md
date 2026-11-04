@@ -18,10 +18,11 @@ Base: REST over HTTPS at `https://candybar.delo.sh` (live since 2026-10-26), plu
 
 ### Definitions
 
-- `GET /candybars` → list of registered Candybars: `{ id, name, description, tags[], schedule (standard cron string), timezone (IANA zone name the cron is read in), noise: bool, enabled: bool, createdAt }`.
+- `GET /candybars` → list of registered Candybars: `{ id, name, description, tags[], schedule (standard cron string), timezone (IANA zone name the cron is read in), noise: bool, enabled: bool, archived: bool, createdAt }`.
 - `POST /candybars` → register a new Candybar (definition create path used by the Definitions tab). The body may carry `timezone` (IANA zone name, default `"UTC"`, validated against the zoneinfo database); `PATCH /candybars/{id}` may change it.
 - `timezone` (added 2026-10-26, Epic 7 / AD-16) is the zone the `schedule` cron string is evaluated in, as local wall time with Vixie-cron DST rules; `skip-rest-of-day`'s `date` is a date in that zone. It is additive and changes nothing else: every timestamp (`fireTime`, `createdAt`, stream events) stays ISO 8601 UTC, so the view still renders countdowns from `fireTime`.
 - `enabled` (added 2026-10-26, Epic 7 / AD-21) is whether the candybar is dispatched. A disabled candybar stays listed (with `enabled: false`) but never fires, so `/schedule` has no `current` or `upcoming` row for it, and its only rows are past fires that actually ran; the stream reports a change of `enabled` as a `definition.changed`. Migration cutovers and rollbacks drive it through `POST /candybars/{id}/enabled` with `{ enabled: bool }` (outside this contract, like the executor-facing runner). Additive: the view may grey out or hide disabled definitions.
+- `archived` (added 2026-11-03, steward-contract.md section 1) is whether the candybar was archived (`POST /candybars/{id}/archived` with `{ archived: bool }`). Archiving also disables it; unarchiving leaves it disabled until `POST /candybars/{id}/enabled`, and enabling an archived candybar is a 409. The stream reports a change as a `definition.changed` carrying `archived` (and `enabled`). Additive: the view hides archived definitions from its lists and schedule and offers an "Archived (N)" view with Unarchive. Profiles and steward tasks live in steward-contract.md.
 - `GET /candybars/{id}` → single definition plus registry metadata `{ totalInvoked, totalSuccessful }`.
 
 ### Schedule window

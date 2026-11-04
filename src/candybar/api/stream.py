@@ -97,7 +97,7 @@ STREAM_TRIGGERS: dict[str, str] = {
 # The contract definition fields a `definition.changed` may report: the
 # entrypoint is executor-internal and is never echoed (Story 5.1).
 VISIBLE_FIELDS = frozenset(
-    {"name", "description", "tags", "schedule", "timezone", "noise", "enabled"}
+    {"name", "description", "tags", "schedule", "timezone", "noise", "enabled", "archived"}
 )
 
 BUFFER_SIZE = 1024  # events kept for Last-Event-ID replay
@@ -380,6 +380,7 @@ class ScheduleStream:
                     "timezone": stored.timezone,
                     "noise": stored.noise,
                     "enabled": getattr(stored, "enabled", True),
+                    "archived": getattr(stored, "archived", False),
                     "created_at": stored.created_at,
                 }
                 if stored is not None
@@ -398,6 +399,7 @@ class ScheduleStream:
                     "timezone": data.timezone,
                     "noise": data.noise,
                     "enabled": data.enabled,
+                    "archived": False,
                     "created_at": fact.time,
                 }
         else:

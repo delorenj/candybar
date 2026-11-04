@@ -14,12 +14,28 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import BigInteger, DateTime, Double, ForeignKey, Index, Text, true
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    Double,
+    ForeignKey,
+    Index,
+    Text,
+    false,
+    text,
+    true,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 TRIGGERS = ("scheduled", "manual", "misfire")
 RESULTS = ("success", "fail")
+
+# Steward tasks (steward-contract.md section 3, migration 0008).
+STEWARD_ACTIONS = ("enrich", "fix", "evaluate", "refactor")
+STEWARD_STATUSES = ("queued", "running", "succeeded", "failed")
+STEWARD_ACTIVE_STATUSES = ("queued", "running")
+STEWARD_TERMINAL_STATUSES = ("succeeded", "failed")
 
 # Skip kinds (Epic 2 owns the vocabulary). The kind is also the `skipped`
 # event's `data.reason` for an operator skip.
@@ -54,6 +70,10 @@ class Candybar(Base):
     # (Story 7.5, AD-21, migration 0007): a migration cutover registers it
     # disabled and enables it once the native scheduler is retired.
     enabled: Mapped[bool] = mapped_column(nullable=False, default=True, server_default=true())
+    # Archived (steward contract section 1, migration 0008): hidden from lists
+    # and never scheduled. Archiving also disables; unarchiving leaves it
+    # disabled until an explicit enable, and enabling an archived row is a 409.
+    archived: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
     total_invoked: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_successful: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -124,5 +144,73 @@ class DispatchCursor(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class CandybarProfile(Base):
+    """One candybar's steward profile: overview, project, evaluation (steward contract section 2).
+
+    Created lazily on the first write; the JSON columns hold the contract's
+    camelCase shapes exactly as validated (`candybar.steward.model`).
+    """
+
+    __tablename__ = "candybar_profiles"
+
+    candybar_id: Mapped[UUID] = mapped_column(
+        ForeignKey("candybars.id", ondelete="CASCADE"), primary_key=True
+    )
+    overview: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    template_version: Mapped[int | None] = mapped_column(nullable=True)
+    project: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    enrich_task_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    evaluation: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class StewardTask(Base):
+    """One steward task: enrich, fix, evaluate or refactor (steward contract section 3)."""
+
+    __tablename__ = "steward_tasks"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    candybar_id: Mapped[UUID] = mapped_column(
+        ForeignKey("candybars.id", ondelete="CASCADE"), nullable=False
+    )
+    action: Mapped[str] = mapped_column(Text, nullable=False)  # one of STEWARD_ACTIONS
+    status: Mapped[str] = mapped_column(Text, nullable=False)  # one of STEWARD_STATUSES
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    # A follow-up points at the evaluate that queued it.
+    parent_task_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("steward_tasks.id", ondelete="SET NULL"), nullable=True
+    )
+    session_id: Mapped[str | None] = mapped_column(Text)
+    outcome: Mapped[str | None] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    report_key: Mapped[str | None] = mapped_column(Text)
+    invocation_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("steward_tasks_candybar_created", "candybar_id", "created_at"),
+        # At most one queued-or-running task per (candybar, action): the API's
+        # 409 rule, enforced by the database too.
+        Index(
+            "steward_tasks_active",
+            "candybar_id",
+            "action",
+            unique=True,
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
+    )
+
+
 # Names the sole-writer guard and migration agree on.
-TABLES = ("candybars", "invocations", "skips", "dispatch_cursor")
+TABLES = (
+    "candybars",
+    "invocations",
+    "skips",
+    "dispatch_cursor",
+    "candybar_profiles",
+    "steward_tasks",
+)

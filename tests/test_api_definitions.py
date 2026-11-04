@@ -45,10 +45,11 @@ PROBLEM = "application/problem+json"
 def test_contract_parse_found_the_documented_fields() -> None:
     assert LIST_KEYS == {
         "id", "name", "description", "tags", "schedule", "timezone", "noise", "enabled",
-        "createdAt",
+        "archived", "createdAt",
     }
     assert dict(LIST_FIELDS)["tags"] == "list" and dict(LIST_FIELDS)["noise"] == "bool"
     assert dict(LIST_FIELDS)["enabled"] == "bool"
+    assert dict(LIST_FIELDS)["archived"] == "bool"
     assert {n for n, _ in EXTRA_SINGLE_FIELDS} == {"totalInvoked", "totalSuccessful"}
     assert set(FIELD_CHECKS) == SINGLE_KEYS
 
@@ -73,6 +74,7 @@ class Row:
     timezone: str = "UTC"
     runner: dict | None = None
     enabled: bool = True
+    archived: bool = False
 
 
 class FakeSink:

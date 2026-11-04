@@ -12,8 +12,13 @@ from .envelope import (
     CandybarInvokeCommand,
     CandybarInvokedEvent,
     CandybarSkippedEvent,
+    CandybarStewardCommand,
     CandybarUpdatedEvent,
     Envelope,
+    StewardTaskCompletedEvent,
+    StewardTaskFailedEvent,
+    StewardTaskQueuedEvent,
+    StewardTaskStartedEvent,
     TickFiredEvent,
 )
 
@@ -26,6 +31,11 @@ _MODEL_BY_TYPE: dict[str, type[Envelope]] = {
     voc.TYPE_CANDYBAR_FAILED: CandybarFailedEvent,
     voc.TYPE_CANDYBAR_SKIPPED: CandybarSkippedEvent,
     voc.TYPE_CANDYBAR_INVOKE: CandybarInvokeCommand,
+    voc.TYPE_CANDYBAR_STEWARD: CandybarStewardCommand,
+    voc.TYPE_STEWARD_TASK_QUEUED: StewardTaskQueuedEvent,
+    voc.TYPE_STEWARD_TASK_STARTED: StewardTaskStartedEvent,
+    voc.TYPE_STEWARD_TASK_COMPLETED: StewardTaskCompletedEvent,
+    voc.TYPE_STEWARD_TASK_FAILED: StewardTaskFailedEvent,
 }
 
 

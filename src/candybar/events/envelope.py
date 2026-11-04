@@ -267,3 +267,65 @@ class CandybarSkippedEvent(EventEnvelope):
 class CandybarInvokeCommand(CommandEnvelope):
     type: Literal["bloodbank.cron.candybar.invoke"] = voc.TYPE_CANDYBAR_INVOKE  # type: ignore[assignment]
     data: CandybarInvokeData
+
+
+# --------------------------------------------------------------------------
+# Steward (steward-contract.md sections 3-4): the steward command and the
+# task lifecycle facts. The payload is the contract's Task in the bus's
+# snake_case, plus the candybar's name.
+# --------------------------------------------------------------------------
+
+StewardAction = Literal["enrich", "fix", "evaluate", "refactor"]
+StewardStatus = Literal["queued", "running", "succeeded", "failed"]
+
+
+class CandybarStewardData(BaseModel):
+    schema_version: Literal[1] = 1
+    task_id: UUID
+    candybar_id: UUID
+    action: StewardAction
+
+
+class StewardTaskData(BaseModel):
+    schema_version: Literal[1] = 1
+    task_id: UUID
+    candybar_id: UUID
+    name: CandybarName
+    action: StewardAction
+    status: StewardStatus
+    model: NonBlank
+    parent_task_id: UUID | None = None
+    session_id: str | None = None
+    outcome: str | None = None
+    summary: str | None = None
+    report_key: str | None = None
+    invocation_id: UUID | None = None
+    error: str | None = None
+    created_at: AwareDatetime
+    started_at: AwareDatetime | None = None
+    finished_at: AwareDatetime | None = None
+
+
+class CandybarStewardCommand(CommandEnvelope):
+    type: Literal["bloodbank.cron.candybar.steward"] = voc.TYPE_CANDYBAR_STEWARD  # type: ignore[assignment]
+    data: CandybarStewardData
+
+
+class StewardTaskQueuedEvent(EventEnvelope):
+    type: Literal["bloodbank.cron.steward_task.queued"] = voc.TYPE_STEWARD_TASK_QUEUED  # type: ignore[assignment]
+    data: StewardTaskData
+
+
+class StewardTaskStartedEvent(EventEnvelope):
+    type: Literal["bloodbank.cron.steward_task.started"] = voc.TYPE_STEWARD_TASK_STARTED  # type: ignore[assignment]
+    data: StewardTaskData
+
+
+class StewardTaskCompletedEvent(EventEnvelope):
+    type: Literal["bloodbank.cron.steward_task.completed"] = voc.TYPE_STEWARD_TASK_COMPLETED  # type: ignore[assignment]
+    data: StewardTaskData
+
+
+class StewardTaskFailedEvent(EventEnvelope):
+    type: Literal["bloodbank.cron.steward_task.failed"] = voc.TYPE_STEWARD_TASK_FAILED  # type: ignore[assignment]
+    data: StewardTaskData
