@@ -14,7 +14,7 @@ sources:
 
 ## Why
 
-A pain to solve. Scheduled work in the 33GOD pipeline is scattered: Hermes runs its own cron framework, other jobs live in user `crontab` entries, and nothing shares an inventory, metrics, or a control surface. Candybar replaces all of it with a single Bloodbank-driven cron system purpose-built for the pipeline: one heartbeat on the event bus, business logic in subscribers, every scheduled unit registered, metered, and manually invocable.
+Scheduled work in the 33GOD pipeline is scattered: Hermes runs its own cron framework, other jobs live in user `crontab` entries, and nothing shares an inventory, metrics, or a control surface. Candybar replaces this with one Bloodbank heartbeat, scheduling business logic in subscribers, and every scheduled unit registered, metered, and manually invocable.
 
 ## Capabilities
 
@@ -23,7 +23,7 @@ A pain to solve. Scheduled work in the 33GOD pipeline is scattered: Hermes runs 
   - **success:** A subscriber receives one heartbeat event per minute (60s tick, small skew tolerated) and no scheduled work requires a crontab entry.
 - **CAP-2**
   - **intent:** Every scheduled unit is a `Candybar` implementing `invoke`, one schedule variant (existing standard five-field cron or finite local date/time list), and `result` (success/fail).
-  - **success:** A registered cron Candybar fires at each dictated time as before; a finite Candybar fires and durably settles each listed occurrence once, with its result recorded — see `finite-schedules-contract.md`.
+  - **success:** A registered cron Candybar fires at each dictated time as before; each finite occurrence either invokes once or receives its approved durable skip disposition, with results recorded — see `finite-schedules-contract.md`.
 - **CAP-3**
   - **intent:** Every Candybar invocation is metered to Prometheus: total memory, runtime in ms, token spend, and average CPU/GPU load.
   - **success:** All four metric families are queryable in Prometheus, labeled per Candybar and per invocation.
@@ -44,21 +44,22 @@ A pain to solve. Scheduled work in the 33GOD pipeline is scattered: Hermes runs 
   - **success:** A consumer renders current/upcoming/past cron and finite rows, filters noisy crons and applies skip controls without deleted definitions reappearing — contracts in `holocene-view-contract.md` and `finite-schedules-contract.md`.
 - **CAP-9**
   - **intent:** An operator can register a one-time or finite list of exact local dates instead of a recurring cron.
-  - **success:** One-date and three-date jobs each invoke once per listed minute, with distinct durable terminal dispositions and UTC fire times.
+  - **success:** One-date and three-date jobs invoke once per eligible listed minute; missed dates are durably skipped, never run late, and UTC fire times remain consistent across readers.
 - **CAP-10**
   - **intent:** An operator can permanently delete a definition without losing its historical identity.
   - **success:** API/CLI deletion removes the active definition, repeats by known UUID are idempotent, active work blocks removal, and UUID history and invocation lookup remain available.
 - **CAP-11**
   - **intent:** An exhausted finite Candybar removes its active definition after all of its occurrences settle.
-  - **success:** Out-of-order terminal completion and restart produce one recoverable deletion without early removal or historical loss; a governed deletion fact is eventually published.
+  - **success:** Out-of-order terminal completion and restart produce one recoverable deletion without early removal or historical loss; paused definitions survive until resume, and a governed deletion fact is eventually published.
 
 ## Constraints
 
 - Bloodbank is the only scheduling transport: heartbeat and invocation lifecycle events publish as `bloodbank.evt.*` facts over NATS/Dapr, and scheduling business logic lives in cron Subscribers — never in a central crontab or a private timer loop.
 - Cron schedules retain standard five-field format; a finite schedule is the only alternative and uses a nonempty minute-aligned list of local ISO datetimes with IANA timezone. One shared schedule Strategy serves all schedule readers; UTC fire times and existing cron behavior remain unchanged.
-- A finite date claim/edit/settlement/delete is serialized under its candybar's DB lock; every listed occurrence settles durably before self-deletion. Manual runs never consume dates; no wall-clock-only or publication-only completion.
+- Reject finite inputs containing past entries or nonexistent/ambiguous DST wall times; no partial acceptance, silent time shifts or doubled exact dates. Missed fires settle as durable skips, never late executions; paused elapsed dates settle on resume, with no paused self-deletion before resume.
+- Claimed or consumed occurrences are immutable; only unconsumed future dates may be replaced, and timezone changes are rejected after any claim. Serialize finite claim/edit/settlement/delete under the candybar's DB lock; manual runs never consume dates.
+- Self-deletion requires EVERY occurrence durably settled by success, failure, recorded skip or overlap and no work in flight; elapsed wall time and dispatch publication are not completion. Detailed owner policies and provenance are in `finite-schedules-contract.md`.
 - Real deletion removes the active definition, not the reversible archive, while keeping historical UUID identity, invocations and dedupe keys under existing retention. The delete transaction includes the stable-ID outbox fact; Bloodbank governance approves the schema/type before any publication.
-- Owner choices for mixed-past inputs, missed/pause policy, DST folds/gaps and edit/settlement rules remain gated; details in `finite-schedules-contract.md`.
 - Existing infrastructure only: Prometheus + Grafana for metrics, Postgres for the registry, Candystore as the durable projection of invocation events. No new data stores.
 - Secrets appear only as `op://DeLoSecrets/...` references or environment variables, never plaintext.
 - All service references use hostnames on `delo.sh`; never hardcode LAN IPs.
@@ -75,7 +76,7 @@ A pain to solve. Scheduled work in the 33GOD pipeline is scattered: Hermes runs 
 
 ## Success signal
 
-Register a new scheduled job as a Candybar — via SDK or a bare executable — and it fires on its cron schedule with Prometheus metrics and registry counts updating, `candybar run <id>` invokes it immediately, and no crontab was touched. A finite three-date job additionally produces three terminal scheduled runs and intended effects, then disappears from active listings while its UUID history remains queryable; a one-date job behaves the same. The scattered-cron state the braindump describes is gone for every job that has been moved over.
+Register a new scheduled job as a Candybar — via SDK or a bare executable — and it fires on its cron schedule with Prometheus metrics and registry counts updating, `candybar run <id>` invokes it immediately, and no crontab was touched. A finite three-date job additionally produces three terminal scheduled runs and intended effects, then disappears from active listings while its UUID history remains queryable; a one-date job behaves the same. Missed/pause/DST/control tests demonstrate the approved finite policies without changing recurring cron behavior.
 
 ## Delegated (owner: holocene)
 
@@ -90,9 +91,4 @@ The gmail-inbox-style live schedule view (Definitions and Schedule tabs, current
 
 ## Open Questions
 
-- ~~What is the catch-up policy when the daemon is down through one or more ticks: skip missed fires, run the misfire once, or replay all?~~ Resolved for recurring cron by architecture AD-6 (coalesce latest within 24h); finite missed-fire policy is still open below.
-- ~~Is heartbeat delivery at-least-once (subscribers dedupe within a minute tick) or effectively-once via daemon-side dispatch?~~ Resolved for cron by architecture AD-5 (at-least-once ticks with idempotent dispatch).
-- Jarad: for mixed past/future date lists, reject the entire list or accept future entries and record past skips? All-past is rejected.
-- Jarad: do missed finite occurrences run late or settle as recorded skips, including executor backlog and pause? On pause, settle during pause or on resume, and may a paused exhausted definition delete?
-- Jarad: reject nonexistent/ambiguous local DST times or specify exact gap and fold mappings?
-- Jarad: may claimed/settled dates or timezone change, which future dates are editable, and do failure/operator skip/overlap count as terminal only after durable settlement? Owner gate `t_7204a764` must resolve these before implementation.
+None for the four finite-schedule owner policies: Jarad's 2026-11-04 answer resolves them; see `finite-schedules-contract.md`. Recurring cron catch-up and heartbeat delivery were already resolved by architecture AD-6 (coalesce latest within 24h) and AD-5 (at-least-once ticks with idempotent dispatch). Canonical event governance remains a separate delivery prerequisite, not an unanswered owner-policy question.
