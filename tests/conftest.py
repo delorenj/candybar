@@ -18,3 +18,6 @@ os.environ.setdefault("CANDYBAR_NVIDIA_SMI", "")
 # tests/test_executor_host.py drives both explicitly.
 os.environ.setdefault("CANDYBAR_EXECUTOR_METRICS_PORT", "")
 os.environ.setdefault("CANDYBAR_SCHEMA_GUARD", "off")
+# The steward's checkout lookup scans the real ~/docker, ~/.agents, ... by
+# default; the unit suite looks only where a test points it (empty: none).
+os.environ.setdefault("CANDYBAR_CHECKOUT_ROOTS", "")

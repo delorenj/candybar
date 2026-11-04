@@ -167,13 +167,30 @@ def test_steward_cancel_marks_failed_and_interrupts_the_session(fake: FakeApi, m
 
     interrupted: list[str] = []
     monkeypatch.setattr(oc.Endpoint, "discover", classmethod(lambda cls: oc.Endpoint("http://opencode.test", None)))
-    monkeypatch.setattr(oc.OpenCodeClient, "interrupt", lambda self, endpoint, session: interrupted.append(session))
+    monkeypatch.setattr(oc.OpenCodeClient, "interrupt_or_raise", lambda self, endpoint, session: interrupted.append(session))
     cancelled = task("failed", action="fix", sessionId="ses_live", error="cancelled by operator")
     fake.on("POST", f"/steward/tasks/{TASK_ID}/cancel", cancelled)
     out = invoke_cli(["steward", "cancel", TASK_ID])
     assert out.exit_code == 0, out.output
     assert interrupted == ["ses_live"] and "cancelled by operator" in out.output
     assert "interrupted OpenCode session ses_live" in out.output
+
+
+def test_steward_cancel_says_so_when_the_interrupt_failed(fake: FakeApi, monkeypatch: pytest.MonkeyPatch) -> None:
+    import candybar.steward.opencode as oc
+
+    def refused(endpoint: oc.Endpoint, method: str, path: str, body: object = None, **kw: object) -> tuple[int, object]:
+        raise oc.OpenCodeError(f"OpenCode {method} {path}: HTTP 404 no such session")
+
+    monkeypatch.setattr(oc.Endpoint, "discover", classmethod(lambda cls: oc.Endpoint("http://opencode.test", None)))
+    monkeypatch.setattr(oc, "_call", refused)
+    fake.on("POST", f"/steward/tasks/{TASK_ID}/cancel", task("failed", action="fix", sessionId="ses_gone", error="cancelled by operator"))
+    out = invoke_cli(["steward", "cancel", TASK_ID])
+    assert out.exit_code == 0, out.output  # the cancel itself stands
+    assert "interrupted OpenCode session" not in out.output
+    assert "could not interrupt OpenCode session ses_gone" in out.output and "HTTP 404" in out.output
+    # The worker's best-effort stop reports the failure as False, never as done.
+    assert oc.OpenCodeClient().interrupt(oc.Endpoint("http://opencode.test", None), "ses_gone") is False
 
 
 def test_steward_cancel_of_a_finished_task_fails(fake: FakeApi) -> None:

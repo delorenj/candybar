@@ -122,13 +122,34 @@ def test_refactor_template_is_scoped_to_this_candybar() -> None:
     assert "Scope: this candybar only." in body
     assert "Do not edit other candybars' jobs or units, do not register new candybars" in body
     assert "answer `applied: false`" in body and "splitting the job into two" in body
-    assert "the steward runs it once through Candybar to prove it still works" in body
+    # Round 2: no proving run for a refactor; the next scheduled fire proves it.
+    assert "the steward runs it once" not in body
+    assert "a refactor gets no manual run" in body and "The job's next scheduled fire proves the change" in body
+    assert "An answer of `applied: true` with an empty `commits` list counts as not applied." in body
+
+
+@pytest.mark.parametrize("action", ["fix", "refactor"])
+def test_mutating_templates_leave_the_proof_to_the_steward(action: str) -> None:
+    template = load_template(action)
+    body = " ".join(template.body.split())
+    assert template.version == 3
+    assert "run `candybar run` or `candybar steward ...`" in body
+    assert "the steward owns the proof" in body
+
+
+@pytest.mark.parametrize("action", ["enrich", "evaluate", "fix", "refactor"])
+def test_every_template_says_just_do_the_task(action: str) -> None:
+    template = load_template(action)
+    body = " ".join(template.body.split())
+    assert template.version == 3
+    assert "Just do the task." in body and "Do not load BMAD or any other workflow skill" in body
 
 
 @pytest.mark.parametrize("action", ["enrich", "evaluate"])
 def test_read_only_templates_say_so(action: str) -> None:
     body = " ".join(load_template(action).body.split())
     assert "Read-only session." in body and "the edit, write and patch tools are denied" in body
+    assert "and so is handing work to a subagent" in body
     assert "no `git commit`" in body and "`steward ...`" in body
 
 
@@ -571,27 +592,39 @@ def _prove_with(steward: Steward, reg: Reg, result: str, exit_code: int) -> None
     steward._publish_raw = publish  # type: ignore[method-assign]
 
 
-def test_refactor_applied_is_proven_by_one_manual_run(reg: Reg) -> None:
+def test_refactor_applied_is_not_run_by_the_steward(reg: Reg) -> None:
+    # Round 2, finding 1: no proving invoke (a Suboptimal job may post, bill or
+    # back up for real); the next scheduled fire proves it.
     cb = reg.candybar()
     _, task = _with_parent_evaluation(reg, cb, recommendation="Run hourly instead.")
     opencode = ScriptedOpenCode(block({"applied": True, "summary": "Hourly is enough.", "commits": ["candybar edit vault"]}))
     steward = make(reg, opencode)
     _prove_with(steward, reg, "success", 0)
     run(steward.handle_message(command_for(task)))
-    assert task.status == "succeeded" and task.outcome == "done_proven", task.error
-    assert "Hourly" in task.summary and "success (exit 0)" in task.summary
+    assert task.status == "succeeded" and task.outcome == "done", task.error
+    assert not [e for e in reg.published if e.type == "bloodbank.cron.candybar.invoke"]
+    assert task.invocation_id is None and "Proving run" not in task.summary
+    assert "next scheduled fire proves it" in task.summary and "candybar history vault" in task.summary
     assert "Run hourly instead." in opencode.prompts[0]
     assert reg.profiles[cb.id].evaluation["followUpStatus"] == "done"
 
 
-def test_refactor_proof_that_fails_is_done_not_proven(reg: Reg) -> None:
+def test_refactor_applied_with_no_commits_is_not_applied(reg: Reg) -> None:
     cb = reg.candybar()
     _, task = _with_parent_evaluation(reg, cb)
-    steward = make(reg, ScriptedOpenCode(block({"applied": True, "summary": "Trimmed it.", "commits": ["x@1 trim"]})))
-    _prove_with(steward, reg, "fail", 3)
-    run(steward.handle_message(command_for(task)))
-    assert task.outcome == "done_not_proven" and "fail (exit 3)" in task.summary
-    assert reg.profiles[cb.id].evaluation["followUpStatus"] == "failed"
+    run(make(reg, ScriptedOpenCode(block({"applied": True, "summary": "Trimmed it."}))).handle_message(command_for(task)))
+    assert task.outcome == "not_applied" and "listed no commit" in task.summary
+    assert not [e for e in reg.published if "invoke" in e.type]
+    assert reg.profiles[cb.id].evaluation["followUpStatus"] == "flagged"
+
+
+def test_legacy_refactor_outcomes_still_settle() -> None:
+    from candybar.steward.worker import follow_up_status
+
+    assert follow_up_status("refactor", "done_proven") == "done"
+    assert follow_up_status("refactor", "done_not_proven") == "failed"
+    assert follow_up_status("refactor", "done") == "done"
+    assert follow_up_status("refactor", "not_applied") == "flagged"
 
 
 def test_refactor_not_applied_runs_nothing_and_flags(reg: Reg) -> None:

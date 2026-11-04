@@ -7,18 +7,25 @@ script files (`exec`, `systemd`), the n8n workflow export (`n8n`), the last
 30 invocations and the stored profile. Then the directory the OpenCode
 session runs in, the job's own home:
 
-1. the ledger `source_of_truth.repo`'s local checkout (`~/code/<name>`,
-   `~/code/*/<name>`, or the git root of a path the ledger entry, the unit's
-   FragmentPath or its ExecStart names), verified to exist and, when it has
-   an `origin`, to point at that repo. A source of truth that is this
-   candybar repo only records the migration (the ledger lives here), so it
-   counts as no repo and resolution falls through;
+1. the ledger `source_of_truth.repo`'s local checkout: first the checkout
+   whose git remote is that `owner/name` (a scan of ~/docker, ~/.agents,
+   ~/.hermes/hermes-agent, ~/HeyMa and ~/code two levels deep, cached for
+   the process; the named roots rank first, worktrees last), then by name
+   (`~/code/<name>`, `~/code/*/<name>`) or the git root of a path the
+   ledger entry, the unit's FragmentPath or its ExecStart names, verified
+   to exist and, when it has an `origin`, to point at that repo. A source
+   of truth that is this candybar repo only records the migration (the
+   ledger lives here), so it counts as no repo and resolution falls
+   through;
 2. else the runner's own home: a hermes job's `workdir`; a systemd unit's
-   FragmentPath (symlinks resolved: the unit file may live in another repo,
-   such as ~/docker) or the git root of the script its ExecStart runs; an
-   exec runner's `workdir` / argv path's git root; an n8n workflow's export
-   in the workflows repo. A root that is this candybar repo is taken only
-   when nothing else is found;
+   FragmentPath or the git root of the script its ExecStart runs; an
+   exec runner's `workdir` / argv path's git root (for a
+   `candybar.transition_exec` wrapper, the wrapped script's git root, else
+   its directory, never the wrapper's); an n8n workflow's export in the
+   workflows repo. Every git root resolves symlinks first (the unit file or
+   a `~/.local/bin` link may live in another repo, such as ~/docker). A
+   root that is this candybar repo is taken only when nothing else is
+   found;
 3. else this candybar checkout.
 
 Evidence is untrusted data: every pasted record, file and log goes into a
@@ -54,6 +61,7 @@ OWN_SLUGS = frozenset({"delorenj/candybar"})
 CODE_ROOT_ENV = "CANDYBAR_CODE_ROOT"
 HERMES_ROOT_ENV = "CANDYBAR_HERMES_HOME"
 N8N_EXPORTS_ENV = "CANDYBAR_N8N_EXPORTS"
+CHECKOUT_ROOTS_ENV = "CANDYBAR_CHECKOUT_ROOTS"
 # The 33god-pm runtime keeps its own jobs file (the profile dir links to it).
 PM_RUNTIME_JOBS = Path.home() / "code" / "33GOD" / "agents" / "hermes" / "pm" / "runtime" / "cron" / "jobs.json"
 
@@ -82,9 +90,14 @@ def n8n_exports() -> Path:
 
 
 def git_root(path: Path) -> Path | None:
-    """The nearest ancestor (or `path`) holding a `.git` entry, or None."""
+    """The nearest ancestor (or `path`) holding a `.git` entry, symlinks resolved first, or None.
+
+    `~/.local/bin/activity-report` that links into `~/code/skillex/all-skills`
+    belongs to that checkout, not to whatever holds the link.
+    """
     try:
-        current = path if path.is_dir() else path.parent
+        real = Path(os.path.realpath(path))
+        current = real if real.is_dir() else real.parent
     except OSError:
         return None
     for candidate in (current, *current.parents):
@@ -104,6 +117,93 @@ def origin_slug(root: Path) -> str | None:
         return None
     match = _SLUG_RE.search(out.stdout.strip()) if out.returncode == 0 else None
     return match.group(1) if match else None
+
+
+def remote_slugs(root: Path) -> list[tuple[str, str]]:
+    """(remote name, `owner/name`) of every remote of the checkout at `root`, origin first."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "config", "--get-regexp", r"^remote\..*\.url$"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found: list[tuple[str, str]] = []
+    for line in out.stdout.splitlines() if out.returncode == 0 else []:
+        key, _, url = line.partition(" ")
+        remote = key[len("remote."):-len(".url")]
+        match = _SLUG_RE.search(url.strip())
+        if match:
+            found.append((remote, match.group(1)))
+    return sorted(found, key=lambda item: item[0] != "origin")
+
+
+def checkout_roots() -> tuple[Path, ...]:
+    """Checkouts outside the code root that hold jobs, each looked up by its remotes.
+
+    `CANDYBAR_CHECKOUT_ROOTS` (os.pathsep-separated; empty for none) overrides.
+    """
+    raw = os.environ.get(CHECKOUT_ROOTS_ENV)
+    if raw is not None:
+        return tuple(Path(p).expanduser() for p in raw.split(os.pathsep) if p)
+    home = Path.home()
+    return (home / "docker", home / ".agents", hermes_home() / "hermes-agent", home / "HeyMa")
+
+
+def _scan(code: Path, extra: tuple[Path, ...]) -> list[tuple[int, Path]]:
+    """(tier, checkout) the remote index reads: `extra` (tier 0), then the code root one (1) and two (2) deep.
+
+    The named roots are the live checkouts (the units run from ~/HeyMa, not
+    a ~/code/HeyMa clone), so they rank first. Hidden directories under the
+    code root (`.wt` worktrees, `.archive`) are skipped.
+    """
+    level1: list[Path] = []
+    level2: list[Path] = []
+
+    def subdirs(parent: Path) -> list[Path]:
+        try:
+            return sorted(p for p in parent.iterdir() if p.is_dir() and not p.name.startswith("."))
+        except OSError:
+            return []
+
+    for child in subdirs(code):
+        if (child / ".git").exists():
+            level1.append(child)
+        level2 += [p for p in subdirs(child) if (p / ".git").exists()]
+    return [
+        *((0, p) for p in extra if (p / ".git").exists()),
+        *((1, p) for p in level1),
+        *((2, p) for p in level2),
+    ]
+
+
+@lru_cache(maxsize=8)
+def _remote_index(code: str, extra: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
+    """`owner/name` (lowercase) -> local checkouts whose remotes name it, best first.
+
+    Best: a full checkout before a worktree (`.git` is a file), a named root
+    before the code root (one level before two), an `origin` remote before
+    any other. Cached for the process (a long-lived steward sees a new clone
+    after a restart).
+    """
+    ranked: dict[str, list[tuple[tuple[bool, int, bool], str]]] = {}
+    for tier, repo in _scan(Path(code), tuple(Path(p) for p in extra)):
+        resolved = str(Path(os.path.realpath(repo)))
+        worktree = (repo / ".git").is_file()
+        for remote, slug in remote_slugs(repo):
+            entries = ranked.setdefault(slug.lower(), [])
+            if resolved not in (path for _, path in entries):
+                entries.append(((worktree, tier, remote != "origin"), resolved))
+    return {
+        slug: tuple(path for _, path in sorted(entries, key=lambda e: e[0]))
+        for slug, entries in ranked.items()
+    }
+
+
+def remote_checkouts(slug: str) -> list[Path]:
+    """Local checkouts (code root two deep, `checkout_roots()`) with a remote that is `slug`."""
+    index = _remote_index(str(code_root()), tuple(str(p) for p in checkout_roots()))
+    return [Path(p) for p in index.get(slug.lower(), ()) if (Path(p) / ".git").exists()]
 
 
 def _same(a: Path, b: Path) -> bool:
@@ -136,12 +236,53 @@ def _absolute_paths(texts: list[str]) -> list[Path]:
     return out
 
 
-def find_checkout(slug: str, hints: list[Path] = ()) -> Path | None:  # type: ignore[assignment]
-    """The local checkout of `owner/name`: by name under the code root, or a hinted git root.
+TRANSITION_EXEC = "candybar.transition_exec"
+# transition_exec's options that take a value (src/candybar/transition_exec.py, main()).
+_TRANSITION_VALUE_OPTIONS = frozenset({"--state-file", "--profile", "--target", "--timeout", "--notify-timeout"})
 
-    A candidate with an `origin` must point at `slug` (case-insensitive); one
-    without a readable origin is accepted on its name alone.
+
+def unwrap_transition_exec(argv: list[str]) -> tuple[list[str], list[str]] | None:
+    """(wrapper argv, wrapped command) when `argv` runs `candybar.transition_exec`, else None.
+
+    `python -m candybar.transition_exec [options] [--] <command...>` (or a
+    path to `transition_exec.py`): the wrapper only delivers the detector's
+    output, the command is the job.
     """
+    start = None
+    for i, token in enumerate(argv):
+        if (token == TRANSITION_EXEC and i > 0 and argv[i - 1] == "-m") or Path(token).name == "transition_exec.py":
+            start = i + 1
+            break
+    if start is None:
+        return None
+    i = start
+    while i < len(argv):
+        token = argv[i]
+        if token == "--":
+            i += 1
+            break
+        if not token.startswith("--"):
+            break
+        i += 2 if token in _TRANSITION_VALUE_OPTIONS else 1
+    return argv[:i], argv[i:]
+
+
+def find_checkout(slug: str, hints: list[Path] = ()) -> Path | None:  # type: ignore[assignment]
+    """The local checkout of `owner/name`.
+
+    First by remote: a checkout in `checkout_roots()` (~/docker, ~/.agents,
+    ~/.hermes/hermes-agent, ~/HeyMa) or under the code root (two levels
+    deep, hidden directories skipped) with a remote whose URL is `slug`
+    (case-insensitive). Among several, one a hint lives in wins, else the
+    best ranked: a full checkout before a worktree, a named root before the
+    code root, an `origin` remote before another. Then by name under the
+    code root, or a hinted git root: a candidate with an `origin` must point
+    at `slug`; one without a readable origin is accepted on its name alone.
+    """
+    hinted = {root for root in (git_root(h) for h in hints) if root is not None}
+    by_remote = remote_checkouts(slug)
+    if by_remote:
+        return next((p for p in by_remote if p in hinted), by_remote[0])
     name = slug.rsplit("/", 1)[-1]
     wanted = slug.lower()
     root = code_root()
@@ -350,19 +491,30 @@ def _policy_names() -> tuple[frozenset[str], frozenset[str]]:
     return frozenset(ids), frozenset(names)
 
 
-PROTECTED_TAGS = frozenset({"smoke", "canary", "watchdog", "policy"})
+PROTECTED_TAGS = frozenset({"smoke", "canary", "watchdog", "policy", "ops"})
 BACKUP_TAGS = frozenset({"backups", "backup"})
+BACKUP_NAMES = ("backup", "restic")
+# A name containing one of these is protected whatever its tags say.
+PROTECTED_NAMES = ("watchdog", "backstop", "canary", "smoke", "policy")
 
 
 def protection(definition: dict[str, Any]) -> str | None:
-    """Why this candybar is never archived automatically, or None (contract section 4, evaluate)."""
+    """Why this candybar never gets an automatic archive or refactor, or None (contract section 4, evaluate).
+
+    Backups, canaries, smoke tests, watchdogs, backstops, policy and ops
+    jobs: by tag, by name, or named in deploy/scheduling-policy.json.
+    """
     tags = {str(t).lower() for t in definition.get("tags") or []}
     name = str(definition.get("name") or "")
+    lowered = name.lower()
     hit = sorted(tags & PROTECTED_TAGS)
     if hit:
         return f"tagged {hit[0]}"
-    if tags & BACKUP_TAGS or "backup" in name.lower() or "restic" in name.lower():
+    if tags & BACKUP_TAGS or any(word in lowered for word in BACKUP_NAMES):
         return "a backup job"
+    named = next((word for word in PROTECTED_NAMES if word in lowered), None)
+    if named is not None:
+        return f"named *{named}*"
     ids, names = _policy_names()
     if str(definition.get("id")) in ids or name in names:
         return "named in deploy/scheduling-policy.json"
@@ -662,15 +814,35 @@ def gather(
         argv = [str(a) for a in (runner or {}).get("argv", [])] or ([entrypoint] if entrypoint else [])
         workdir = (runner or {}).get("workdir")
         base = Path(workdir).expanduser() if workdir else None
-        for token in argv:
-            path = Path(token).expanduser()
-            if not path.is_absolute() and base is not None and "/" in token:
-                path = base / path
-            if path.is_absolute():
-                exec_paths.append(path)
-        if base is not None:
-            homes.append((base, "the git root of the exec runner's workdir", False))
-        homes += [(p, "the git root of the exec runner's", False) for p in exec_paths]
+
+        def absolute(tokens: list[str]) -> list[Path]:
+            out: list[Path] = []
+            for token in tokens:
+                path = Path(token).expanduser()
+                if not path.is_absolute() and base is not None and "/" in token:
+                    path = base / path
+                if path.is_absolute():
+                    out.append(path)
+            return out
+
+        wrapped = unwrap_transition_exec(argv)
+        if wrapped is not None:
+            # The wrapper (this repo's `candybar.transition_exec`, run from this
+            # checkout) only delivers the detector's output: the job is the
+            # wrapped command, and its home is that script's, not the wrapper's.
+            wrapper, command = wrapped
+            job_paths = absolute(command)
+            exec_paths = [*job_paths, *absolute(wrapper[1:])]
+            homes += [(p, "the git root of the transition_exec-wrapped script", False) for p in job_paths]
+            homes += [
+                (p.parent, "the directory of the transition_exec-wrapped script (it is in no git repo)", True)
+                for p in job_paths[:1]
+            ]
+        else:
+            exec_paths = absolute(argv)
+            if base is not None:
+                homes.append((base, "the git root of the exec runner's workdir", False))
+            homes += [(p, "the git root of the exec runner's", False) for p in exec_paths]
     elif kind == "n8n" and runner:
         export = n8n_workflow(str(runner.get("webhook") or ""))
         if export is not None:

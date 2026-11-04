@@ -15,10 +15,14 @@ Routes (verified against the live server's `/openapi.json`, OpenCode 2.1.4):
   `{action, resource, effect: allow|deny|ask}` evaluated after the agent's own
   rules (the session's rules win). Read-only sessions deny `edit` (the
   edit/write/patch tools' permission; `write` and `patch` are denied too in
-  case a build names them separately). `shell` stays allowed (read-only
-  commands are the evidence), so read-only is enforced for file tools only
-  and the prompt rule covers the rest. `GET /api/session/{id}` echoes the
-  stored `permissions`, `cost` and `tokens`.
+  case a build names them separately) and `subagent` (delegation to another
+  agent, such as `general` with its `*: allow`, which would not be bound by
+  this session's rules; `task` is denied too, the older name). `shell` stays
+  allowed (read-only commands are the evidence), so read-only is enforced
+  for file tools and delegation only, and the prompt rule covers the rest.
+  `GET /api/session/{id}` echoes the stored `permissions`, `cost` and
+  `tokens`; `GET /api/agent` lists each agent's own rules (the `general`
+  and `explore` subagents deny `subagent` for themselves).
 - `POST /api/session/{id}/prompt` `{text}` (returns at once; the turn runs)
 - `POST /api/experimental/session/{id}/wait` (204 once idle; we bound each
   call and re-check, so a dropped long poll never loses the outcome)
@@ -66,9 +70,12 @@ MESSAGE_PAGE = 50
 IDLE_READ_RETRIES = 5
 # Attempts at the final message read once the turn is idle.
 FINAL_READ_ATTEMPTS = 4
-# The edit/write/patch tools: denied in read-only sessions.
+# Denied in read-only sessions: the edit/write/patch tools and delegation to
+# a subagent (`subagent`, as the live 2.1.4 `/api/agent` rules name it;
+# `task` too, the tool's older name).
 READ_ONLY_PERMISSIONS: tuple[dict[str, str], ...] = tuple(
-    {"action": action, "resource": "*", "effect": "deny"} for action in ("edit", "write", "patch")
+    {"action": action, "resource": "*", "effect": "deny"}
+    for action in ("edit", "write", "patch", "subagent", "task")
 )
 
 
@@ -206,11 +213,18 @@ class OpenCodeClient:
         data = (body or {}).get("data")
         return [m for m in data if isinstance(m, dict)] if isinstance(data, list) else []
 
-    def interrupt(self, endpoint: Endpoint, session_id: str) -> None:
+    def interrupt_or_raise(self, endpoint: Endpoint, session_id: str) -> None:
+        """Interrupt the session's turn; OpenCodeError when OpenCode refused or was unreachable."""
+        _call(endpoint, "POST", f"/api/session/{session_id}/interrupt", {})
+
+    def interrupt(self, endpoint: Endpoint, session_id: str) -> bool:
+        """Interrupt the session's turn; False (logged) when OpenCode refused or was unreachable."""
         try:
-            _call(endpoint, "POST", f"/api/session/{session_id}/interrupt", {})
+            self.interrupt_or_raise(endpoint, session_id)
         except OpenCodeError as exc:
             log.warning("could not interrupt %s: %s", session_id, exc)
+            return False
+        return True
 
     def session_info(self, endpoint: Endpoint, session_id: str) -> dict[str, Any]:
         """The session record (`cost`, `tokens`, `permissions`, ...), or {} when unreadable."""
@@ -340,8 +354,8 @@ class OpenCodeClient:
         # few ms of clock skew below it.
         return await asyncio.to_thread(self.wait_turn, endpoint, session_id, floor - 5, timeout_s)
 
-    async def stop(self, endpoint: Endpoint, session_id: str) -> None:
-        await asyncio.to_thread(self.interrupt, endpoint, session_id)
+    async def stop(self, endpoint: Endpoint, session_id: str) -> bool:
+        return await asyncio.to_thread(self.interrupt, endpoint, session_id)
 
     async def spend(self, endpoint: Endpoint, session_id: str) -> tuple[float | None, dict[str, Any] | None]:
         return await asyncio.to_thread(self.usage, endpoint, session_id)

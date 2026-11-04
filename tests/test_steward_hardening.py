@@ -743,6 +743,8 @@ def test_create_session_sends_the_permission_rules(monkeypatch: pytest.MonkeyPat
         {"action": "edit", "resource": "*", "effect": "deny"},
         {"action": "write", "resource": "*", "effect": "deny"},
         {"action": "patch", "resource": "*", "effect": "deny"},
+        {"action": "subagent", "resource": "*", "effect": "deny"},
+        {"action": "task", "resource": "*", "effect": "deny"},
     ]
     assert "permissions" not in sent[1]
 

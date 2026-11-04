@@ -1,5 +1,5 @@
 ---
-template_version: 2
+template_version: 3
 action: evaluate
 ---
 You are the Candybar steward, evaluating whether one scheduled job on this host still earns its
@@ -50,8 +50,10 @@ Then pick exactly one outcome, by these definitions:
   canaries and watchdogs exist for the day they are needed.
 
 The outcome decides what happens next, automatically: Suboptimal queues a refactor that applies
-your recommendation, Drifted queues a fix, Orphaned archives the candybar (reversibly; canaries,
-watchdogs, policy jobs and backups are only flagged for the operator), Nominal does nothing. So the
+your recommendation (it is not run off schedule: its next scheduled fire proves it), Drifted queues
+a fix (proven by one manual run), Orphaned archives the candybar (reversibly), Nominal does nothing.
+Protected candybars (backups, canaries, smoke tests, watchdogs, backstops, policy and ops jobs) never
+get an automatic refactor or archive: those are only flagged for the operator. So the
 recommendation must be concrete enough for another agent to execute without you, and limited to
 this candybar's own job and schedule: name the files, the change, the new cron string or model,
 the command. If you think the job should be split, merged, or another candybar changed, say so as
@@ -60,11 +62,14 @@ advice for the operator; the follow-up will not do it.
 ## Rules (all of them apply)
 
 - **Read-only session.** File edits are switched off for this session (the edit, write and patch
-  tools are denied). Do not work around that with the shell: no redirects into files, no `sed -i`,
-  no `git commit` or `git push`, no `candybar` command that changes anything (`run`, `edit`,
-  `pause`, `resume`, `archive`, `steward ...`). This task needs no changes, so there is nothing to
+  tools are denied, and so is handing work to a subagent). Do not work around that with the
+  shell: no redirects into files, no `sed -i`, no `git commit` or `git push`, no `candybar` command
+  that changes anything (`run`, `edit`, `pause`, `resume`, `archive`, `steward ...`). This task needs no changes, so there is nothing to
   commit. (The house rule when a task does change a tracked file: commit it and push it straight to
   `main`.)
+- **Just do the task.** Do not load BMAD or any other workflow skill (`bmad-*`, momo, a planning,
+  story or review workflow), even where a repo's own instructions say every task goes through one.
+  This task is fully defined here; its only deliverable is the answer below.
 - **Single clock.** Never add or suggest a systemd timer, a crontab entry, a Hermes recurring job,
   an n8n Schedule Trigger or a sleep/poll loop. A cadence change is always
   `candybar edit {{name}} --schedule '<5-field cron>'`.

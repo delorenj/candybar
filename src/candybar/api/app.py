@@ -64,7 +64,8 @@ evaluation validated against the contract shapes), and steward tasks: `POST
 fact FIRST, then stores the queued task (202); `GET
 /candybars/{id}/steward/tasks`, `GET /steward/tasks`, the worker's `PATCH
 /steward/tasks/{taskId}`, which publishes the status fact before the write,
-and `POST /steward/tasks/{taskId}/cancel` (failed, "cancelled by operator").
+and `POST /steward/tasks/{taskId}/cancel` (failed, "cancelled by operator";
+a cancelled follow-up settles its evaluation's `followUpStatus`).
 A fix is a 409 while a fix or refactor is active for the candybar.
 All errors are RFC 7807 problem+json. Epic 5 adds the rest of the CAP-8 read surface.
 """
@@ -145,6 +146,7 @@ from candybar.steward.model import (
     ProfileUpdate,
     profile_changes,
     profile_json,
+    settled_evaluation,
     stamp_transition,
     task_fact_data,
     task_json,
@@ -1154,8 +1156,13 @@ def create_app(
     async def cancel_task(task_id: UUID) -> JSONResponse:
         """Cancel a queued or running task: `failed` with error "cancelled by operator" (fact first).
 
-        The steward notices within a minute and stops the run; the CLI also
-        interrupts the OpenCode session at once (the API cannot reach it).
+        The fact correlates like the steward's own (a follow-up on its
+        parent's chain). A follow-up's evaluation is settled too
+        (`followUpStatus: failed`, `followUpNote: "cancelled by operator"`),
+        so a cancelled queued refactor never reads "queued" forever. The
+        steward notices a running task within a minute and stops the run;
+        the CLI also interrupts the OpenCode session at once (the API
+        cannot reach it).
         """
         async with session_factory() as session:
             task = await get_steward_task(session, task_id, lock=True)
@@ -1169,7 +1176,10 @@ def create_app(
             candybar = await get_candybar(session, task.candybar_id)
             name = candybar.name if candybar is not None else "unknown"
             fact = build_steward_task_fact(
-                STEWARD_FACT_FOR_STATUS["failed"], task_fact_data(task, name, changes)
+                STEWARD_FACT_FOR_STATUS["failed"],
+                task_fact_data(task, name, changes),
+                correlationid=task.parent_task_id or task.id,
+                causationid=task.parent_task_id,
             )
             try:
                 await sink.publish(fact)
@@ -1180,6 +1190,20 @@ def create_app(
                 )
             task = await update_steward_task(session, task, changes)
             result = task_json(task)
+            candybar_id = task.candybar_id
+        # Its own transaction, after the task's (the steward locks the candybar,
+        # never a task, before a profile write).
+        try:
+            async with session_factory() as session:
+                if await lock_candybar(session, candybar_id) is not None:
+                    stored = await get_profile(session, candybar_id)
+                    settled = settled_evaluation(
+                        getattr(stored, "evaluation", None), task_id, "failed", CANCELLED
+                    )
+                    if settled is not None:
+                        await upsert_profile(session, candybar_id, {"evaluation": settled})
+        except Exception:  # the cancel stands; a running task's steward settles it again as it stops
+            log.exception("could not settle the follow-up of cancelled task %s", task_id)
         log.info("steward task %s cancelled by operator", task_id)
         return JSONResponse(content=result)
 

@@ -3,7 +3,7 @@
 Per consumed `bloodbank.cmd.cron.candybar.steward` command: mark the task
 `running`, gather the context bundle and working directory, open an
 OpenCode session with the task's model (enrich and evaluate sessions deny
-file edits), send the rendered template, wait (enrich 15 min, fix and
+file edits and subagent delegation), send the rendered template, wait (enrich 15 min, fix and
 refactor 30 min, evaluate 20 min; then interrupt and fail), read the final
 ```json block, validate it (one repair turn in the same session when it
 does not validate), apply it, and mark the task `succeeded` or `failed`.
@@ -28,13 +28,18 @@ Robustness, so no task stays queued or running forever:
   instance: a restart orphaned it) and every `queued` task older than the
   command stream's max_age (its command expired) too;
 - an operator cancel (`candybar steward cancel`, the row turns `failed`) is
-  noticed by the keepalive, which stops the run and its session;
+  noticed by the keepalive, which stops the run and its session; the task's
+  own failure is never mistaken for one (it is marked closing first);
 - a shutdown interrupts the OpenCode session and fails the task.
 
-Fix and refactor change things, so they run one at a time per working
-directory (an asyncio lock keyed by the resolved workdir) on top of the
-API's one-per-candybar rule; a refactor applies the evaluation that queued
-it (its parent's), never a later one.
+Fix and refactor change things, so they run one at a time per repo (an
+asyncio lock keyed by the git root of the job's checkout, symlinks
+resolved) on top of the API's one-per-candybar rule; a refactor applies the
+evaluation that queued it (its parent's), never a later one. A fix the agent
+reports repaired is proven by one manual invoke; a refactor is never run by
+the steward (its next scheduled fire proves it), and a protected candybar's
+Suboptimal verdict is flagged, not refactored. A failure to queue the enrich
+refresh after a fix or refactor never fails it: the summary says so.
 """
 
 from __future__ import annotations
@@ -42,6 +47,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, suppress
@@ -79,9 +85,10 @@ from ..registry import (
     upsert_profile,
     uuid7,
 )
-from .context import ContextBundle, build_context, fence, protection, redact
+from .context import ContextBundle, build_context, fence, git_root, protection, redact
 from .jev import Classification, Jev, JevError, classify_project_async
 from .model import (
+    CANCELLED,
     FOLLOW_UP_FOR_OUTCOME,
     MODEL_FOR_ACTION,
     MUTATING_ACTIONS,
@@ -93,6 +100,7 @@ from .model import (
     Overview,
     OverviewSource,
     profile_json,
+    settled_evaluation,
     stamp_transition,
     task_fact_data,
     task_json,
@@ -118,7 +126,7 @@ TIMEOUTS_S = {"enrich": 15 * 60, "fix": 30 * 60, "refactor": 30 * 60, "evaluate"
 # A repair turn (invalid answer) gets what is left, at most this, at least the floor.
 REPAIR_MAX_S = 5 * 60
 REPAIR_MIN_S = 45
-# Fix / refactor proof: the runner's timeout, at most an hour (contract section 4, fix).
+# Fix proof: the runner's timeout, at most an hour (contract section 4, fix).
 PROOF_MAX_S = 3600
 PROOF_POLL_S = 5.0
 # A command whose task row is not visible yet: retry this many deliveries.
@@ -152,10 +160,20 @@ EXPIRED = (
 
 FOLLOW_UP_PLAN = {
     "none": "nothing to do (Nominal)",
-    "refactor": "a refactor task applies the recommendation and proves it with one manual run (Suboptimal)",
+    "refactor": (
+        "a refactor task applies the recommendation; the steward does not run the job, its next scheduled "
+        "fire proves the change (Suboptimal)"
+    ),
     "fix": "a fix task repairs it and proves the repair with one manual run (Drifted)",
     "archive": "the candybar is archived and disabled; `candybar unarchive` reverses it (Orphaned)",
 }
+# What a protected candybar's follow-up becomes instead (flagged for the operator).
+PROTECTED_PLAN = {
+    "archive": "flagged for the operator, not archived: {name} is protected ({reason})",
+    "refactor": "flagged for the operator, not refactored: {name} is protected ({reason})",
+}
+# Follow-ups a protected candybar never gets automatically.
+PROTECTED_FOLLOW_UPS = frozenset(PROTECTED_PLAN)
 
 REPAIR_PROMPT = """Your final answer did not pass validation:
 
@@ -233,7 +251,8 @@ def follow_up_status(action: str, outcome: str | None, *, failed: bool = False) 
         return "failed"
     if action == "fix":
         return "done" if outcome == "fixed" else "failed"
-    return {"done_proven": "done", "not_applied": "flagged"}.get(outcome or "", "failed")
+    # done_proven / done_not_proven: refactors from before the proving run was dropped.
+    return {"done": "done", "done_proven": "done", "not_applied": "flagged"}.get(outcome or "", "failed")
 
 
 def _brief(exc: Exception) -> str:
@@ -463,12 +482,15 @@ class Steward:
                     current.uncancel()
                 self._usage.pop(task_id, None)
                 if task is not None:
-                    await self._settle_follow_up(task, "failed")
+                    await self._settle_follow_up(task, "failed", CANCELLED)
                 return True
             await asyncio.shield(self._fail(task_id, STOPPED))
             raise
         except Exception as exc:
             log.exception("steward: task %s failed", task_id)
+            # Closing before the write: the keepalive must not read this task's
+            # own `failed` as an operator cancel and stop the settle below.
+            self._closing.add(task_id)
             recorded = await self._fail(task_id, _error_text(exc))
             if task is not None and task.action in MUTATING_ACTIONS:
                 await self._settle_follow_up(task, "failed")
@@ -705,12 +727,17 @@ class Steward:
             return found
         return None
 
-    def _workdir_lock(self, workdir: Path) -> asyncio.Lock:
-        try:
-            key = str(Path(workdir).resolve())
-        except OSError:
-            key = str(workdir)
-        return self._locks.setdefault(key, asyncio.Lock())
+    def _repo_lock(self, bundle: ContextBundle) -> tuple[asyncio.Lock, str]:
+        """The lock of the job's repo: the git root of its checkout (else the workdir), symlinks resolved.
+
+        Two candybars whose homes are different directories of one repo
+        (`client-portal` and `client-portal/gateway`) share it, so their
+        agents never commit and push to that repo at once.
+        """
+        base = Path(bundle.checkout or bundle.workdir)
+        root = git_root(base) or base
+        key = os.path.realpath(root)
+        return self._locks.setdefault(key, asyncio.Lock()), key
 
     async def _converse(
         self, task: Any, bundle: ContextBundle, prompt: str, validate: Callable[[dict[str, Any]], Any]
@@ -803,7 +830,7 @@ class Steward:
         )
         moment = self._now()
         follow_up = FOLLOW_UP_FOR_OUTCOME[verdict.outcome]
-        protected = protection(bundle.definition) if follow_up == "archive" else None
+        protected = protection(bundle.definition) if follow_up in PROTECTED_FOLLOW_UPS else None
         evaluation = Evaluation(
             **verdict.model_dump(exclude={"followUp"}),
             followUp=follow_up,
@@ -816,7 +843,7 @@ class Steward:
             row = await get_steward_task(session, task.id)
             task_view = task_json(row) if row is not None else {"id": str(task.id), "model": task.model}
         plan = (
-            f"flagged for the operator, not archived: {bundle.name} is protected ({protected})"
+            PROTECTED_PLAN[follow_up].format(name=bundle.name, reason=protected)
             if protected
             else FOLLOW_UP_PLAN[follow_up]
         )
@@ -868,9 +895,9 @@ class Steward:
         bundle = await self._bundle(candybar)
         evaluation = await self._evaluation_for(task, bundle)
         template = self._template("fix")
-        lock = self._workdir_lock(bundle.workdir)
+        lock, key = self._repo_lock(bundle)
         if lock.locked():
-            log.info("steward: fix %s waits for another mutating task in %s", task.id, bundle.workdir)
+            log.info("steward: fix %s waits for another mutating task in %s", task.id, key)
         async with lock:
             answer: FixAnswer = await self._converse(
                 task, bundle, self._render(template, task, bundle, evaluation), validate_fix
@@ -887,8 +914,7 @@ class Steward:
                     "invocation_id": invocation_id,
                 }
         if answer.commits:
-            refresh = await self._queue(task, candybar.id, "enrich")
-            result["summary"] += f" Overview refresh: {refresh.note}"
+            result["summary"] += await self._refresh_note(task, candybar)
         return result
 
     async def _refactor(self, task: Any, candybar: Any) -> dict[str, Any]:
@@ -897,6 +923,16 @@ class Steward:
         if task.parent_task_id is None:
             raise StewardError("a refactor applies the evaluation that queued it, and this one has no parent task")
         bundle = await self._bundle(candybar)
+        reason = protection(bundle.definition)
+        if reason is not None:
+            # Queued before the candybar counted as protected: still never automatic.
+            return {
+                "outcome": "not_applied",
+                "summary": (
+                    f"Not refactored: {bundle.name} is protected ({reason}), so a Suboptimal verdict is only "
+                    "flagged for the operator; apply the recommendation by hand if it is worth it."
+                ),
+            }
         evaluation = await self._evaluation_for(task, bundle)
         if evaluation is None:
             raise StewardError(
@@ -904,28 +940,47 @@ class Steward:
                 "replaced it and its report file is gone); nothing was applied"
             )
         template = self._template("refactor")
-        lock = self._workdir_lock(bundle.workdir)
+        lock, key = self._repo_lock(bundle)
         if lock.locked():
-            log.info("steward: refactor %s waits for another mutating task in %s", task.id, bundle.workdir)
+            log.info("steward: refactor %s waits for another mutating task in %s", task.id, key)
         async with lock:
             answer: RefactorAnswer = await self._converse(
                 task, bundle, self._render(template, task, bundle, evaluation), validate_refactor
             )
-            commits = f" Commits: {', '.join(answer.commits[:5])}." if answer.commits else ""
-            if not answer.applied:
-                result: dict[str, Any] = {"outcome": "not_applied", "summary": f"{answer.summary} (not applied){commits}"}
-            else:
-                invocation_id, row = await self._prove(task, candybar)
-                proven, verdict = self._proof_verdict(row)
-                result = {
-                    "outcome": "done_proven" if proven else "done_not_proven",
-                    "summary": f"{answer.summary}{commits} Proving run {invocation_id}: {verdict}.",
-                    "invocation_id": invocation_id,
-                }
+        commits = f" Commits: {', '.join(answer.commits[:5])}." if answer.commits else ""
+        if not answer.applied:
+            result: dict[str, Any] = {"outcome": "not_applied", "summary": f"{answer.summary} (not applied){commits}"}
+        elif not answer.commits:
+            # Every change is a commit or a `candybar edit`, and the answer lists it.
+            result = {
+                "outcome": "not_applied",
+                "summary": f"{answer.summary} (reported applied but listed no commit or `candybar edit`, so "
+                "counted as not applied)",
+            }
+        else:
+            # No proving run: a refactor of a job with side effects (posts, backups,
+            # billing) must not fire it off schedule; its next scheduled fire is the
+            # proof, and the health strip shows it.
+            result = {
+                "outcome": "done",
+                "summary": f"{answer.summary}{commits} Not run by the steward: the next scheduled fire proves it "
+                f"(health strip, `candybar history {bundle.name}`).",
+            }
         if answer.commits:
-            refresh = await self._queue(task, candybar.id, "enrich")
-            result["summary"] += f" Overview refresh: {refresh.note}"
+            result["summary"] += await self._refresh_note(task, candybar)
         return result
+
+    async def _refresh_note(self, task: Any, candybar: Any) -> str:
+        """Queue the enrich that refreshes the overview after a change; never fails the task."""
+        try:
+            refresh = await self._queue(task, candybar.id, "enrich")
+        except Exception as exc:  # noqa: BLE001  (the change stands; only the refresh is lost)
+            log.warning("steward: could not queue the overview refresh after task %s: %s", task.id, exc)
+            return (
+                f" Overview refresh not queued ({_error_text(exc)}); request it with "
+                f"`candybar steward enrich {candybar.name}`."
+            )
+        return f" Overview refresh: {refresh.note}"
 
     @staticmethod
     def _proof_verdict(row: Any | None) -> tuple[bool, str]:
@@ -939,15 +994,22 @@ class Steward:
     async def _follow_up(self, parent: Any, candybar_id: UUID, follow_up: str, definition: dict[str, Any]) -> FollowUp:
         if follow_up == "none":
             return FollowUp("none.", None)
-        if follow_up == "archive":
-            reason = protection(definition)
-            if reason is not None:
-                name = definition.get("name")
+        reason = protection(definition) if follow_up in PROTECTED_FOLLOW_UPS else None
+        if reason is not None:
+            # Backups, canaries, watchdogs, policy and ops jobs: the operator decides.
+            name = definition.get("name")
+            if follow_up == "archive":
                 return FollowUp(
                     f"flagged, not archived: {name} is protected ({reason}); archive it by hand "
                     f"(`candybar archive {name}`) if it really is unused.",
                     "flagged",
                 )
+            return FollowUp(
+                f"flagged, not refactored: {name} is protected ({reason}); apply the recommendation by hand "
+                "if it is worth it.",
+                "flagged",
+            )
+        if follow_up == "archive":
             return FollowUp(await self._archive(candybar_id), "done")
         return await self._queue(parent, candybar_id, follow_up)
 
@@ -1026,7 +1088,7 @@ class Steward:
         except Exception:
             log.exception("steward: could not mark the follow-up of evaluation %s", evaluate_task_id)
 
-    async def _settle_follow_up(self, task: Any, status: str) -> None:
+    async def _settle_follow_up(self, task: Any, status: str, note: str | None = None) -> None:
         """A follow-up task ended: update the evaluation that points at it (followUpTaskId)."""
         try:
             async with self._session() as session:
@@ -1034,9 +1096,10 @@ class Steward:
                     return
                 stored = await get_profile(session, task.candybar_id)
                 evaluation = getattr(stored, "evaluation", None) if stored is not None else None
-                if not isinstance(evaluation, dict) or str(evaluation.get("followUpTaskId")) != str(task.id):
+                settled = settled_evaluation(evaluation, task.id, status, note)
+                if settled is None:
                     return
-                await upsert_profile(session, task.candybar_id, {"evaluation": {**evaluation, "followUpStatus": status}})
+                await upsert_profile(session, task.candybar_id, {"evaluation": settled})
         except Exception:
             log.exception("steward: could not settle the follow-up status for task %s", task.id)
 
@@ -1057,7 +1120,7 @@ class Steward:
         return "archived and disabled (`candybar unarchive` reverses it)."
 
     async def _prove(self, task: Any, candybar: Any) -> tuple[UUID, Any | None]:
-        """One manual invoke through the executor's command, waited on (the runner's timeout, max 1 h)."""
+        """A fix's proof: one manual invoke through the executor's command, waited on (the runner's timeout, max 1 h)."""
         command = build_candybar_invoke(candybar_id=candybar.id, name=candybar.name, trigger="manual")
         invocation_id = command.data.invocation_id
         await self._patch(task.id, {"invocation_id": invocation_id})

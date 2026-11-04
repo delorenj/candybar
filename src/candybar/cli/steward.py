@@ -7,7 +7,8 @@
 - `candybar steward tasks [--active] [--candybar NAME]`: the task list.
 - `candybar steward cancel <task-id>`: mark a queued or running task failed
   ("cancelled by operator") and interrupt its OpenCode session at once (the
-  steward stops the run within a minute).
+  steward stops the run within a minute); a failed interrupt is reported as
+  such, never as done.
 - `candybar profile <name>`: the stored overview, project and evaluation.
 
 Thin wrappers over the api role through the same REST client as the rest of
@@ -178,10 +179,15 @@ def cancel(
         from candybar.steward.opencode import Endpoint, OpenCodeClient, OpenCodeError
 
         try:
-            OpenCodeClient().interrupt(Endpoint.discover(), session)
-            typer.echo(f"interrupted OpenCode session {session}", err=True)
+            OpenCodeClient().interrupt_or_raise(Endpoint.discover(), session)
         except OpenCodeError as exc:
-            typer.echo(f"could not interrupt {session} ({exc}); the steward stops it within a minute", err=True)
+            typer.echo(
+                f"could not interrupt OpenCode session {session} ({exc}); the task is cancelled, and the "
+                "steward stops the run within a minute",
+                err=True,
+            )
+        else:
+            typer.echo(f"interrupted OpenCode session {session}", err=True)
     if as_json:
         _print_json(task)
     else:

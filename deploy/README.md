@@ -121,7 +121,8 @@ nothing until the registry's alembic head matches its checkout).
   Models: `automaticai/auto` for evaluate, `automaticai/auto/fast` for the
   rest. Budgets: enrich 15 min, evaluate 20 min, fix and refactor 30 min,
   then the session is interrupted and the task fails. Enrich and evaluate
-  sessions deny the edit/write/patch tools (OpenCode `permissions`).
+  sessions deny the edit/write/patch tools and subagent delegation (OpenCode
+  `permissions`: `edit`, `write`, `patch`, `subagent`, `task`).
 - **Jev:** enrich's project classification uses the steward's own LiteLLM
   virtual key on the jev-litellm ingress (alias `candybar-steward`, $1/day,
   120 rpm; vault item `icxowfdsbslgo2yyqfxuxhqaym`). The job's own checkout
@@ -139,7 +140,15 @@ nothing until the registry's alembic head matches its checkout).
   command stream's max_age (24 h), and logs it
   (`steward: startup reaper failed N task(s)`).
 - **Cancel:** `candybar steward cancel <task-id>` fails a queued or running
-  task ("cancelled by operator") and interrupts its OpenCode session.
+  task ("cancelled by operator"), settles a follow-up's evaluation, and
+  interrupts its OpenCode session (it says when the interrupt failed; the
+  steward then stops the run within a minute).
+- **Changes:** a fix is proven by one manual run; a refactor is never run
+  by the steward (its next scheduled fire proves it). Fix and refactor run
+  one at a time per repo. The ledger repo's checkout is looked up by git
+  remote in `~/docker`, `~/.agents`, `~/.hermes/hermes-agent`, `~/HeyMa`
+  and `~/code` (two levels), once per process: restart the steward after
+  cloning a repo a job lives in.
 - **Logs:** `journalctl --user -u candybar-steward -f`; the task list is
   `candybar steward tasks --active`.
 

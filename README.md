@@ -314,7 +314,7 @@ In short:
   409 (unarchive first). Archived candybars are still listed with
   `archived: true`; `candybar ls` and Holocene hide them.
 - **Profile.** One per candybar, created lazily: the steward's `overview`
-  (template v1, every field required), the `project` (ledger, Jev or a
+  (template v3, every field required), the `project` (ledger, Jev or a
   manual override that enrich never replaces) and the latest `evaluation`.
   `PUT /candybars/{id}/profile` merges per top-level key and validates both
   shapes (422).
@@ -325,20 +325,42 @@ In short:
   second queued-or-running task of the same action is a 409 carrying the
   active `taskId`, a fix is a 409 while a fix or refactor is active, and an
   archived candybar cannot be fixed (409). `POST /steward/tasks/{id}/cancel`
-  fails a queued or running task ("cancelled by operator").
+  fails a queued or running task ("cancelled by operator"); a cancelled
+  follow-up settles its evaluation (`followUpStatus: failed`,
+  `followUpNote: "cancelled by operator"`).
 - **The steward role** (`candybar-steward.service` on the host, below) runs
   each task through an OpenCode session in the job's own home (never this
-  repo just because the job's ledger entry lives here) and applies the
-  answer. Evaluate writes
+  repo just because the job's ledger entry lives here; the ledger repo's
+  checkout is found by its git remote, symlinks resolve to the repo they
+  point into, a `transition_exec` wrapper to the script it wraps) and
+  applies the answer. Evaluate writes
   `~/code/DeLoDocs/Reports/<NY date>/candybar-evaluate-<name>-<HHMM>-<task8>.{md,json}`,
   copies both to `delo/daily-reports/<date>/`, and runs the follow-up:
-  Suboptimal queues a `refactor`, Drifted a `fix`, Orphaned archives (a
-  smoke, canary, watchdog, policy or backup candybar is only flagged),
-  Nominal does nothing; the evaluation records `followUpStatus`. A fix the
-  agent reports repaired, and an applied refactor, are proven by one manual
-  run, waited on (`fixed | not_fixed`, `done_proven | done_not_proven |
-  not_applied`); one that committed code queues an enrich to refresh the
-  overview.
+  Suboptimal queues a `refactor`, Drifted a `fix`, Orphaned archives,
+  Nominal does nothing; the evaluation records `followUpStatus`. A
+  protected candybar never gets an automatic refactor or archive (those
+  are only flagged); its fix still runs. A fix the agent reports repaired
+  is proven by one manual run, waited on (`fixed | not_fixed`); a refactor
+  is never run by the steward, its next scheduled fire proves it
+  (`done | not_applied`). One that committed code queues an enrich to
+  refresh the overview (a failure to queue it never fails the change).
+  Fix and refactor run one at a time per repo (git root of the job's
+  checkout).
+- **Protected candybars** are tagged `smoke`, `canary`, `watchdog`,
+  `policy` or `ops`, named `*watchdog*`, `*backstop*`, `*canary*`,
+  `*smoke*`, `*policy*`, `*backup*` or `*restic*`, tagged `backup(s)`, or
+  named in `deploy/scheduling-policy.json`. Live on 2026-11-04 (19):
+  - canaries and smoke: `deploy-smoke`, `gpu-burn` (tagged smoke);
+    `deploy-smoke-exec`, `deploy-smoke-hermes`, `deploy-smoke-n8n`,
+    `deploy-smoke-systemd`, `watchdog-canary` (tagged canary);
+  - backups: `backup-drill`, `forever-ago-vault`,
+    `forever-ago-voxxy-voices`, `ifvault-nightly`,
+    `milkshake-ledger-backup`, `restic-dbdumps`, `restic-vault`,
+    `restic-vault-prune`;
+  - ops, watchdogs and backstops: `crank-watchdog`,
+    `scheduling-policy-drift` (tagged ops), `milkshake-mercury-backstop`
+    (named `*backstop*`);
+  - policy exceptions: `newapi-allowances`.
 
 ### Noise collection (Story 5.5)
 

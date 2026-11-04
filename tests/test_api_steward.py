@@ -519,6 +519,40 @@ def test_cancel_bus_failure_changes_nothing(st: tuple[Rig, Store]) -> None:
     assert task.status == "queued" and task.error is None
 
 
+def test_cancel_of_a_queued_follow_up_settles_its_evaluation(st: tuple[Rig, Store]) -> None:
+    # Round 2, finding 5: a cancelled queued refactor never reads "queued" forever,
+    # and its fact sits on the follow-up's chain (correlation = the parent).
+    r, store = st
+    row = r.add("alpha")
+    [parent] = _seed(store, row.id, 1, status="succeeded", action="evaluate")
+    [child] = _seed(store, row.id, 1, status="queued", action="refactor")
+    child.parent_task_id = parent.id
+    body = evaluation(outcome="Suboptimal", followUp="refactor", taskId=str(parent.id))
+    body.update(followUpStatus="queued", followUpTaskId=str(child.id))
+    store.profiles[row.id] = Profile(row.id, datetime.now(UTC), evaluation=body)
+    resp = r.client().post(f"/steward/tasks/{child.id}/cancel")
+    assert resp.status_code == 200, resp.text
+    stored = store.profiles[row.id].evaluation
+    assert stored["followUpStatus"] == "failed" and stored["followUpNote"] == "cancelled by operator"
+    assert stored["followUpTaskId"] == str(child.id) and stored["outcome"] == "Suboptimal"
+    [fact] = r.sink.published
+    assert fact.correlationid == parent.id and fact.causationid == parent.id
+    # The settled evaluation still validates as the contract shape.
+    assert r.client().put(f"/candybars/{row.id}/profile", json={"evaluation": stored}).status_code == 200
+
+
+def test_cancel_leaves_an_evaluation_that_points_elsewhere(st: tuple[Rig, Store]) -> None:
+    r, store = st
+    row = r.add("alpha")
+    [task] = _seed(store, row.id, 1, status="queued", action="fix")
+    body = evaluation(outcome="Drifted", followUp="fix", followUpStatus="queued", followUpTaskId=str(uuid4()))
+    store.profiles[row.id] = Profile(row.id, datetime.now(UTC), evaluation=dict(body))
+    assert r.client().post(f"/steward/tasks/{task.id}/cancel").status_code == 200
+    assert store.profiles[row.id].evaluation == body
+    [fact] = r.sink.published
+    assert fact.correlationid == task.id and fact.causationid is None
+
+
 def test_patch_records_spend(st: tuple[Rig, Store]) -> None:
     r, store = st
     row = r.add("alpha")

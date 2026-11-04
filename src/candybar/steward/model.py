@@ -40,9 +40,13 @@ READ_ONLY_ACTIONS = ("enrich", "evaluate")
 CANCELLED = "cancelled by operator"
 # What happened to an evaluation's follow-up (stored on the evaluation).
 FOLLOW_UP_STATUSES = ("queued", "done", "flagged", "failed")
-# Task outcomes: fix fixed | not_fixed; refactor done_proven | done_not_proven | not_applied.
+# Task outcomes: fix fixed | not_fixed (proven by one manual run); refactor
+# done (applied, with commits) | not_applied, never run by the steward: the
+# next scheduled fire proves it. Older refactors ended done_proven |
+# done_not_proven (stored tasks keep them).
 FIX_OUTCOMES = ("fixed", "not_fixed")
-REFACTOR_OUTCOMES = ("done_proven", "done_not_proven", "not_applied")
+REFACTOR_OUTCOMES = ("done", "not_applied")
+LEGACY_REFACTOR_OUTCOMES = ("done_proven", "done_not_proven")
 
 MODEL_AUTO = "automaticai/auto"
 MODEL_FAST = "automaticai/auto/fast"
@@ -142,9 +146,11 @@ class Evaluation(EvaluationVerdict):
     taskId: UUID
     # What became of the follow-up: queued (a task is queued or running),
     # done, flagged (not acted on automatically: the operator decides) or
-    # failed; null for followUp "none". The task, when one ran.
+    # failed; null for followUp "none". The task, when one ran. The note
+    # says why when it is not the task's own outcome ("cancelled by operator").
     followUpStatus: Literal["queued", "done", "flagged", "failed"] | None = None
     followUpTaskId: UUID | None = None
+    followUpNote: str | None = None
 
     @field_validator("evaluatedAt")
     @classmethod
@@ -311,6 +317,24 @@ def task_fact_data(row: Any, name: str, overrides: dict[str, Any] | None = None)
     return StewardTaskData(name=name, **fields)
 
 
+def settled_evaluation(
+    evaluation: Any, task_id: UUID, status: str, note: str | None = None
+) -> dict[str, Any] | None:
+    """The stored evaluation with its follow-up settled, or None when it does not point at `task_id`.
+
+    A follow-up task ended (or was cancelled): the evaluation whose
+    `followUpTaskId` names it records `followUpStatus` (and `followUpNote`
+    when given). Any other evaluation (a later evaluate replaced it) is
+    left alone.
+    """
+    if not isinstance(evaluation, dict) or str(evaluation.get("followUpTaskId")) != str(task_id):
+        return None
+    settled = {**evaluation, "followUpStatus": status}
+    if note is not None:
+        settled["followUpNote"] = note
+    return settled
+
+
 def transition_problem(current: str, wanted: str) -> str | None:
     """Why a task cannot move from `current` to `wanted`, or None when it can."""
     if wanted == current:
@@ -343,6 +367,7 @@ __all__ = [
     "FIX_OUTCOMES",
     "FOLLOW_UP_FOR_OUTCOME",
     "FOLLOW_UP_STATUSES",
+    "LEGACY_REFACTOR_OUTCOMES",
     "MODEL_FOR_ACTION",
     "MUTATING_ACTIONS",
     "OUTCOMES",
@@ -364,6 +389,7 @@ __all__ = [
     "Project",
     "profile_changes",
     "profile_json",
+    "settled_evaluation",
     "stamp_transition",
     "task_fact_data",
     "task_json",
