@@ -97,3 +97,8 @@ development_status:
   7-16-wave-10-personal-llm-jobs: review
   7-17-wave-11-hermes-agent-jobs: review
   epic-7-retrospective: optional
+
+  epic-8: in-progress
+  8-1-project-candybar-files-and-project-aware-register-ls: review
+  8-2-candybar-create-tui: review
+  epic-8-retrospective: optional

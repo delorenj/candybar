@@ -49,11 +49,18 @@ host as `candybar-executor.service` and `candybar-steward.service`
 1. Pick the runner kind: `exec` (script or command), `systemd` (keep the
    `.service`, retire the `.timer`), `hermes` (job pinned external), `n8n`
    (webhook workflow with no Schedule Trigger). Recipes: README, "Runner kinds".
-2. Commit `candybar.toml` next to the job's source. Migrated jobs use
-   `deploy/migration/manifests/<name>/`; canaries live in `deploy/smoke/`; the
-   policy-drift job is `deploy/policy/candybar.toml`.
-3. `uv run candybar register <dir>` (create-only; use `edit` or `PATCH` to
-   change). Register disabled first if the job has side effects.
+2. A job that belongs to a repo is a **project candybar**: commit it in that
+   repo as `.candybars/<name>.candybar.toml` or a `[candybars.<name>]` table
+   in `.candybar.toml` (`candybar create --no-tui --name ... --schedule ...
+   --exec ...` writes a valid one; `candybar create` is the TUI). Migrated
+   jobs use `deploy/migration/manifests/<name>/candybar.toml`; canaries live
+   in `deploy/smoke/`; the policy-drift job is `deploy/policy/candybar.toml`.
+3. Inside the repo, `candybar register` registers every project candybar and
+   reports drift (`--update` applies it, `--prune` archives orphans,
+   `--dry-run` previews); a plain `candybar.toml` is `register <dir>`,
+   create-only. Register disabled first (`enabled = false` / `--disabled`) if
+   the job has side effects. `candybar ls` in the repo shows the project's
+   candybars and their sync state.
 4. Read it back (`show`, `next`), prove a terminal invocation and its intended
    effect (`run --wait`, or wait for the first scheduled fire for side-effect
    jobs; `history`), then `resume`.

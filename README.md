@@ -59,7 +59,10 @@ Live-PG tests: `CANDYBAR_TEST_PG=1 DATABASE_URL=... uv run pytest tests/test_reg
 
 ## Register a candybar
 
-A candybar is a directory with a `candybar.toml` manifest (AD-8):
+For a job that lives in a repo, prefer a project candybar
+([below](#project-candybars-epic-8)): `candybar create` writes it and
+`candybar register` in the repo syncs it. The original form, still fully
+supported, is a directory with a `candybar.toml` manifest (AD-8):
 
 ```toml
 [candybar]
@@ -92,6 +95,104 @@ Some older registrations have their definition of record only in
 Invalid cron/name/timezone → `application/problem+json` (422); duplicate name → 409;
 bus down → 503 and no row. API bind: `CANDYBAR_API_HOST`/`CANDYBAR_API_PORT`;
 CLI target: `CANDYBAR_API_URL`.
+
+## Project candybars (Epic 8)
+
+A repo owns its candybars, the way mise owns tasks: one file each, many in
+one file, or both.
+
+```text
+<repo>/.candybars/nightly-backup.candybar.toml   # one candybar per file ([candybar])
+<repo>/.candybar.toml                            # many: one [candybars.<name>] table each
+```
+
+```toml
+# .candybars/nightly-backup.candybar.toml (`name` defaults to the file stem)
+[candybar]
+schedule = "0 3 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "exec"
+argv = ["./scripts/backup.sh", "--quiet"]   # relative to the repo root
+```
+
+```toml
+# .candybar.toml
+[candybars.digest]
+description = "Nightly digest"
+schedule = "30 6 * * 1-5"
+
+[candybars.digest.runner]
+kind = "n8n"
+webhook = "candybar/nightly-digest"
+
+[candybars.cache-prune]
+schedule = "0 * * * *"
+
+[candybars.cache-prune.runner]
+kind = "systemd"
+unit = "cache-prune.service"
+```
+
+The project is the git toplevel of the working directory; its name is the
+repo's basename (a linked worktree keeps its main repo's name). Outside git
+it is the nearest directory holding `.candybars/` or `.candybar.toml`. In
+project files:
+
+- relative paths (`argv[0]` or `on_failure[0]` with a slash, `workdir`,
+  `entrypoint`) resolve against the repo root, without following symlinks
+  (`./.venv/bin/python` stays the venv's);
+- an exec runner with no `workdir` starts in the repo root;
+- an `entrypoint` registers as the equivalent exec runner (the script, run
+  from its own directory), because the API refuses a host path it cannot see;
+- every candybar gets the `project:<name>` tag (it is added for you; a
+  `project:` tag naming another project is an error). That tag is how the
+  registry knows who owns what.
+
+### Create one
+
+```bash
+candybar create        # TUI: basics, schedule (presets + live preview), runner, options, destination, review
+candybar create --no-tui --name nightly-backup --schedule "0 3 * * *" \
+    --exec "./scripts/backup.sh --quiet" --disabled          # the same, from flags (agents, scripts)
+```
+
+The wizard previews the next fire times in the chosen zone (the host's by
+default), shows the exact file text and its validation result, and writes
+`.candybars/<name>.candybar.toml` (or appends to `.candybar.toml` with
+`--project-file`, or `--out PATH`; outside a project `./<name>.candybar.toml`).
+"Write & register" (or `--register`) registers it in one go. Flag mode also
+takes `--systemd UNIT`, `--hermes PROFILE:JOB_ID`, `--n8n PATH_OR_URL
+[--data JSON]`, `--entrypoint SCRIPT`, `--timeout`, `--on-failure`,
+`--env KEY=VAL`, `--workdir`, `--tags`, `--noise` and `--print` (validate and
+print, write nothing). Every file it writes is read back through the same
+loader `register` uses before it lands.
+
+### Register and list the project
+
+```bash
+candybar register              # every candybar this repo defines
+candybar register --dry-run    # what would change
+candybar register --update     # also PATCH drifted fields (and adopt an untagged row of the same name)
+candybar register --prune      # also archive orphans: tagged with this project, defined nowhere
+candybar register -n digest    # just one
+candybar ls                    # this project's candybars (also `candybar list`); --global for the registry
+```
+
+All files are validated first; any error registers nothing (exit 2). Then
+each candybar is registered, `unchanged`, `drifted` (rerun with `--update`),
+left alone because it is archived, reported as `exists` (registered without a
+project tag; `--update` adopts it) or a `conflict` (the name belongs to
+another project; exit 1). `enabled` is creation-time state only: `pause` and
+`resume` own it afterwards, so a sync never flips it.
+
+`candybar ls` inside a repo lists the project's candybars with their registry
+`STATE` (enabled, paused, archived, unregistered) and `SYNC` (`ok`, `new`,
+`drift:<fields>`, `orphan`, `unowned`, `conflict:<project>`) and the file each
+comes from; `--json` gives both the local definition and the registry row.
+Outside a project, or in one with no candybars, it is the registry-wide list,
+as is `--global` anywhere.
 
 ## Runner kinds (Stories 7.3 and 7.4, AD-18, AD-19; n8n)
 
