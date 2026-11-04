@@ -469,6 +469,38 @@ def test_decommission_a_cut_over_job_disables_the_candybar_and_keeps_native_reti
     assert entry.history[-2].detail == "never used"
 
 
+def test_decommission_accepts_a_native_scheduler_whose_state_is_gone(
+    world: World, ledger_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A Hermes profile that was retired takes cron/jobs.json with it: nothing
+    # can fire the job, so decommission must not refuse as "unknown state".
+    from candybar.migration.native import NativeState
+
+    cid = cut(world, ledger_path)
+    world.log.clear()
+    monkeypatch.setattr(
+        ops.Host, "probe",
+        lambda self, entry: NativeState(active=False, retired=False, absent=True, detail="gone"),
+    )
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="profile retired") == EXIT_OK
+    assert world.log == ["enabled=False"] and world.candybars[cid]["enabled"] is False
+    assert entry_of(ledger_path).status == "decommissioned"
+
+
+def test_decommission_still_refuses_an_unknown_native_state(
+    world: World, ledger_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from candybar.migration.native import NativeState
+
+    cut(world, ledger_path)
+    monkeypatch.setattr(
+        ops.Host, "probe",
+        lambda self, entry: NativeState(active=False, retired=False, detail="unreadable"),
+    )
+    assert ops.decommission(world.host(), ledger_path, JOB, reason="x") == EXIT_FAILED
+    assert entry_of(ledger_path).status == "cutover"
+
+
 def test_decommission_requires_a_reason(world: World, ledger_path: Path) -> None:
     cut(world, ledger_path)
     assert ops.decommission(world.host(), ledger_path, JOB, reason="  ") == EXIT_FAILED

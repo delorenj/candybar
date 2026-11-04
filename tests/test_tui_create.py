@@ -262,6 +262,7 @@ def test_runner_step_shows_only_the_chosen_kind_and_validates(project: Project) 
 
 def test_entrypoint_must_exist(project: Project) -> None:
     (project.root / "run.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (project.root / "run.sh").chmod(0o755)
     app = CreateApp(project, Answers(name="s", schedule="0 * * * *", kind="entrypoint"), unit_loader=None)
 
     async def script(pilot: Any) -> None:
@@ -271,7 +272,7 @@ def test_entrypoint_must_exist(project: Project) -> None:
         await pilot.press("ctrl+n")
         await pilot.pause()
         assert current(app) == "step-3" and shown(app, "err-entrypoint")
-        assert not shown(app, "box-on_failure")
+        assert shown(app, "box-on_failure")
         app.query_one("#entrypoint", Input).value = "./run.sh"
         for _ in range(3):
             await pilot.press("ctrl+n")
@@ -280,8 +281,8 @@ def test_entrypoint_must_exist(project: Project) -> None:
         await pilot.press("ctrl+s")
 
     result = drive(app, script)
-    assert result is not None and result.spec["entrypoint"] == "./run.sh"
-    assert "runner" not in result.spec
+    assert result is not None and "entrypoint" not in result.spec
+    assert result.spec["runner"] == {"kind": "exec", "argv": ["./run.sh"]}
 
 
 def test_back_navigation_and_enter_on_last_field(project: Project) -> None:

@@ -89,6 +89,11 @@ class NativeState:
     last_fire: datetime | None = None  # UTC
     running: bool = False  # a native run is in progress
     detail: str = ""
+    # The scheduler's own state is gone (e.g. a Hermes profile that was
+    # retired, taking cron/jobs.json with it): nothing exists that could fire
+    # the job. Not ``retired`` -- cutover/rollback still treat it as unknown --
+    # but terminal ``decommission`` may accept it.
+    absent: bool = False
 
 
 def _q(value: str) -> str:
@@ -186,6 +191,13 @@ def _probe_hermes(
 ) -> NativeState:
     try:
         raw = json.loads(read(native.jobs_file or ""))
+    except FileNotFoundError as exc:
+        return NativeState(
+            active=False,
+            retired=False,
+            absent=True,
+            detail=f"jobs file absent (profile {native.profile} gone?): {exc}",
+        )
     except (OSError, json.JSONDecodeError) as exc:
         return NativeState(
             active=False, retired=False, detail=f"jobs file unreadable: {exc}"

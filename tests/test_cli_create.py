@@ -130,13 +130,24 @@ def test_n8n_bad_data(project: Path) -> None:
     assert "JSON object" in result.output
 
 
-def test_entrypoint(project: Path) -> None:
-    (project / "run.sh").write_text("#!/bin/sh\n", encoding="utf-8")
-    result = run(*BASE, "--name", "script", "--entrypoint", "./run.sh")
+def test_entrypoint_is_written_as_an_exec_runner(project: Path) -> None:
+    """The API (in its container) refuses a host `entrypoint` path; a runner argv is not checked there."""
+    script = project / "run.sh"
+    script.write_text("#!/bin/sh\n", encoding="utf-8")
+    script.chmod(0o755)
+    result = run(*BASE, "--name", "script", "--entrypoint", "run.sh", "--timeout", "5")
     assert result.exit_code == 0, result.output
     table = written(project / ".candybars" / "script.candybar.toml")["candybar"]
-    assert table["entrypoint"] == "./run.sh" and "runner" not in table
-    assert load_path(project / ".candybars" / "script.candybar.toml").ok
+    assert "entrypoint" not in table
+    assert table["runner"] == {"kind": "exec", "argv": ["./run.sh"], "timeout_s": 5}
+    loaded = load_path(project / ".candybars" / "script.candybar.toml")
+    assert loaded.ok and loaded.defs[0].manifest.runner["argv"] == [str(script)]
+
+
+def test_entrypoint_must_be_executable(project: Path) -> None:
+    (project / "run.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    result = run(*BASE, "--name", "script", "--entrypoint", "./run.sh")
+    assert result.exit_code == 2 and "chmod +x" in result.output
 
 
 def test_entrypoint_missing_file_exits_2(project: Path) -> None:
@@ -144,12 +155,6 @@ def test_entrypoint_missing_file_exits_2(project: Path) -> None:
     assert result.exit_code == 2
     assert "not an existing file" in result.output
     assert not (project / ".candybars").exists()
-
-
-def test_entrypoint_rejects_runner_options(project: Path) -> None:
-    result = run(*BASE, "--name", "s", "--entrypoint", "./run.sh", "--timeout", "5")
-    assert result.exit_code == 2
-    assert "needs a runner" in result.output
 
 
 def test_noise_disabled_timezone(project: Path) -> None:

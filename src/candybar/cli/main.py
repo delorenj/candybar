@@ -130,7 +130,7 @@ def register(
         bool, typer.Option("--dry-run", help="Say what would change; write nothing.")
     ] = False,
 ) -> None:
-    """Register candybars from their manifests via the API (Story 1.4).
+    """Register this project's candybars (or one manifest) and sync them with the registry.
 
     With a PATH to a plain candybar.toml (AD-8) it is create-only. Inside a
     project (or with a project directory or `.candybar.toml` / `.candybars/*`

@@ -237,6 +237,9 @@ def test_hermes_probe_reads_the_job_record(tmp_path: Path) -> None:
     assert state.retired and not state.active and state.next_fire is None
     missing = probe(native.model_copy(update={"job_id": "nope"}), now=NOW)
     assert not missing.active and not missing.retired
+    gone = probe(native.model_copy(update={"jobs_file": str(tmp_path / "gone" / "jobs.json")}), now=NOW)
+    assert gone.absent and not gone.active and not gone.retired
+    assert not missing.absent
 
 
 def test_cron_fires_are_dst_correct() -> None:

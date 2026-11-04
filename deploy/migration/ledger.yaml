@@ -1139,7 +1139,7 @@ jobs:
   - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler external'
   rollback:
   - '"$HOME/.local/bin/hermes" -p delodocs-pm cron edit fc39bd8b33c8 --scheduler internal'
-  status: verified
+  status: decommissioned
   candybar_id: 01a1793b-951c-7dbb-8aff-0abcb26bdf90
   cutover_at: '2026-10-26T17:28:03.182875Z'
   verification:
@@ -1168,6 +1168,18 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation 05e1095d-2059-5cab-bc28-e903bf41619a (scheduled) success exit=0 runtime=109075ms memory=275755008B cpu=0.1228
+  - at: '2026-11-04T14:47:14.465353Z'
+    action: decommission
+    outcome: refused
+    detail: 'the native scheduler is in an unknown state: jobs file unreadable: [Errno 2] No such file or directory: ''/home/delorenj/code/DeLoDocs/agents/hermes/pm/runtime/cron/jobs.json'''
+  - at: '2026-11-04T14:48:32.757705Z'
+    action: decommission
+    outcome: ok
+    detail: '2026-11-04: target profile delodocs-pm no longer exists (retired with its jobs.json); every run since fails. Operator asked to delete it.'
+  - at: '2026-11-04T14:48:32.911870Z'
+    action: decommission
+    outcome: ok
+    detail: candybar 01a1793b-951c-7dbb-8aff-0abcb26bdf90 disabled
 - id: hermes:dumply:8aecd027dbd0
   wave: '7.17'
   candybar:

@@ -37,6 +37,7 @@ from candybar.tui.spec import (
     name_error,
     parse_hermes_ref,
     schedule_error,
+    script_problem,
     timezone_error,
 )
 
@@ -235,6 +236,9 @@ def _from_flags(
         spec = build_spec(a)
     except SpecError as exc:
         raise _fail(str(exc)) from exc
+    problem = script_problem(a, project.root if project is not None else Path.cwd())
+    if problem:
+        raise _fail(f"--entrypoint: {problem}")
     return CreateResult(spec=spec, dest=_destination(project, a.name, out, project_file), overwrite=force)
 
 

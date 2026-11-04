@@ -732,7 +732,12 @@ def _decommission(
         #    active (a planned or rolled-back job) is retired with the ledger's
         #    own disable commands; a cut-over job already is.
         state = host.probe(entry)
-        if not state.active and not state.retired:
+        if state.absent and not state.active:
+            # Decommission is terminal and only disables the candybar, so a
+            # native scheduler whose state no longer exists at all is as
+            # retired as it will ever get.
+            host.echo(f"decommission {entry.id}: native scheduler absent ({state.detail})")
+        elif not state.active and not state.retired:
             entry.record(
                 host.now(),
                 "decommission",

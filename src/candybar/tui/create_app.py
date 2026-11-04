@@ -72,6 +72,7 @@ from candybar.tui.spec import (
     list_user_units,
     name_error,
     schedule_error,
+    script_problem,
     timezone_error,
 )
 
@@ -417,7 +418,7 @@ class CreateApp(App[CreateResult | None]):
             data=self._text("data"),
             entrypoint=self._text("entrypoint"),
             timeout=self._text("timeout") if kind in TIMEOUT_KINDS else "",
-            on_failure=self._text("on_failure") if kind != "entrypoint" else "",
+            on_failure=self._text("on_failure"),
             noise=self.query_one("#noise", Switch).value,
             enabled=self.query_one("#enabled", Switch).value,
         )
@@ -474,7 +475,7 @@ class CreateApp(App[CreateResult | None]):
         for k, box in _KIND_BOXES.items():
             self.query_one(f"#{box}").display = k == kind
         self.query_one("#box-timeout").display = kind in TIMEOUT_KINDS
-        self.query_one("#box-on_failure").display = kind != "entrypoint"
+        self.query_one("#box-on_failure").display = True
 
     def _sync_preset(self) -> None:
         needs = PRESET_NEEDS[self._select("preset")]
@@ -645,14 +646,10 @@ class CreateApp(App[CreateResult | None]):
             )
         except SpecError as exc:
             return {exc.field: str(exc)}
-        entry = spec.get("entrypoint")
-        if entry:
-            base = self.project.root if self.project is not None else self.cwd
-            path = Path(entry).expanduser()
-            path = path if path.is_absolute() else base / path
-            if not path.is_file():
-                return {"entrypoint": f"not an existing file: {path}"}
-        return {}
+        del spec
+        base = self.project.root if self.project is not None else self.cwd
+        problem = script_problem(a, base)
+        return {"entrypoint": problem} if problem else {}
 
     def _dest_problems(self) -> dict[str, str]:
         if self._dest_choice() == "custom" and not self._text("dest-path") and not self._text("name"):

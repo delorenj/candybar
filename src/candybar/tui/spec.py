@@ -32,7 +32,7 @@ KIND_LABELS = {
     "entrypoint": "script: run an executable file",
 }
 # Kinds whose runner table takes `timeout_s`.
-TIMEOUT_KINDS = frozenset({"exec", "hermes", "n8n"})
+TIMEOUT_KINDS = frozenset({"exec", "hermes", "n8n", "entrypoint"})
 
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -210,11 +210,11 @@ def host_timezone(
 
 
 def build_runner(a: Answers) -> dict[str, Any] | None:
-    """The runner table for `a`, or None for the script-entrypoint kind. Raises SpecError."""
+    """The runner table for `a` (a script is an exec runner too). Raises SpecError."""
     kind = a.kind
     runner: dict[str, Any]
     # Say so instead of silently dropping an answer the chosen kind has no use for.
-    if kind in KINDS and kind != "exec":
+    if kind in KINDS and kind not in ("exec", "entrypoint"):
         if a.workdir.strip():
             raise SpecError("workdir", f"a {_kind_word(kind)} has no working directory; workdir is for exec")
         if any(line.strip() and not line.strip().startswith("#") for line in a.env):
@@ -254,13 +254,20 @@ def build_runner(a: Answers) -> dict[str, Any] | None:
                 raise SpecError("data", "data must be a JSON object")
             runner["data"] = data
     elif kind == "entrypoint":
-        if not a.entrypoint.strip():
+        # Written as an exec runner, not the bare `entrypoint` key: the API
+        # (in its container) checks an entrypoint file on ITS filesystem and
+        # refuses a host path, while a runner names host files unchecked.
+        path = os.path.expanduser(a.entrypoint.strip())
+        if not path:
             raise SpecError("entrypoint", "a script path is required")
-        if a.timeout.strip():
-            raise SpecError("timeout", "a timeout needs a runner; use an exec runner instead of a script entrypoint")
-        if a.on_failure.strip():
-            raise SpecError("on_failure", "on-failure needs a runner; use an exec runner instead of a script entrypoint")
-        return None
+        if "/" not in path:
+            path = f"./{path}"
+        runner = {"kind": "exec", "argv": [path]}
+        if a.workdir.strip():
+            runner["workdir"] = a.workdir.strip()
+        env = parse_env(a.env)
+        if env:
+            runner["env"] = env
     else:
         raise SpecError("kind", "choose a runner: exec, systemd, hermes, n8n or a script entrypoint")
     timeout = parse_timeout(a.timeout)
@@ -275,6 +282,23 @@ def build_runner(a: Answers) -> dict[str, Any] | None:
     except RunnerError as exc:
         raise SpecError(_blame(kind, str(exc)), str(exc)) from exc
     return runner
+
+
+def script_problem(a: Answers, base: Path) -> str | None:
+    """For the script kind: why its file cannot run (missing, not executable), else None.
+
+    `base` is what a relative path resolves against: the project root, or the
+    working directory outside a project.
+    """
+    if a.kind != "entrypoint" or not a.entrypoint.strip():
+        return None
+    path = Path(os.path.expanduser(a.entrypoint.strip()))
+    path = path if path.is_absolute() else base / path
+    if not path.is_file():
+        return f"not an existing file: {path}"
+    if not os.access(path, os.X_OK):
+        return f"not executable (chmod +x {path})"
+    return None
 
 
 def _probe(runner: dict[str, Any]) -> dict[str, Any]:
