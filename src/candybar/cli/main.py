@@ -25,7 +25,7 @@ from uuid import UUID
 import typer
 
 from candybar import __version__
-from candybar.cli import control, doctor
+from candybar.cli import control, create, doctor
 from candybar.cli import steward as steward_cli
 from candybar.cli.migrate import migrate_app
 
@@ -39,6 +39,7 @@ DEFAULT_API_URL = "http://127.0.0.1:8700"
 
 app.add_typer(migrate_app, name="migrate")
 control.install(app)
+create.install(app)
 doctor.install(app)
 steward_cli.install(app)
 
@@ -106,42 +107,41 @@ def daemon(
 
 @app.command()
 def register(
-    path: Annotated[Path, typer.Argument(help="Directory containing candybar.toml, or the file itself.")],
+    path: Annotated[
+        Path | None,
+        typer.Argument(
+            help="A candybar file, a directory holding candybar.toml or project candybar files. "
+            "Omit inside a project to register all of its candybars."
+        ),
+    ] = None,
+    name: Annotated[
+        list[str] | None,
+        typer.Option("--name", "-n", help="Only this candybar (repeatable)."),
+    ] = None,
+    update: Annotated[
+        bool,
+        typer.Option("--update", help="Project mode: also PATCH drifted fields and adopt untagged candybars."),
+    ] = False,
+    prune: Annotated[
+        bool,
+        typer.Option("--prune", help="Project mode: archive registered candybars the project no longer defines."),
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Say what would change; write nothing.")
+    ] = False,
 ) -> None:
-    """Register a candybar from its candybar.toml manifest via the API (Story 1.4).
+    """Register candybars from their manifests via the API (Story 1.4).
+
+    With a PATH to a plain candybar.toml (AD-8) it is create-only. Inside a
+    project (or with a project directory or `.candybar.toml` / `.candybars/*`
+    file as PATH) it registers every candybar the project defines, creating
+    the missing ones and reporting drift; --update patches drifted fields,
+    --prune archives orphans. Manifests are validated locally first (slug
+    name, 5-field cron, entrypoint must exist); the API re-validates.
 
     The API base URL comes from CANDYBAR_API_URL (default http://127.0.0.1:8700).
-    Manifest validation happens locally first (slug name, 5-field cron,
-    entrypoint must exist); the API re-validates server-side.
     """
-    from candybar.registry import ManifestError, load_manifest
-
-    try:
-        manifest = load_manifest(path)
-    except ManifestError as exc:
-        typer.echo(f"invalid manifest: {exc}", err=True)
-        raise typer.Exit(code=2) from exc
-
-    base = os.environ.get(API_URL_ENV, DEFAULT_API_URL).rstrip("/")
-    payload = manifest.model_dump_json().encode()
-    request = urllib.request.Request(
-        f"{base}/candybars",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            body = json.loads(response.read().decode())
-    except urllib.error.HTTPError as exc:
-        # The API's problem+json body explains the rejection.
-        typer.echo(exc.read().decode(), err=True)
-        raise typer.Exit(code=1) from exc
-    except (urllib.error.URLError, OSError) as exc:
-        typer.echo(f"candybar API unreachable at {base}: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    typer.echo(f"registered {body['name']} (id {body['id']})")
+    control.register_candybars(path, name or [], update=update, prune=prune, dry_run=dry_run)
 
 
 @app.command()

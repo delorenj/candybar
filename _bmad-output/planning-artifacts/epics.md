@@ -108,6 +108,10 @@ The gmail-inbox-style live schedule view (Definitions + Schedule tabs, current/u
 Added 2026-10-26 (user directive lifting the SPEC non-goal). Foundation stories 7.1-7.6 (per-candybar IANA timezone, host executor, exec/systemd runners, Hermes runner, migration ledger + rollback CLI, off-candybar watchdog), then 11 migration waves (7.7-7.17) moving all 70 `migrate`-classified jobs from `cron-inventory.md` exactly once. Full text at the end of this file.
 **FRs covered:** FR2/NFR2 (extended: per-candybar timezone), FR6 (extended: runner kinds), NFR6 (extended: overlap/backlog); architecture AD-16..AD-22
 
+### Epic 8: Project-scoped Candybars
+Added 2026-11-04. A repo owns its candybars in `.candybars/*.candybar.toml` and/or `.candybar.toml` (mise-style); `register` and `ls` act on the current project by default, tagged `project:<name>`, with drift, adoption and orphan handling; `candybar create` is a TUI (plus a flag mode) that writes a valid candybar file. Full text at the end of this file.
+**FRs covered:** FR1 (extended: project files, sync), FR8 (extended: project-scoped CLI listing)
+
 ---
 
 ## Epic 1: Walking Skeleton — one Candybar end to end
@@ -822,3 +826,43 @@ So that agent jobs keep Hermes delivery/sessions while their schedule lives in t
 **And** the peter-griffin pair keeps its ordering: `3684c5aa8eac` (06:23) still gates on `b240575fae0c`'s (05:53) manifest < 2h old — verified on first scheduled fires
 **And** token spend lands in candybar metrics for every Hermes-runner invocation (attempt usage written into the AD-8 result file), and a Telegram-delivered job (`dumply` daily-story) still delivers after cutover
 **And** the hermes-agent change from 7.4 is deployed with one batched `hermes-gateway-restart --reason` AFTER every migrated job is re-saved external (never during); DeLoDocs/dumply/peter-griffin profile job records are unversioned — diffs recorded in the ledger
+
+---
+
+## Epic 8: Project-scoped Candybars
+
+> Appended 2026-11-04 (user directive: "make candybars more valuable than crons by associating them with projects in a decentralized way"). Epics 1-7 are unchanged.
+
+A candybar belongs to the project whose repo defines it, mise-style: `<root>/.candybars/<name>.candybar.toml` (one per file) and/or `<root>/.candybar.toml` (many, as `[candybars.<name>]` tables). The registry stays the sole inventory; the repo is each project's definition of record, and the `project:<name>` tag links the two so orphans (registered, no longer defined) are visible. A TUI walks an operator through writing a candybar file so nobody hand-writes TOML from the README.
+
+**Requirements covered:** FR1 (registration) extended: project discovery, multi-candybar files, sync semantics; FR8 (definitions surface) extended at the CLI: project-scoped listing.
+
+### Story 8.1: Project candybar files, project-aware `register` and `ls`
+
+As an operator working inside a repo,
+I want the repo's candybars to live in `.candybars/` or `.candybar.toml` and `candybar register` / `candybar ls` to act on exactly that project by default,
+So that each project's scheduled jobs are versioned with it and nothing is left orphaned in the registry.
+
+**Acceptance Criteria:**
+
+**Given** a git repo with `.candybar.toml` and/or `.candybars/*.candybar.toml`
+**When** `candybar register` runs anywhere inside it with no path
+**Then** every candybar the project defines is validated first (any error: nothing is written, exit 2) and each is registered, reported unchanged, reported drifted (`--update` PATCHes it), reported archived, adopted (`--update` on an untagged row of that name), or refused as a conflict (another project's name, exit 1)
+**And** every project candybar carries the `project:<repo-basename>` tag; relative `entrypoint`, exec `argv[0]`/`on_failure[0]` and `workdir` resolve against the project root; an exec runner with no `workdir` starts in the project root
+**And** registry rows tagged with the project but defined nowhere are listed as orphans, archived only with `--prune`; `--dry-run` writes nothing; `enabled` is create-time state only
+**And** `candybar ls` / `candybar list` inside the project shows its candybars with registry state and sync status (ok, new, drift, orphan, unowned, conflict); `--global` restores the registry-wide view, which is also the behaviour outside any project
+**And** a legacy `candybar.toml` (directory or file outside a project's candybar files) registers exactly as before: create-only, no project tag, paths against the manifest's directory
+
+### Story 8.2: `candybar create` TUI
+
+As an operator,
+I want `candybar create` to walk me through a new candybar (name, schedule with a live preview, runner, options, destination) and write the file,
+So that writing a valid candybar never needs the README open.
+
+**Acceptance Criteria:**
+
+**Given** a terminal
+**When** `candybar create` runs
+**Then** a step wizard collects basics, schedule (presets or raw cron, IANA zone defaulting to the host's, plain-English description and the next fire times in that zone), runner (exec, systemd, hermes, n8n, entrypoint), options (noise, enabled) and destination (`.candybars/<name>.candybar.toml` by default inside a project, append to `.candybar.toml`, or a custom path), and shows the exact file text with its validation result before writing
+**And** the file it writes is accepted by `candybar register` unchanged (it is validated through the same loader), `Write & register` registers it in one go, and escape cancels without writing
+**And** `candybar create --no-tui` with flags does the same non-interactively for agents and scripts; textual is imported only when the TUI runs

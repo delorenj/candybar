@@ -521,14 +521,30 @@ def protection(definition: dict[str, Any]) -> str | None:
     return None
 
 
-def _manifest_name(path: Path) -> str | None:
+def _manifest_names(path: Path) -> set[str]:
+    """Every candybar name a manifest file defines.
+
+    `[candybar]` (AD-8, one name) and project files' `[candybars.<name>]`
+    tables (many) both count; a bare top-level `name` is the legacy shape.
+    """
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
-        return None
-    table = data.get("candybar") if isinstance(data.get("candybar"), dict) else data
-    name = table.get("name")
-    return name if isinstance(name, str) else None
+        return set()
+    names: set[str] = set()
+    single = data.get("candybar")
+    table = single if isinstance(single, dict) else data
+    if isinstance(table.get("name"), str):
+        names.add(table["name"])
+    elif isinstance(single, dict):
+        # A `.candybars/<stem>.candybar.toml` may leave `name` out: the stem is it.
+        suffix = ".candybar.toml"
+        if path.name.endswith(suffix) and path.name != suffix:
+            names.add(path.name[: -len(suffix)])
+    multi = data.get("candybars")
+    if isinstance(multi, dict):
+        names.update(key for key, body in multi.items() if isinstance(body, dict))
+    return names
 
 
 def _own_manifests(name: str) -> list[Path]:
@@ -536,7 +552,7 @@ def _own_manifests(name: str) -> list[Path]:
     migration = REPO_ROOT / "deploy" / "migration"
     return [
         path for path in sorted((REPO_ROOT / "deploy").rglob("candybar.toml"))
-        if migration not in path.parents and _manifest_name(path) == name
+        if migration not in path.parents and name in _manifest_names(path)
     ]
 
 
@@ -544,7 +560,7 @@ def _manifests(name: str, repo: Path | None) -> list[str]:
     """Committed candybar.toml files that register `name` (this checkout, then the job's repo)."""
     found: list[str] = []
     for path in sorted((REPO_ROOT / "deploy").rglob("candybar.toml")):
-        if _manifest_name(path) == name:
+        if name in _manifest_names(path):
             found.append(str(path))
     if repo is not None and not is_own_repo(path=repo):
         try:
@@ -556,7 +572,7 @@ def _manifests(name: str, repo: Path | None) -> list[str]:
             out = None
         for rel in (out.stdout.split() if out is not None and out.returncode == 0 else [])[:50]:
             path = repo / rel
-            if _manifest_name(path) == name and str(path) not in found:
+            if name in _manifest_names(path) and str(path) not in found:
                 found.append(str(path))
     return found
 

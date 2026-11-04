@@ -17,8 +17,10 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections import Counter
 from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -27,6 +29,16 @@ import typer
 
 from candybar.dispatcher.firetimes import fire_times
 from candybar.migration.client import INVOCATIONS_PAGE, ApiError, CandybarApi
+from candybar.project import (
+    CandybarDef,
+    LoadResult,
+    Project,
+    drift,
+    find_project,
+    load_path,
+    load_project,
+    project_of_tags,
+)
 
 JsonOption = Annotated[bool, typer.Option("--json", help="Print the raw API JSON.")]
 RefArgument = Annotated[str, typer.Argument(metavar="NAME|ID", help="Candybar name or registry id.")]
@@ -185,13 +197,51 @@ def ls(
     hide_noise: Annotated[
         bool, typer.Option("--hide-noise", help="Leave out candybars in the noise collection.")
     ] = False,
+    global_: Annotated[
+        bool,
+        typer.Option("--global", "-g", help="List the whole registry even inside a project."),
+    ] = False,
     as_json: JsonOption = False,
 ) -> None:
-    """List registered candybars (active ones unless --all; archived ones only with --archived)."""
+    """List candybars: the project's own inside a project, else the whole registry.
+
+    Inside a project (a git repo holding .candybar.toml or .candybars/*.candybar.toml,
+    or one the registry already has candybars for) the list is that project's
+    candybars with their sync state; --global lists the registry instead.
+    Registry mode shows active candybars unless --all; archived ones only with --archived.
+    """
+    api = _api()
+    project = None if global_ else find_project()
+    has_files = project is not None and bool(project.files())
+    failure: ApiError | None = None
+    rows: list[dict[str, Any]] | None
     try:
-        candybars = _api().list_candybars()
+        rows = api.list_candybars()
     except ApiError as exc:
-        raise _fail(exc) from exc
+        rows, failure = None, exc
+    project_mode = project is not None and (
+        has_files or (rows is not None and any(project.tag in r.get("tags", []) for r in rows))
+    )
+    if project_mode:
+        assert project is not None
+        _ls_project(api, project, rows, failure, archived=archived, tag=tag,
+                    hide_noise=hide_noise, as_json=as_json)
+        return
+    if rows is None:
+        assert failure is not None
+        raise _fail(failure) from failure
+    _ls_registry(rows, all_=all_, archived=archived, tag=tag, hide_noise=hide_noise, as_json=as_json)
+
+
+def _ls_registry(
+    candybars: list[dict[str, Any]],
+    *,
+    all_: bool,
+    archived: bool,
+    tag: str | None,
+    hide_noise: bool,
+    as_json: bool,
+) -> None:
     stored = sum(1 for c in candybars if c.get("archived"))
     paused = sum(1 for c in candybars if not c.get("enabled", True) and not c.get("archived"))
     shown = [
@@ -218,6 +268,318 @@ def ls(
     if hidden:
         footer += f" ({'; '.join(hidden)})"
     typer.echo(footer)
+
+
+def _registry_state(row: dict[str, Any]) -> str:
+    if row.get("archived"):
+        return "archived"
+    return "enabled" if row.get("enabled", True) else "paused"
+
+
+def _source_label(project: Project, definition: CandybarDef) -> tuple[str, str]:
+    try:
+        where = str(definition.source.relative_to(project.root))
+    except ValueError:
+        where = str(definition.source)
+    label = where if definition.table == "[candybar]" else f"{where} {definition.table}"
+    return label, definition.table
+
+
+def _ls_project(
+    api: CandybarApi,
+    project: Project,
+    rows: list[dict[str, Any]] | None,
+    failure: ApiError | None,
+    *,
+    archived: bool,
+    tag: str | None,
+    hide_noise: bool,
+    as_json: bool,
+) -> None:
+    """`ls` inside a project: its local definitions against the registry."""
+    loaded = load_project(project)
+    for error in loaded.errors:
+        typer.echo(f"warning: {error}", err=True)
+    if failure is not None:
+        typer.echo(f"warning: {failure}; showing local definitions only", err=True)
+    by_name = {r["name"]: r for r in rows or []}
+    entries: list[dict[str, Any]] = []
+    for d in sorted(loaded.defs, key=lambda d: d.name):
+        manifest = d.manifest
+        if (tag is not None and tag not in manifest.tags) or (hide_noise and manifest.noise):
+            continue
+        row = by_name.get(d.name)
+        fields: list[str] = []
+        if rows is None:
+            state, sync = "?", "?"
+        elif row is None:
+            state, sync = "unregistered", "new"
+        else:
+            state = _registry_state(row)
+            owner = project_of_tags(row.get("tags", []))
+            if owner is None:
+                sync = "unowned"
+            elif owner != project.name:
+                sync = f"conflict:{owner}"
+            else:
+                try:
+                    fields = list(drift(manifest, {**row, **api.runner(row["id"])}))
+                except ApiError as exc:
+                    typer.echo(f"warning: {d.name}: {exc}", err=True)
+                    sync = "?"
+                else:
+                    sync = f"drift:{','.join(fields)}" if fields else "ok"
+        source, table = _source_label(project, d)
+        entries.append(
+            {"name": d.name, "state": state, "sync": sync, "drift": fields, "source": source,
+             "table": table, "definition": manifest.model_dump(mode="json"), "registered": row,
+             "schedule": manifest.schedule, "tz": manifest.timezone}
+        )
+    local_names = {d.name for d in loaded.defs}
+    for row in sorted(rows or [], key=lambda r: r["name"]):
+        if project.tag not in row.get("tags", []) or row["name"] in local_names:
+            continue
+        if (row.get("archived") and not archived) or (tag is not None and tag not in row.get("tags", [])):
+            continue
+        if hide_noise and row.get("noise"):
+            continue
+        entries.append(
+            {"name": row["name"], "state": _registry_state(row), "sync": "orphan", "drift": [],
+             "source": "-", "table": None, "definition": None, "registered": row,
+             "schedule": row["schedule"], "tz": row.get("timezone", "UTC")}
+        )
+    entries.sort(key=lambda e: e["name"])
+    if as_json:
+        keys = ("name", "state", "sync", "drift", "source", "table", "definition", "registered")
+        _print_json([{k: e[k] for k in keys} for e in entries])
+    else:
+        _table(
+            ["NAME", "SCHEDULE", "TZ", "STATE", "SYNC", "SOURCE", "ID"],
+            [
+                [e["name"], e["schedule"], e["tz"], e["state"], e["sync"], e["source"],
+                 (e["registered"] or {}).get("id", "-")]
+                for e in entries
+            ],
+        )
+        typer.echo(_project_footer(project, entries))
+    if failure is not None:
+        raise typer.Exit(code=1)
+
+
+def _project_footer(project: Project, entries: list[dict[str, Any]]) -> str:
+    count = len(entries)
+    footer = f"{count} candybar{'' if count == 1 else 's'} in project {project.name} ({project.root})"
+    syncs = [e["sync"] for e in entries]
+    behind = sum(1 for s in syncs if s == "new" or s.startswith("drift:"))
+    hints = []
+    if behind:
+        hints.append(f"{behind} unregistered/drifted; `candybar register` syncs them")
+    if any(s.startswith("drift:") for s in syncs):
+        hints.append("`--update` applies drift")
+    if (orphans := syncs.count("orphan")):
+        hints.append(f"{orphans} orphaned; `candybar register --prune` archives them")
+    if (unowned := syncs.count("unowned")):
+        hints.append(f"{unowned} not owned by a project; `candybar register --update` adopts them")
+    return footer + (f" ({'; '.join(hints)})" if hints else "")
+
+
+# --- register ---------------------------------------------------------------
+
+
+def _project_of_path(path: Path) -> tuple[Project | None, bool]:
+    """(project, whole) for an explicit `register PATH`: whole = the path is the project itself."""
+    if path.is_dir():
+        if (path / "candybar.toml").is_file():
+            return None, False
+        return Project(path.resolve()), True
+    found = find_project(path.parent)
+    return (found, False) if found is not None and found.owns(path) else (None, False)
+
+
+def register_candybars(
+    path: Path | None, names: list[str], *, update: bool, prune: bool, dry_run: bool
+) -> None:
+    """`candybar register`: a manifest (create-only) or a project's candybars (sync)."""
+    from candybar.registry import ManifestError
+
+    project: Project | None
+    whole = True
+    if path is None:
+        project = find_project()
+        if project is None:
+            typer.echo("not inside a project; pass a path", err=True)
+            raise typer.Exit(code=2)
+        if not project.files():
+            typer.echo(
+                f"no candybars in project {project.name}: add a .candybar.toml or "
+                ".candybars/<name>.candybar.toml (`candybar create` writes one)",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        loaded = load_project(project)
+    else:
+        try:
+            loaded = load_path(path)
+        except ManifestError as exc:
+            typer.echo(f"invalid manifest: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+        project, whole = _project_of_path(path)
+    if loaded.errors:
+        for error in loaded.errors:
+            typer.echo(f"invalid manifest: {error}", err=True)
+        raise typer.Exit(code=2)
+    if project is None and (update or prune):
+        typer.echo("--update and --prune apply to project candybar files only", err=True)
+        raise typer.Exit(code=2)
+    if prune and names:
+        typer.echo("--prune needs the whole project: drop --name", err=True)
+        raise typer.Exit(code=2)
+    if prune and not whole:
+        typer.echo("--prune needs the whole project: run it without a file path", err=True)
+        raise typer.Exit(code=2)
+    wanted = list(dict.fromkeys(names))
+    known = {d.name for d in loaded.defs}
+    if unknown := [n for n in wanted if n not in known]:
+        typer.echo(
+            f"no candybar named {', '.join(map(repr, unknown))} (defined: {', '.join(sorted(known))})",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    defs = [d for d in loaded.defs if not wanted or d.name in wanted]
+    if project is None:
+        _register_plain(defs, dry_run=dry_run)
+    else:
+        _register_project(
+            project, defs, loaded, update=update, prune=prune, dry_run=dry_run,
+            sweep_orphans=whole and not wanted,
+        )
+
+
+def _register_plain(defs: list[CandybarDef], *, dry_run: bool) -> None:
+    """Create-only registration of candybars that belong to no project."""
+    api = _api()
+    failed = False
+    for d in defs:
+        if dry_run:
+            typer.echo(f"would register {d.name}")
+            continue
+        try:
+            body = api.register(d.manifest.model_dump(mode="json"))
+        except ApiError as exc:
+            # The API's problem+json body explains the rejection.
+            typer.echo(json.dumps(exc.problem) if exc.problem else str(exc), err=True)
+            failed = True
+            if exc.unreachable:
+                break
+            continue
+        typer.echo(f"registered {body['name']} (id {body['id']})")
+    if failed:
+        raise typer.Exit(code=1)
+
+
+SUMMARY_ORDER = (
+    "registered", "updated", "adopted", "unchanged", "drifted", "exists", "archived",
+    "orphans", "pruned", "conflicts", "errors",
+)
+
+
+def _register_project(
+    project: Project,
+    defs: list[CandybarDef],
+    loaded: LoadResult,
+    *,
+    update: bool,
+    prune: bool,
+    dry_run: bool,
+    sweep_orphans: bool,
+) -> None:
+    api = _api()
+    try:
+        rows = api.list_candybars()
+    except ApiError as exc:
+        raise _fail(exc) from exc
+    by_name = {r["name"]: r for r in rows}
+    counts: Counter[str] = Counter()
+    would = "would " if dry_run else ""
+    failed = aborted = False
+    for d in defs:
+        name, row = d.name, by_name.get(d.name)
+        try:
+            if row is None:
+                if dry_run:
+                    typer.echo(f"would register {name}")
+                else:
+                    body = api.register(d.manifest.model_dump(mode="json"))
+                    typer.echo(f"registered {name} (id {body['id']})")
+                counts["registered"] += 1
+                continue
+            owner = project_of_tags(row.get("tags", []))
+            if owner is not None and owner != project.name:
+                typer.echo(f"conflict {name}: registered by project {owner}", err=True)
+                counts["conflicts"] += 1
+                failed = True
+                continue
+            if row.get("archived"):
+                typer.echo(f"archived {name}; `candybar unarchive {name}` first")
+                counts["archived"] += 1
+                continue
+            changes = drift(d.manifest, {**row, **api.runner(row["id"])})
+            fields = ", ".join(changes)
+            if owner is None:
+                if not update or not changes:
+                    typer.echo(f"exists {name} (not owned by a project; --update adopts it)")
+                    counts["exists"] += 1
+                    continue
+                if not dry_run:
+                    api.update(row["id"], changes)
+                typer.echo(f"{would}{'adopt' if dry_run else 'adopted'} {name}")
+                counts["adopted"] += 1
+            elif not changes:
+                typer.echo(f"unchanged {name}")
+                counts["unchanged"] += 1
+            elif not update:
+                typer.echo(f"drifted {name}: {fields} (rerun with --update)")
+                counts["drifted"] += 1
+            else:
+                if not dry_run:
+                    api.update(row["id"], changes)
+                typer.echo(f"{would}{'update' if dry_run else 'updated'} {name}: {fields}")
+                counts["updated"] += 1
+        except ApiError as exc:
+            typer.echo(f"error {name}: {exc}", err=True)
+            counts["errors"] += 1
+            failed = True
+            if exc.unreachable:
+                aborted = True
+                break
+    if sweep_orphans and not aborted:
+        local = {d.name for d in loaded.defs}
+        for row in sorted(rows, key=lambda r: r["name"]):
+            if project.tag not in row.get("tags", []) or row.get("archived") or row["name"] in local:
+                continue
+            if not prune:
+                typer.echo(
+                    f"orphan {row['name']} (registered, no local definition; --prune archives it)"
+                )
+                counts["orphans"] += 1
+                continue
+            try:
+                if not dry_run:
+                    api.set_archived(row["id"], True)
+            except ApiError as exc:
+                typer.echo(f"error {row['name']}: {exc}", err=True)
+                counts["errors"] += 1
+                failed = True
+                if exc.unreachable:
+                    break
+                continue
+            typer.echo(f"{would}{'archive' if dry_run else 'archived'} orphan {row['name']}")
+            counts["pruned"] += 1
+    parts = [f"{counts[k]} {k}" for k in SUMMARY_ORDER if counts[k]]
+    suffix = " (dry run)" if dry_run else ""
+    typer.echo(f"project {project.name}{suffix}: {', '.join(parts) or 'nothing to do'}")
+    if failed:
+        raise typer.Exit(code=1)
 
 
 def show(
@@ -709,6 +1071,7 @@ def tail(
 def install(app: typer.Typer) -> None:
     """Register the control commands on the root CLI."""
     app.command("ls")(ls)
+    app.command("list")(ls)
     app.command("show")(show)
     app.command("next")(next_)
     app.command("schedule")(schedule)
