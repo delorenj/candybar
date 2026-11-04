@@ -23,9 +23,11 @@ candybar, the way mise keys ``[tasks.<name>]``:
     argv = ["./scripts/backup.sh"]      # relative to the project root
 
 Relative paths in a project file resolve against the project root, not the
-file: ``entrypoint``, an exec ``argv[0]`` or ``on_failure[0]`` that contains a
+file: ``entrypoint``, an ``argv[0]`` or ``on_failure[0]`` that contains a
 slash, and an exec ``workdir``. An exec runner with no ``workdir`` starts in
-the project root. Every project candybar carries the ``project:<name>`` tag,
+the project root. An ``entrypoint`` registers as the equivalent exec runner
+(the script, started in its own directory) because the API, in its
+container, refuses a host path it cannot see. Every project candybar carries the ``project:<name>`` tag,
 so the registry knows which project owns it (``candybar ls`` in the repo
 shows exactly those, and the ones that exist only in the registry are
 reported as orphans).
@@ -52,6 +54,7 @@ from pathlib import Path
 from typing import Any
 
 from .registry.manifest import CandybarManifest, ManifestError
+from .runners import canonical_runner
 
 CANDYBARS_DIR = ".candybars"
 PROJECT_FILE = ".candybar.toml"
@@ -359,7 +362,17 @@ def parse_text(
                     f"{path} {label}: entrypoint is not an existing file: {manifest.entrypoint!r}"
                 )
                 continue
-            manifest = manifest.model_copy(update={"entrypoint": str(entrypoint)})
+            if project is not None:
+                # A project file's `entrypoint` registers as the equivalent exec
+                # runner (argv = the script, started in its own directory, as a
+                # bare entrypoint is): the API runs in a container and refuses
+                # an `entrypoint` host path it cannot see, a runner it does not check.
+                runner = canonical_runner(
+                    {"kind": "exec", "argv": [str(entrypoint)], "workdir": str(entrypoint.parent)}
+                )
+                manifest = manifest.model_copy(update={"entrypoint": None, "runner": runner})
+            else:
+                manifest = manifest.model_copy(update={"entrypoint": str(entrypoint)})
         result.defs.append(CandybarDef(manifest=manifest, source=path, table=label))
     return result
 

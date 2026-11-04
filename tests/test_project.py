@@ -320,7 +320,11 @@ def test_entrypoint_resolves_against_root_and_must_exist(repo: Path) -> None:
     )
     result = load_project(Project(repo))
     # The file lives in .candybars/, but the path is from the project root.
-    assert result.by_name()["ok"].manifest.entrypoint == str(repo / "scripts" / "job.sh")
+    ok = result.by_name()["ok"].manifest
+    # A project entrypoint registers as the equivalent exec runner (the API refuses host paths).
+    assert ok.entrypoint is None
+    assert ok.runner == {"kind": "exec", "argv": [str(repo / "scripts" / "job.sh")],
+                         "workdir": str(repo / "scripts"), "env": {}}
     assert len(result.errors) == 1
     assert "entrypoint is not an existing file" in result.errors[0] and "scripts/nope.sh" in result.errors[0]
 
@@ -368,7 +372,7 @@ def test_load_path_project_file_gets_project_rules(repo: Path) -> None:
     (only,) = load_path(f).defs
     assert only.name == "job"
     assert only.manifest.tags == ["project:myproj"]
-    assert only.manifest.entrypoint == str(repo / "scripts" / "job.sh")
+    assert only.manifest.runner["argv"] == [str(repo / "scripts" / "job.sh")]
 
 
 def test_load_path_project_directory(repo: Path) -> None:
