@@ -2158,7 +2158,7 @@ jobs:
   wave: '7.9'
   candybar:
     name: restic-vault
-    description: Nightly offsite restic snapshot of the DeLoDocs vault to gdrive:backups/delodocs, plus forget/prune (7d/4w/12m/3y)
+    description: Nightly offsite restic snapshot of the DeLoDocs vault to gdrive:backups/delodocs, plus forget (7d/4w/12m/3y); weekly prune is separate
     tags:
     - migrated
     - backups
