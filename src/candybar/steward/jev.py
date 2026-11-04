@@ -1,7 +1,11 @@
 """Project classification for an enriched candybar (steward-contract.md section 4, enrich).
 
-1. `method: "ledger"`, confidence 1: the ledger repo's local checkout is (or
-   sits inside) a pjangler project's `repo_path` (the deepest one wins).
+1. `method: "ledger"`, confidence 1: the job's own checkout (the ledger
+   repo's local checkout, or the git root of the runner's home when the
+   ledger names no repo or names this candybar repo, which only records the
+   migration) is (or sits inside) a pjangler project's `repo_path` (the
+   deepest one wins). A job only falls back to this repo's checkout when
+   nothing else was found, and that fallback is never classified here.
 2. Otherwise `method: "jev"`: TypeSafe's Jev through the fleet's Jev ingress
    (`https://jev.delo.sh/typesafe/v1/systemone`, model `jev-1.13.0`, the
    steward's own LiteLLM virtual key in `CANDYBAR_JEV_KEY`), one `noul`
@@ -242,7 +246,7 @@ def classify_project(
     projects = load_projects(registry_url)
     found = ledger_project(projects, checkout)
     if found is not None:
-        return Classification(found, f"ledger checkout {checkout} is pjangler project {found['id']}")
+        return Classification(found, f"the job's checkout {checkout} is pjangler project {found['id']}")
     if jev is None:
         return Classification(None, f"no ledger project and no Jev key ({JEV_KEY_ENV} unset)")
     return jev.classify(job_state(definition, overview, paths), projects)

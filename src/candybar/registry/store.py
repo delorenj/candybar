@@ -800,6 +800,8 @@ STEWARD_TASK_FIELDS = (
     "error",
     "started_at",
     "finished_at",
+    "cost_usd",
+    "tokens",
 )
 
 # Upper bound for one page of steward tasks (the API enforces it too).

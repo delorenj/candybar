@@ -10,6 +10,13 @@ time, each as its own asyncio task. Like the executor it consumes nothing
 while the registry's alembic head differs from its checkout's (AD-17), so a
 pair-deploy never runs against an unmigrated schema.
 
+Once the schema gate first opens (before the first fetch), two startup
+chores run: the reaper fails every task left `running` (one steward
+instance, so a restart orphaned it) and every `queued` task older than the
+command stream's `max_age` (its command expired), each with its `failed`
+fact; then profiles the old ledger mapping classified as this repo's
+project get their project step re-run (no agent). Both are logged.
+
 On stop, in-flight tasks are cancelled: each interrupts its OpenCode
 session and records itself failed, then the command is acked.
 """
@@ -35,7 +42,7 @@ from ..registry.schema_guard import SchemaGate, guard_enabled, own_head
 from ..registry.store import create_registry_engine, session_scope
 from .jev import Jev
 from .opencode import OpenCodeClient
-from .worker import Steward
+from .worker import DEFAULT_COMMAND_MAX_AGE_S, Steward
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +54,40 @@ CONCURRENCY = 2
 # in_progress every minute, so this is only the crash horizon after which a
 # lost task's command is redelivered (and failed as abandoned).
 ACK_WAIT_SECONDS = 600
+
+
+async def command_max_age(js: object) -> float:
+    """The command stream's max_age in seconds (its configured value, else 24 h)."""
+    try:
+        info = await js.stream_info(COMMAND_STREAM)  # type: ignore[attr-defined]
+        age = info.config.max_age
+    except Exception as exc:  # noqa: BLE001  (unreadable: assume the stream's documented 24 h)
+        log.warning("steward: could not read %s max_age (%s); assuming %gs", COMMAND_STREAM, exc, DEFAULT_COMMAND_MAX_AGE_S)
+        return DEFAULT_COMMAND_MAX_AGE_S
+    return float(age) if isinstance(age, (int, float)) and age > 0 else DEFAULT_COMMAND_MAX_AGE_S
+
+
+async def startup_chores(steward: Steward, js: object) -> None:
+    """Reap tasks no command will finish, then fix projects from the old ledger mapping."""
+    max_age = await command_max_age(js)
+    try:
+        reaped = await steward.reap(max_age_s=max_age)
+    except Exception:
+        log.exception("steward: the startup reaper failed; continuing")
+    else:
+        for row in reaped:
+            log.warning(
+                "steward: reaped task %s (%s, was %s): %s", row["taskId"], row["action"], row["was"], row["error"]
+            )
+        log.info("steward: startup reaper failed %d task(s) (max_age %gs)", len(reaped), max_age)
+    try:
+        changed = await steward.reclassify_misattributed()
+    except Exception:
+        log.exception("steward: reclassifying projects failed; continuing")
+    else:
+        for row in changed:
+            log.info("steward: reclassified %s: %s -> %s (%s)", row["name"], row["from"], row["to"], row["note"])
+        log.info("steward: reclassified %d profile(s) from the old ledger mapping", len(changed))
 
 
 async def run_steward(stop: asyncio.Event) -> None:
@@ -81,10 +122,14 @@ async def run_steward(stop: asyncio.Event) -> None:
             stop=stop,
         )
         log.info("steward role consuming %s (durable %s, concurrency %d)", STEWARD_FILTER, DURABLE, CONCURRENCY)
+        started = False
         while not stop.is_set():
             if gate is not None and not await gate.open():
                 await sleep_or_stop(stop, 1)
                 continue
+            if not started:
+                started = True
+                await startup_chores(steward, js)
             if len(tasks) >= CONCURRENCY:
                 # Both slots busy: wait for one to free (or stop), never fetch more.
                 stopper = asyncio.ensure_future(stop.wait())

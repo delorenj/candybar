@@ -1,10 +1,12 @@
 """Evaluate reports (steward-contract.md section 4, evaluate).
 
-`~/code/DeLoDocs/Reports/<YYYY-MM-DD in America/New_York>/candybar-evaluate-<name>.md`
-with front matter `date, type: candybar-evaluation, candybar, outcome,
-generated_by: candybar-steward`, plus a sibling `.json`; both are copied with
-`mc cp` to `delo/daily-reports/<date>/` (the hindsight analyzer's precedent).
-The stored `reportKey` is `<date>/candybar-evaluate-<name>.md`.
+`~/code/DeLoDocs/Reports/<YYYY-MM-DD in America/New_York>/candybar-evaluate-<name>-<HHMM>-<task8>.md`
+(HHMM in New York; task8 = the evaluate task id's first 8 characters, so a
+second evaluate the same day never overwrites the first) with front matter
+`date, type: candybar-evaluation, candybar, outcome, generated_by:
+candybar-steward`, plus a sibling `.json`; both are copied with `mc cp` to
+`delo/daily-reports/<date>/` (the hindsight analyzer's precedent). The
+stored `reportKey` is `<date>/<stem>.md`.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 REPORTS_DIR_ENV = "CANDYBAR_REPORTS_DIR"
@@ -44,8 +47,19 @@ def report_date(moment: datetime) -> str:
     return moment.astimezone(REPORT_ZONE).date().isoformat()
 
 
-def report_key(name: str, moment: datetime) -> str:
-    return f"{report_date(moment)}/candybar-evaluate-{name}.md"
+def report_stem(name: str, moment: datetime, task_id: UUID | str) -> str:
+    local = moment.astimezone(REPORT_ZONE)
+    return f"candybar-evaluate-{name}-{local:%H%M}-{str(task_id)[:8]}"
+
+
+def report_key(name: str, moment: datetime, task_id: UUID | str) -> str:
+    return f"{report_date(moment)}/{report_stem(name, moment, task_id)}.md"
+
+
+def report_json_path(key: str, reports_dir: Path | None = None) -> Path:
+    """The local `.json` sibling of a stored `reportKey` (it holds the evaluation)."""
+    root = (reports_dir or Path(os.environ.get(REPORTS_DIR_ENV) or DEFAULT_REPORTS_DIR)).expanduser()
+    return root / (key.removesuffix(".md") + ".json")
 
 
 def _axes_table(axes: dict[str, Any]) -> list[str]:
@@ -134,11 +148,12 @@ def write_and_upload(
     s3_prefix: str | None = None,
 ) -> Report:
     """Write both files, then `mc cp` both. Blocking; raises ReportError on any failure."""
-    date = evaluation["reportKey"].split("/", 1)[0]
+    date, _, file_name = evaluation["reportKey"].partition("/")
+    stem = file_name.removesuffix(".md") or f"candybar-evaluate-{name}"
     root = (reports_dir or Path(os.environ.get(REPORTS_DIR_ENV) or DEFAULT_REPORTS_DIR)).expanduser()
     folder = root / date
-    md_path = folder / f"candybar-evaluate-{name}.md"
-    json_path = folder / f"candybar-evaluate-{name}.json"
+    md_path = folder / f"{stem}.md"
+    json_path = folder / f"{stem}.json"
     try:
         folder.mkdir(parents=True, exist_ok=True)
         md_path.write_text(markdown, encoding="utf-8")

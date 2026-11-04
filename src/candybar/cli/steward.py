@@ -5,6 +5,9 @@
   print its outcome (exit 1 when it failed, 3 when --timeout passes first).
   A 409 (a task of that action is already active) follows the active one.
 - `candybar steward tasks [--active] [--candybar NAME]`: the task list.
+- `candybar steward cancel <task-id>`: mark a queued or running task failed
+  ("cancelled by operator") and interrupt its OpenCode session at once (the
+  steward stops the run within a minute).
 - `candybar profile <name>`: the stored overview, project and evaluation.
 
 Thin wrappers over the api role through the same REST client as the rest of
@@ -97,6 +100,10 @@ def print_task(task: dict[str, Any]) -> None:
         lines.append(("proving run", task["invocationId"]))
     if task.get("parentTaskId"):
         lines.append(("parent", task["parentTaskId"]))
+    if task.get("costUsd") is not None or task.get("tokens"):
+        tokens = task.get("tokens") or {}
+        used = sum(v for k, v in tokens.items() if k != "cache" and isinstance(v, (int, float)))
+        lines.append(("spend", f"${task.get('costUsd') or 0:.4f}, {used:,.0f} tokens"))
     width = max(len(k) for k, _ in lines)
     for key, value in lines:
         typer.echo(f"{key.rjust(width)}  {value}")
@@ -153,6 +160,32 @@ def fix(ref: RefArgument, wait: WaitOption = False, timeout: TimeoutOption = 540
 def evaluate(ref: RefArgument, wait: WaitOption = False, timeout: TimeoutOption = 2400, as_json: JsonOption = False) -> None:
     """Evaluate a candybar (Nominal/Suboptimal/Drifted/Orphaned) and run the follow-up."""
     _request("evaluate", ref, wait, timeout, as_json)
+
+
+@steward_app.command("cancel")
+def cancel(
+    task_id: Annotated[str, typer.Argument(metavar="TASK_ID", help="The steward task id.")],
+    as_json: JsonOption = False,
+) -> None:
+    """Cancel a queued or running steward task and interrupt its OpenCode session."""
+    api = _api()
+    try:
+        task = api.cancel_task(task_id)
+    except ApiError as exc:
+        raise _fail(exc) from exc
+    session = task.get("sessionId")
+    if session:
+        from candybar.steward.opencode import Endpoint, OpenCodeClient, OpenCodeError
+
+        try:
+            OpenCodeClient().interrupt(Endpoint.discover(), session)
+            typer.echo(f"interrupted OpenCode session {session}", err=True)
+        except OpenCodeError as exc:
+            typer.echo(f"could not interrupt {session} ({exc}); the steward stops it within a minute", err=True)
+    if as_json:
+        _print_json(task)
+    else:
+        print_task(task)
 
 
 @steward_app.command("tasks")

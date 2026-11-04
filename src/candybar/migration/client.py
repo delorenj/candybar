@@ -165,6 +165,9 @@ class CandybarApi:
         body = self._call("GET", f"/candybars/{self._id(candybar_id)}/steward/tasks?limit={limit}")
         return list(body.get("tasks", []))
 
+    def cancel_task(self, task_id: str) -> dict[str, Any]:
+        return self._call("POST", f"/steward/tasks/{self._id(task_id)}/cancel")
+
     def tasks(self, *, active: bool = False, limit: int = 100) -> list[dict[str, Any]]:
         query = "active=1" if active else f"limit={limit}"
         return list(self._call("GET", f"/steward/tasks?{query}").get("tasks", []))

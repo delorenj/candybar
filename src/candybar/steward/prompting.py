@@ -5,7 +5,7 @@ YAML-ish front matter carries `template_version: N` (changing a template
 bumps it, and an enrich stores the version that produced its overview). The
 body uses `{{placeholder}}` slots the steward fills. Every template ends by
 asking for exactly one fenced ```json block; `last_json_block` reads the last
-such block of the final answer.
+such block of the final assistant message only.
 """
 
 from __future__ import annotations
@@ -20,7 +20,9 @@ TEMPLATES_DIR_ENV = "CANDYBAR_STEWARD_TEMPLATES"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_TEMPLATES_DIR = REPO_ROOT / "deploy" / "steward" / "templates"
 
-_FENCE = re.compile(r"```[ \t]*json[^\n]*\n(.*?)\n?```", re.DOTALL | re.IGNORECASE)
+# A ```json opener (any info string after it); the body is decoded with a
+# JSON decoder from there, so backticks inside JSON strings never cut it short.
+_OPENER = re.compile(r"```[ \t]*json[^\n]*\n", re.IGNORECASE)
 _PLACEHOLDER = re.compile(r"\{\{\s*([a-z_]+)\s*\}\}")
 _FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 
@@ -30,24 +32,33 @@ class AnswerError(ValueError):
 
 
 def last_json_block(answers: list[str]) -> dict[str, Any]:
-    """The last fenced ```json object of the newest answer that has one.
+    """The last fenced ```json object of the final assistant message.
 
-    `answers` are the turn's assistant texts, newest first: the final answer
-    normally carries the block; an agent that adds a closing line after it
-    is still read correctly from the message before.
+    `answers` are the turn's assistant texts, newest first; only the newest
+    (the final answer) is read, never a draft from earlier in the turn. The
+    last opener whose body decodes is used: a raw newline cannot occur inside
+    a JSON string, so an opener quoted inside a string value never matches,
+    and a closing fence is not required.
     """
-    for text in answers:
-        blocks = _FENCE.findall(text)
-        for raw in reversed(blocks):
-            try:
-                value = json.loads(raw)
-            except ValueError:
-                continue
-            if isinstance(value, dict):
-                return value
-        if blocks:
-            raise AnswerError("the final ```json block is not a JSON object")
-    raise AnswerError("the final answer has no fenced ```json block")
+    if not answers:
+        raise AnswerError("the turn wrote no final answer")
+    text = answers[0]
+    openers = list(_OPENER.finditer(text))
+    if not openers:
+        raise AnswerError("the final answer has no fenced ```json block")
+    decoder = json.JSONDecoder()
+    for opener in reversed(openers):
+        start = opener.end()
+        while start < len(text) and text[start] in " \t\r\n":
+            start += 1
+        try:
+            value, _ = decoder.raw_decode(text, start)
+        except ValueError:
+            continue
+        if isinstance(value, dict):
+            return value
+        raise AnswerError("the final ```json block is not a JSON object")
+    raise AnswerError("the final ```json block is not valid JSON")
 
 
 @dataclass(frozen=True)

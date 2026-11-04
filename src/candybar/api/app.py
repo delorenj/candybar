@@ -62,8 +62,10 @@ evaluation validated against the contract shapes), and steward tasks: `POST
 /candybars/{id}/steward` `{action}` publishes the
 `bloodbank.cmd.cron.candybar.steward` command and the `steward_task.queued`
 fact FIRST, then stores the queued task (202); `GET
-/candybars/{id}/steward/tasks`, `GET /steward/tasks` and the worker's `PATCH
-/steward/tasks/{taskId}`, which publishes the status fact before the write.
+/candybars/{id}/steward/tasks`, `GET /steward/tasks`, the worker's `PATCH
+/steward/tasks/{taskId}`, which publishes the status fact before the write,
+and `POST /steward/tasks/{taskId}/cancel` (failed, "cancelled by operator").
+A fix is a 409 while a fix or refactor is active for the candybar.
 All errors are RFC 7807 problem+json. Epic 5 adds the rest of the CAP-8 read surface.
 """
 
@@ -134,8 +136,11 @@ from candybar.registry import (
     uuid7,
 )
 from candybar.steward.model import (
+    CANCELLED,
     MODEL_FOR_ACTION,
+    MUTATING_ACTIONS,
     TASK_COLUMNS,
+    TERMINAL_STATUSES,
     DraftTask,
     ProfileUpdate,
     profile_changes,
@@ -276,6 +281,8 @@ class TaskPatchRequest(BaseModel):
     error: str | None = None
     startedAt: AwareDatetime | None = None
     finishedAt: AwareDatetime | None = None
+    costUsd: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    tokens: dict[str, Any] | None = None
 
 
 # Steward task list bounds (contract section 3).
@@ -1054,14 +1061,17 @@ def create_app(
                         f"{row.name} is archived; archived candybars may be enriched and "
                         "evaluated, not fixed",
                     )
-                active = await active_steward_task(session, candybar_id, action)
-                if active is not None:
-                    return problem(
-                        409,
-                        "Steward task already active",
-                        f"{row.name} already has a {active.status} {action} task",
-                        taskId=str(active.id),
-                    )
+                # One task per action; and a fix waits for any fix or refactor
+                # (one change to a candybar's job at a time).
+                for other in MUTATING_ACTIONS if action in MUTATING_ACTIONS else (action,):
+                    active = await active_steward_task(session, candybar_id, other)
+                    if active is not None:
+                        return problem(
+                            409,
+                            "Steward task already active",
+                            f"{row.name} already has a {active.status} {other} task",
+                            taskId=str(active.id),
+                        )
                 task_id = uuid7()
                 draft = DraftTask(
                     id=task_id,
@@ -1139,6 +1149,39 @@ def create_app(
             )
             body = [task_json(row) for row in rows]
         return JSONResponse(content={"tasks": body})
+
+    @app.post("/steward/tasks/{task_id}/cancel")
+    async def cancel_task(task_id: UUID) -> JSONResponse:
+        """Cancel a queued or running task: `failed` with error "cancelled by operator" (fact first).
+
+        The steward notices within a minute and stops the run; the CLI also
+        interrupts the OpenCode session at once (the API cannot reach it).
+        """
+        async with session_factory() as session:
+            task = await get_steward_task(session, task_id, lock=True)
+            if task is None:
+                return problem(404, "Steward task not found", f"no steward task with id {task_id}")
+            if task.status in TERMINAL_STATUSES:
+                return problem(
+                    409, "Steward task already finished", f"task {task_id} is already {task.status}"
+                )
+            changes = stamp_transition(task.status, {"status": "failed", "error": CANCELLED})
+            candybar = await get_candybar(session, task.candybar_id)
+            name = candybar.name if candybar is not None else "unknown"
+            fact = build_steward_task_fact(
+                STEWARD_FACT_FOR_STATUS["failed"], task_fact_data(task, name, changes)
+            )
+            try:
+                await sink.publish(fact)
+            except BUS_ERRORS as exc:
+                log.error("failed to publish the failed fact of task %s: %s", task_id, exc)
+                return problem(
+                    503, "Event bus unavailable", "could not publish the failed fact; the task is unchanged"
+                )
+            task = await update_steward_task(session, task, changes)
+            result = task_json(task)
+        log.info("steward task %s cancelled by operator", task_id)
+        return JSONResponse(content=result)
 
     @app.patch("/steward/tasks/{task_id}")
     async def patch_task(task_id: UUID, body: TaskPatchRequest) -> JSONResponse:

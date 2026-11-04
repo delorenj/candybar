@@ -1,4 +1,4 @@
-"""Live-Postgres proof of migration 0008 and the steward contract routes.
+"""Live-Postgres proof of migrations 0008-0009 and the steward contract routes.
 
 Env-gated: CANDYBAR_TEST_PG=1 with DATABASE_URL at a THROWAWAY database
 (`migrated_db` downgrades to base afterwards). Through the real routes on
@@ -113,6 +113,9 @@ def test_steward_contract_round_trip_on_postgres(migrated_db: str) -> None:  # n
         json={"status": "succeeded", "outcome": "Nominal", "summary": "fine", "reportKey": "2026-11-03/x.md"},
     )
     assert resp.status_code == 200 and resp.json()["finishedAt"] and resp.json()["outcome"] == "Nominal"
+    tokens = {"input": 10, "output": 2, "reasoning": 0, "cache": {"read": 3, "write": 0}}
+    resp = client.patch(f"/steward/tasks/{task['id']}", json={"costUsd": 0.0125, "tokens": tokens})
+    assert resp.status_code == 200 and resp.json()["costUsd"] == 0.0125 and resp.json()["tokens"] == tokens
     assert client.get("/steward/tasks?active=1").json()["tasks"] == []
     listed = client.get(f"/candybars/{cid}/steward/tasks").json()
     assert [t["status"] for t in listed["tasks"]] == ["succeeded"]
@@ -120,7 +123,34 @@ def test_steward_contract_round_trip_on_postgres(migrated_db: str) -> None:  # n
     assert client.post(f"/candybars/{cid}/steward", json={"action": "evaluate"}).status_code == 202
     types = [e.type.rsplit(".", 1)[1] for e in sink.events if "steward_task" in e.type]
     assert types == ["queued", "started", "completed", "queued"]
+    # Cancel: the queued twin becomes failed ("cancelled by operator"); again is a 409.
+    queued = client.get("/steward/tasks?active=1").json()["tasks"][0]
+    resp = client.post(f"/steward/tasks/{queued['id']}/cancel")
+    assert resp.status_code == 200 and resp.json()["error"] == "cancelled by operator"
+    assert client.post(f"/steward/tasks/{queued['id']}/cancel").status_code == 409
     asyncio.run(engine.dispose())
+
+
+def test_migration_0009_adds_nullable_spend_and_downgrades(migrated_db: str) -> None:  # noqa: F811
+    from alembic import command
+    from alembic.config import Config
+
+    from test_registry_integration import ALEMBC_INI, REPO_ROOT, _sync_url
+
+    def columns() -> dict[str, str]:
+        with create_engine(migrated_db).connect() as conn:
+            return {r[0]: r[1] for r in conn.execute(text(
+                "SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name = 'steward_tasks'"
+            ))}
+
+    assert columns().get("cost_usd") == "YES" and columns().get("tokens") == "YES"
+    cfg = Config(str(ALEMBC_INI))
+    cfg.set_main_option("sqlalchemy.url", _sync_url())
+    cfg.set_main_option("script_location", str(REPO_ROOT / "deploy" / "alembic"))
+    command.downgrade(cfg, "0008")
+    assert not {"cost_usd", "tokens"} & set(columns())
+    command.upgrade(cfg, "head")
+    assert {"cost_usd", "tokens"} <= set(columns())
 
 
 def test_migration_0008_defaults_and_downgrade(migrated_db: str) -> None:  # noqa: F811

@@ -88,6 +88,8 @@ class Task:
     error: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    cost_usd: float | None = None
+    tokens: dict | None = None
 
 
 @dataclass
@@ -281,6 +283,10 @@ def test_profile_put_merges_per_top_level_key(st: tuple[Rig, Store]) -> None:
         {"overview": {k: v for k, v in overview().items() if k != "runbook"}},
         {"overview": overview(extra="nope")},
         {"overview": overview(source={"repo": None, "paths": [], "runner": "cron"})},
+        {"overview": overview(behavior=["back up", ""])},
+        {"overview": overview(outputs=["   "])},
+        {"overview": overview(source={"repo": None, "paths": [""], "runner": "systemd"})},
+        {"evaluation": evaluation(followUpStatus="maybe")},
         {"evaluation": evaluation(outcome="Fine")},
         {"evaluation": evaluation(axes={"efficacy": {"rating": "good", "finding": "x"}})},
         {"evaluation": evaluation(evaluatedAt="2026-11-03T12:00:00")},
@@ -305,6 +311,11 @@ def test_profile_put_accepts_an_evaluation_and_null_clears(st: tuple[Rig, Store]
     assert resp.json()["evaluation"]["evaluatedAt"] == "2026-11-03T12:00:00Z"
     resp = client.put(f"/candybars/{row.id}/profile", json={"evaluation": None})
     assert resp.status_code == 200 and resp.json()["evaluation"] is None
+    follow = str(uuid4())
+    marked = evaluation(outcome="Drifted", followUp="fix", followUpStatus="queued", followUpTaskId=follow)
+    resp = client.put(f"/candybars/{row.id}/profile", json={"evaluation": marked})
+    assert resp.status_code == 200
+    assert resp.json()["evaluation"]["followUpStatus"] == "queued" and resp.json()["evaluation"]["followUpTaskId"] == follow
 
 
 def test_profile_put_unknown_candybar_is_a_404(st: tuple[Rig, Store]) -> None:
@@ -325,7 +336,9 @@ def test_steward_request_queues_a_task_command_first(st: tuple[Rig, Store]) -> N
     assert set(task) == {
         "id", "candybarId", "action", "status", "model", "parentTaskId", "sessionId", "outcome",
         "summary", "reportKey", "invocationId", "error", "createdAt", "startedAt", "finishedAt",
+        "costUsd", "tokens",
     }
+    assert task["costUsd"] is None and task["tokens"] is None
     assert task["status"] == "queued" and task["model"] == "automaticai/auto/fast"
     assert task["candybarId"] == str(row.id) and task["action"] == "enrich"
     command, fact = r.sink.published
@@ -355,6 +368,20 @@ def test_a_second_active_task_is_a_409_with_its_id(st: tuple[Rig, Store]) -> Non
     assert resp.status_code == 409 and resp.json()["taskId"] == first["id"]
     # Another action is independent.
     assert client.post(f"/candybars/{row.id}/steward", json={"action": "enrich"}).status_code == 202
+
+
+def test_a_fix_waits_for_an_active_refactor(st: tuple[Rig, Store]) -> None:
+    r, store = st
+    row = r.add("alpha")
+    [refactor] = _seed(store, row.id, 1, status="running", action="refactor")
+    client = r.client()
+    resp = client.post(f"/candybars/{row.id}/steward", json={"action": "fix"})
+    assert resp.status_code == 409 and resp.json()["taskId"] == str(refactor.id)
+    assert "refactor" in resp.json()["detail"]
+    # Read-only actions are not held up by a mutating one.
+    assert client.post(f"/candybars/{row.id}/steward", json={"action": "evaluate"}).status_code == 202
+    refactor.status = "succeeded"
+    assert client.post(f"/candybars/{row.id}/steward", json={"action": "fix"}).status_code == 202
 
 
 def test_insert_race_is_a_409(st: tuple[Rig, Store]) -> None:
@@ -463,3 +490,40 @@ def test_patch_refusals(st: tuple[Rig, Store]) -> None:
     r.sink.fail = True
     resp = client.patch(f"/steward/tasks/{task.id}", json={"status": "failed", "error": "boom"})
     assert resp.status_code == 503 and task.status == "queued" and task.error is None
+
+
+def test_cancel_fails_an_active_task_with_its_fact_first(st: tuple[Rig, Store]) -> None:
+    r, store = st
+    row = r.add("alpha")
+    [task] = _seed(store, row.id, 1, status="running", action="fix")
+    task.session_id = "ses_live"
+    client = r.client()
+    resp = client.post(f"/steward/tasks/{task.id}/cancel")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "failed" and body["error"] == "cancelled by operator"
+    assert body["finishedAt"] is not None and body["sessionId"] == "ses_live"
+    [fact] = r.sink.published
+    assert fact.type == "bloodbank.cron.steward_task.failed" and fact.data.error == "cancelled by operator"
+    # A finished task cannot be cancelled; an unknown one is a 404.
+    assert client.post(f"/steward/tasks/{task.id}/cancel").status_code == 409
+    assert client.post(f"/steward/tasks/{uuid4()}/cancel").status_code == 404
+
+
+def test_cancel_bus_failure_changes_nothing(st: tuple[Rig, Store]) -> None:
+    r, store = st
+    row = r.add("alpha")
+    [task] = _seed(store, row.id, 1, status="queued")
+    r.sink.fail = True
+    assert r.client().post(f"/steward/tasks/{task.id}/cancel").status_code == 503
+    assert task.status == "queued" and task.error is None
+
+
+def test_patch_records_spend(st: tuple[Rig, Store]) -> None:
+    r, store = st
+    row = r.add("alpha")
+    [task] = _seed(store, row.id, 1, status="running")
+    tokens = {"input": 10, "output": 2, "reasoning": 0, "cache": {"read": 1, "write": 0}}
+    resp = r.client().patch(f"/steward/tasks/{task.id}", json={"costUsd": 0.5, "tokens": tokens})
+    assert resp.status_code == 200 and resp.json()["costUsd"] == 0.5 and resp.json()["tokens"] == tokens
+    assert r.client().patch(f"/steward/tasks/{task.id}", json={"costUsd": -1}).status_code == 422

@@ -323,15 +323,22 @@ In short:
   `bloodbank.cmd.cron.candybar.steward` command and the
   `bloodbank.cron.steward_task.queued` fact first, then stores the task; a
   second queued-or-running task of the same action is a 409 carrying the
-  active `taskId`, and an archived candybar cannot be fixed (409).
+  active `taskId`, a fix is a 409 while a fix or refactor is active, and an
+  archived candybar cannot be fixed (409). `POST /steward/tasks/{id}/cancel`
+  fails a queued or running task ("cancelled by operator").
 - **The steward role** (`candybar-steward.service` on the host, below) runs
-  each task through an OpenCode session in the job's own repo checkout and
-  applies the answer. Evaluate writes
-  `~/code/DeLoDocs/Reports/<NY date>/candybar-evaluate-<name>.{md,json}`,
+  each task through an OpenCode session in the job's own home (never this
+  repo just because the job's ledger entry lives here) and applies the
+  answer. Evaluate writes
+  `~/code/DeLoDocs/Reports/<NY date>/candybar-evaluate-<name>-<HHMM>-<task8>.{md,json}`,
   copies both to `delo/daily-reports/<date>/`, and runs the follow-up:
-  Suboptimal queues a `refactor`, Drifted a `fix`, Orphaned archives,
-  Nominal does nothing. A fix the agent reports repaired is proven by one
-  manual run, waited on (`outcome: fixed | not_fixed`).
+  Suboptimal queues a `refactor`, Drifted a `fix`, Orphaned archives (a
+  smoke, canary, watchdog, policy or backup candybar is only flagged),
+  Nominal does nothing; the evaluation records `followUpStatus`. A fix the
+  agent reports repaired, and an applied refactor, are proven by one manual
+  run, waited on (`fixed | not_fixed`, `done_proven | done_not_proven |
+  not_applied`); one that committed code queues an enrich to refresh the
+  overview.
 
 ### Noise collection (Story 5.5)
 
@@ -520,6 +527,7 @@ candybar pause|resume <name>                     # stop/restart scheduling (POST
 candybar archive|unarchive <name>                # archive (also pauses) / unarchive (stays paused)
 candybar steward enrich|fix|evaluate <name> [--wait]   # queue a steward task; --wait follows it
 candybar steward tasks [--active] [-c <name>]    # steward tasks, newest first
+candybar steward cancel <task-id>                # fail a queued/running task, interrupt its session
 candybar profile <name>                          # overview, project, latest evaluation
 candybar skip <name> [--at TIME | --today | --date YYYY-MM-DD]   # default: its next unskipped fire
 candybar edit <name> [--schedule ..] [--timezone ..] [--name ..] [--description ..] [--tags a,b] [--noise/--no-noise]

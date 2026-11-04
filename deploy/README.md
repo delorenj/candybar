@@ -120,16 +120,26 @@ nothing until the registry's alembic head matches its checkout).
   maintains; the URL moves when the service restarts) on every session.
   Models: `automaticai/auto` for evaluate, `automaticai/auto/fast` for the
   rest. Budgets: enrich 15 min, evaluate 20 min, fix and refactor 30 min,
-  then the session is interrupted and the task fails.
+  then the session is interrupted and the task fails. Enrich and evaluate
+  sessions deny the edit/write/patch tools (OpenCode `permissions`).
 - **Jev:** enrich's project classification uses the steward's own LiteLLM
   virtual key on the jev-litellm ingress (alias `candybar-steward`, $1/day,
-  120 rpm; vault item `icxowfdsbslgo2yyqfxuxhqaym`). A ledger repo checkout
-  that is a pjangler project wins without a Jev call.
-- **Reports:** evaluate writes `~/code/DeLoDocs/Reports/<date>/` and `mc cp`s
-  to `delo/daily-reports/<date>/` (the unit's PATH has `/usr/local/bin/mc`).
+  120 rpm; vault item `icxowfdsbslgo2yyqfxuxhqaym`). The job's own checkout
+  (the ledger repo's, or the runner's home when the ledger entry lives in this
+  repo) that is a pjangler project wins without a Jev call.
+- **Reports:** evaluate writes
+  `~/code/DeLoDocs/Reports/<date>/candybar-evaluate-<name>-<HHMM>-<task8>.{md,json}`
+  and `mc cp`s both to `delo/daily-reports/<date>/` (the unit's PATH has
+  `/usr/local/bin/mc`).
 - **Failures** never wedge the consumer: any exception fails the task with an
-  `error` and acks. A redelivered command whose task is `running` (the steward
-  died mid-task) is failed as abandoned, never re-run.
+  `error`; the command is acked once that is recorded (nak'd and retried when
+  the write fails). A redelivered command whose task is `running` (the steward
+  died mid-task) is failed as abandoned, never re-run. On startup the steward
+  fails every task left `running` and every `queued` one older than the
+  command stream's max_age (24 h), and logs it
+  (`steward: startup reaper failed N task(s)`).
+- **Cancel:** `candybar steward cancel <task-id>` fails a queued or running
+  task ("cancelled by operator") and interrupts its OpenCode session.
 - **Logs:** `journalctl --user -u candybar-steward -f`; the task list is
   `candybar steward tasks --active`.
 

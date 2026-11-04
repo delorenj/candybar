@@ -10,10 +10,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+)
 
 from ..events.envelope import StewardTaskData
 
@@ -24,6 +31,18 @@ REQUESTABLE_ACTIONS = ("enrich", "fix", "evaluate")
 STATUSES = ("queued", "running", "succeeded", "failed")
 ACTIVE_STATUSES = ("queued", "running")
 TERMINAL_STATUSES = ("succeeded", "failed")
+# Actions that change a job (commit, push, `candybar edit`): one at a time per
+# candybar (the API's 409) and per working directory (the worker's lock).
+MUTATING_ACTIONS = ("fix", "refactor")
+# Sessions that must not edit files (OpenCode permission rules + the prompt).
+READ_ONLY_ACTIONS = ("enrich", "evaluate")
+# The error of a task the operator cancelled (`candybar steward cancel`).
+CANCELLED = "cancelled by operator"
+# What happened to an evaluation's follow-up (stored on the evaluation).
+FOLLOW_UP_STATUSES = ("queued", "done", "flagged", "failed")
+# Task outcomes: fix fixed | not_fixed; refactor done_proven | done_not_proven | not_applied.
+FIX_OUTCOMES = ("fixed", "not_fixed")
+REFACTOR_OUTCOMES = ("done_proven", "done_not_proven", "not_applied")
 
 MODEL_AUTO = "automaticai/auto"
 MODEL_FAST = "automaticai/auto/fast"
@@ -59,25 +78,29 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# An array item: never empty or blank (an empty array is fine).
+Item = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
 class OverviewSource(_Strict):
     repo: str | None
-    paths: list[str]
+    paths: list[Item]
     runner: Literal["exec", "systemd", "hermes", "n8n"]
 
 
 class Overview(_Strict):
-    """The enrich template v1 overview: every field required, arrays may be empty."""
+    """The enrich overview: every field required, arrays may be empty, items never blank."""
 
     summary: str = Field(min_length=1, max_length=SUMMARY_MAX)
     purpose: str = Field(min_length=1)
-    behavior: list[str]
-    inputs: list[str]
-    outputs: list[str]
-    sideEffects: list[str]
-    dependencies: list[str]
-    failureModes: list[str]
-    verification: list[str]
-    runbook: list[str]
+    behavior: list[Item]
+    inputs: list[Item]
+    outputs: list[Item]
+    sideEffects: list[Item]
+    dependencies: list[Item]
+    failureModes: list[Item]
+    verification: list[Item]
+    runbook: list[Item]
     source: OverviewSource
     cadenceNote: str = Field(min_length=1)
 
@@ -117,6 +140,11 @@ class Evaluation(EvaluationVerdict):
     reportKey: str = Field(min_length=1)
     evaluatedAt: AwareDatetime
     taskId: UUID
+    # What became of the follow-up: queued (a task is queued or running),
+    # done, flagged (not acted on automatically: the operator decides) or
+    # failed; null for followUp "none". The task, when one ran.
+    followUpStatus: Literal["queued", "done", "flagged", "failed"] | None = None
+    followUpTaskId: UUID | None = None
 
     @field_validator("evaluatedAt")
     @classmethod
@@ -156,6 +184,8 @@ TASK_COLUMNS = {
     "error": "error",
     "startedAt": "started_at",
     "finishedAt": "finished_at",
+    "costUsd": "cost_usd",
+    "tokens": "tokens",
 }
 
 
@@ -244,6 +274,11 @@ def task_json(row: Any) -> dict[str, Any]:
         "createdAt": _iso(row.created_at),
         "startedAt": _iso(row.started_at),
         "finishedAt": _iso(row.finished_at),
+        # The OpenCode session's spend (cost as the provider reports it; the
+        # gateway may report 0) and token usage {input, output, reasoning,
+        # cache: {read, write}}; null until a session ran.
+        "costUsd": getattr(row, "cost_usd", None),
+        "tokens": getattr(row, "tokens", None),
     }
 
 
@@ -271,7 +306,8 @@ def task_fact_data(row: Any, name: str, overrides: dict[str, Any] | None = None)
         "finished_at": row.finished_at,
     }
     for key, value in (overrides or {}).items():
-        fields[key] = value
+        if key in fields:  # REST-only columns (cost_usd, tokens) stay off the bus
+            fields[key] = value
     return StewardTaskData(name=name, **fields)
 
 
@@ -303,10 +339,16 @@ def stamp_transition(
 __all__ = [
     "ACTIONS",
     "ACTIVE_STATUSES",
+    "CANCELLED",
+    "FIX_OUTCOMES",
     "FOLLOW_UP_FOR_OUTCOME",
+    "FOLLOW_UP_STATUSES",
     "MODEL_FOR_ACTION",
+    "MUTATING_ACTIONS",
     "OUTCOMES",
     "PROFILE_COLUMNS",
+    "READ_ONLY_ACTIONS",
+    "REFACTOR_OUTCOMES",
     "REQUESTABLE_ACTIONS",
     "STATUSES",
     "TASK_COLUMNS",

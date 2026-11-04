@@ -190,6 +190,9 @@ class StewardTask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The OpenCode session's spend and token usage (migration 0009).
+    cost_usd: Mapped[float | None] = mapped_column(Double, nullable=True)
+    tokens: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
 
     __table_args__ = (
         Index("steward_tasks_candybar_created", "candybar_id", "created_at"),

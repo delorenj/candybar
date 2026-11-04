@@ -160,3 +160,26 @@ def test_profile_prints_overview_project_and_evaluation(listing: FakeApi) -> Non
     assert "project: Docker (docker, ledger, 1.00)" in out.output
     assert "Nightly restic snapshot" in out.output and "evaluation: Suboptimal" in out.output
     assert "follow-up: refactor" in out.output
+
+
+def test_steward_cancel_marks_failed_and_interrupts_the_session(fake: FakeApi, monkeypatch: pytest.MonkeyPatch) -> None:
+    import candybar.steward.opencode as oc
+
+    interrupted: list[str] = []
+    monkeypatch.setattr(oc.Endpoint, "discover", classmethod(lambda cls: oc.Endpoint("http://opencode.test", None)))
+    monkeypatch.setattr(oc.OpenCodeClient, "interrupt", lambda self, endpoint, session: interrupted.append(session))
+    cancelled = task("failed", action="fix", sessionId="ses_live", error="cancelled by operator")
+    fake.on("POST", f"/steward/tasks/{TASK_ID}/cancel", cancelled)
+    out = invoke_cli(["steward", "cancel", TASK_ID])
+    assert out.exit_code == 0, out.output
+    assert interrupted == ["ses_live"] and "cancelled by operator" in out.output
+    assert "interrupted OpenCode session ses_live" in out.output
+
+
+def test_steward_cancel_of_a_finished_task_fails(fake: FakeApi) -> None:
+    body = json.dumps({"type": "about:blank", "title": "Steward task already finished", "status": 409,
+                       "detail": f"task {TASK_ID} is already succeeded"})
+    fake.on("POST", f"/steward/tasks/{TASK_ID}/cancel", urllib.error.HTTPError(
+        url="http://x", code=409, msg="conflict", hdrs=None, fp=io.BytesIO(body.encode())))
+    out = invoke_cli(["steward", "cancel", TASK_ID])
+    assert out.exit_code == 1 and "already succeeded" in out.output

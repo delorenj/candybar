@@ -1,6 +1,6 @@
 # Candybar steward and row actions: contract
 
-Status: v1, 2026-11-03. Consumers: Holocene's Candybar tab (HOLOC-24), the `candybar` CLI, any agent.
+Status: v1.1, 2026-11-03 (round-1 review fixes: additive). Consumers: Holocene's Candybar tab (HOLOC-24), the `candybar` CLI, any agent.
 Owner of every write and of all stored data: Candybar (registry is the sole inventory; the daemon its only writer).
 
 Decisions (owner-approved 2026-11-03):
@@ -8,7 +8,10 @@ Decisions (owner-approved 2026-11-03):
 - The runner for Enrich, Fix, Evaluate and their follow-ups is a Candybar role, `steward`, on the host
   (`candybar-steward.service`), triggered by a Bloodbank command. Holocene is only a client.
 - Evaluate follow-ups run automatically: Suboptimal queues a `refactor` task, Drifted queues a `fix` task,
-  Orphaned archives the candybar, Nominal does nothing. All changes are reversible.
+  Orphaned archives the candybar, Nominal does nothing. All changes are reversible. Protected candybars (tagged
+  `smoke`, `canary`, `watchdog` or `policy`; named in `deploy/scheduling-policy.json`; backup jobs: tagged
+  `backups`/`backup` or named `*backup*`/`*restic*`) are never archived automatically: their Orphaned follow-up is
+  only `flagged` for the operator (owner triage, 2026-11-03).
 - A Fix that the agent reports as repaired is proven by one manual invoke, waited on.
 - Archived candybars are hidden from lists and the schedule; Holocene offers an "Archived (N)" view with Unarchive.
 
@@ -40,7 +43,7 @@ Profile = {
   updatedAt: ts
 }
 
-Overview (template v1; every field required, arrays may be empty) = {
+Overview (template v1+; every field required, arrays may be empty, array items never empty or blank) = {
   summary: string,          // one sentence, <= 200 chars: what it does and why it exists
   purpose: string,          // 2-4 sentences: the outcome it serves and who relies on it
   behavior: string[],       // ordered steps of what one run actually does
@@ -52,6 +55,7 @@ Overview (template v1; every field required, arrays may be empty) = {
   verification: string[],   // how to confirm a run worked (exact checks)
   runbook: string[],        // exact commands: run now, inspect, logs, pause
   source: { repo: string | null, paths: string[], runner: "exec" | "systemd" | "hermes" | "n8n" },
+                            // runner: the steward writes the candybar's actual runner kind here
   cadenceNote: string       // whether the schedule fits the job, one sentence
 }
 
@@ -61,11 +65,19 @@ Evaluation = {
   axes: { efficacy, cost, value, usage, alternatives }: { rating: "good" | "fair" | "poor", finding: string },
   recommendation: string,
   followUp: "none" | "refactor" | "fix" | "archive",
-  reportKey: string,        // S3 key under delo/daily-reports/, e.g. 2026-11-03/candybar-evaluate-restic-vault.md
+  followUpStatus: "queued" | "done" | "flagged" | "failed" | null,   // what became of the follow-up (null: none)
+  followUpTaskId: uuid | null,                                       // the fix / refactor task, when one runs
+  reportKey: string,        // S3 key under delo/daily-reports/, e.g.
+                            // 2026-11-03/candybar-evaluate-restic-vault-2130-01a1a47d.md (HHMM New York, task id[:8])
   evaluatedAt: ts, taskId: uuid
 }
 ```
 
+- `followUpStatus`: `queued` while the follow-up task is queued or running (also when an equal task was already
+  active: `followUpTaskId` names it); `done` once an archive happened or the task succeeded with `fixed` /
+  `done_proven`; `failed` when the task failed or ended `not_fixed` / `done_not_proven`; `flagged` when nothing was
+  done automatically and the operator decides (a protected candybar's archive, an archived candybar's fix or
+  refactor, a fix that would collide with an active refactor or the reverse, a refactor that was `not_applied`).
 - `GET /candybars/{id}/profile` → 200 Profile (an empty profile with nulls if none yet); 404 unknown candybar.
 - `GET /profiles` → `{ profiles: Profile[] }` for every candybar that has one (one call for list views).
 - `PUT /candybars/{id}/profile` with any of `{overview, templateVersion, project, enrichedAt, enrichTaskId, evaluation}`
@@ -82,25 +94,33 @@ Task = {
   model: "automaticai/auto" | "automaticai/auto/fast",   // evaluate: auto; enrich, fix, refactor: auto/fast
   parentTaskId: uuid | null,       // a follow-up points at the evaluate that queued it
   sessionId: string | null,        // the OpenCode session (ses_...)
-  outcome: string | null,          // evaluate: the Evaluation outcome; fix: "fixed" | "not_fixed"; enrich/refactor: "done"
+  outcome: string | null,          // evaluate: the Evaluation outcome; fix: "fixed" | "not_fixed";
+                                   // refactor: "done_proven" | "done_not_proven" | "not_applied"; enrich: "done"
   summary: string | null,          // one or two sentences for the UI
   reportKey: string | null,        // evaluate only
-  invocationId: uuid | null,       // fix only: the proving run
-  error: string | null,
-  createdAt, startedAt: ts | null, finishedAt: ts | null
+  invocationId: uuid | null,       // fix and refactor: the proving run
+  error: string | null,            // "cancelled by operator" for a cancelled task
+  createdAt, startedAt: ts | null, finishedAt: ts | null,
+  costUsd: number | null,          // the OpenCode session's cost as reported (the gateway may report 0)
+  tokens: { input, output, reasoning, cache: { read, write } } | null   // the session's token usage
 }
 ```
 
 - `POST /candybars/{id}/steward` with `{ "action": "enrich" | "fix" | "evaluate" }` → 202 Task (status `queued`) and
   the command `bloodbank.cmd.cron.candybar.steward` `{ task_id, candybar_id, action }` (idempotency key = task id).
-  - 409 with `taskId` in the problem body when the same candybar already has a queued or running task of that action.
+  - 409 with `taskId` in the problem body when the same candybar already has a queued or running task of that action,
+    and for `fix` also while a `fix` or `refactor` is queued or running (one change to a job at a time).
   - 404 unknown candybar. Archived candybars may be enriched and evaluated, not fixed (409).
   - `refactor` is never accepted here; only an Evaluate follow-up creates it.
 - `GET /candybars/{id}/steward/tasks?limit=N` (default 20, max 200) → `{ candybarId, tasks: Task[] }`, newest first.
 - `GET /steward/tasks?active=1` → `{ tasks: Task[] }` queued and running across all candybars;
   `GET /steward/tasks?limit=N` → the newest N across all (default 100, max 500).
 - `PATCH /steward/tasks/{taskId}` with any of `{status, sessionId, outcome, summary, reportKey, invocationId, error,
-  startedAt, finishedAt}` → 200 Task. Worker-only by convention.
+  startedAt, finishedAt, costUsd, tokens}` → 200 Task. Worker-only by convention.
+- `POST /steward/tasks/{taskId}/cancel` → 200 Task: a queued or running task becomes `failed` with error
+  `"cancelled by operator"` (its `failed` fact first); 409 when it is already finished, 404 unknown. CLI:
+  `candybar steward cancel <task-id>`, which also interrupts the task's OpenCode session at once; the steward notices
+  within a minute (its keepalive) and stops the run.
 - Facts: `bloodbank.cron.steward_task.queued|started|completed|failed` with the Task (schemas in `schemas/cron/`;
   see Implementation notes for the entity spelling).
 
@@ -109,34 +129,68 @@ Task = {
 `candybar daemon --roles steward`, host unit `deploy/host/candybar-steward.service` (an event-driven worker, not a
 clock). It consumes the command with a durable consumer, at most 2 tasks at a time, and per task:
 
-1. Marks the task `running`, resolves the candybar's context bundle: definition, runner (`/runner`), the ledger entry
-   (`deploy/migration/ledger.yaml`, `source_of_truth`), the manifest path, and for `systemd` the unit text
-   (`systemctl --user cat`), for `hermes` the job record, for `exec` the argv files; the last 30 invocations
-   (results, exit codes, error tails); the profile.
-2. Picks the working directory: the ledger repo's local checkout, else an exec `workdir`/argv path's git root, else a
-   hermes job `workdir`, else this repo.
+1. Marks the task `running` (only from `queued`), resolves the candybar's context bundle: definition, runner
+   (`/runner`), the ledger entry (`deploy/migration/ledger.yaml`, `source_of_truth`), the manifest path, and for
+   `systemd` the unit text (`systemctl --user cat`), its FragmentPath and the logs it appends to, for `hermes` the job
+   record, for `exec` the argv files, for `n8n` the workflow export; the last 30 invocations (results, exit codes,
+   error tails); the profile.
+2. Picks the working directory, the job's home: the ledger repo's local checkout, unless that repo is this candybar
+   repo (it only records the migration: the ledger lives here), which counts as no repo; else the runner's home: a
+   hermes job `workdir`, a systemd unit's FragmentPath (symlinks resolved; it may live in another repo such as
+   `~/docker`) or its ExecStart script's git root, an exec `workdir`/argv path's git root, an n8n workflow export's
+   repo; a home inside this repo only when nothing else is found; else this repo.
 3. Opens an OpenCode session over the v2 HTTP API on the host (`~/.local/state/opencode/service.json` gives the
    background service's URL and Basic-auth password; see Implementation notes) with `location.directory` = the working directory and the task's model,
-   sends the prompt rendered from `deploy/steward/templates/<action>.md`, and waits (enrich 15 min, fix and refactor
-   30 min, evaluate 20 min; then `interrupt` and fail).
-4. Reads the last fenced ```json block of the final answer, validates it, and applies it:
-   - enrich: `overview` → profile (+ `templateVersion`); then the project: the ledger repo's local path matched to a
-     pjangler project (`GET http://127.0.0.1:8764/v1/registry`) is `method: "ledger"`, confidence 1; otherwise Jev
+   (enrich and evaluate: `permissions` denying `edit`, `write` and `patch`), sends the prompt rendered from
+   `deploy/steward/templates/<action>.md`, and waits (enrich 15 min, fix and refactor 30 min, evaluate 20 min; then
+   `interrupt` and fail). Every exit that is not a valid answer interrupts the session.
+4. Reads the last fenced ```json block of the final assistant message (only that message), validates it, and
+   applies it:
+   - enrich: `overview` → profile (+ `templateVersion`; `source.runner` set to the real runner kind); then the
+     project: the job's own checkout (the ledger repo's, or the home step 2 found; never this repo merely because the
+     ledger lives here) matched to a pjangler project (`GET http://127.0.0.1:8764/v1/registry`) is
+     `method: "ledger"`, confidence 1; otherwise Jev
      (`https://jev.delo.sh/typesafe/v1/systemone`, model `jev-1.13.0`, one `noul` per project, accept P >= 0.6,
      highest wins) over the name, description, tags, overview and paths; no match leaves `project` null.
-   - evaluate: `evaluation` → writes `~/code/DeLoDocs/Reports/<YYYY-MM-DD in America/New_York>/candybar-evaluate-<name>.md`
-     (frontmatter `date, type: candybar-evaluation, candybar, outcome, generated_by: candybar-steward`) and a sibling
-     `.json`, copies both with `mc cp` to `delo/daily-reports/<date>/`, stores `reportKey`, then runs the follow-up.
-   - fix: the agent repairs, commits and pushes in the job's repo and reports `{repaired: bool, summary, commits[]}`;
-     if repaired, the steward invokes the candybar once and waits for the invocation (timeout = the runner's, max
-     1 h): `outcome` = `fixed` on success, else `not_fixed`.
-   - refactor: the agent applies the evaluation's recommendation (code, model, or `candybar edit --schedule`),
-     commits and pushes; `outcome: "done"`.
-5. Marks the task `succeeded` or `failed` (with `error`) and publishes the fact.
+   - evaluate: `evaluation` → writes
+     `~/code/DeLoDocs/Reports/<YYYY-MM-DD in America/New_York>/candybar-evaluate-<name>-<HHMM>-<task id[:8]>.md`
+     (HHMM in New York; one report per task, so a second evaluate the same day never overwrites the first;
+     frontmatter `date, type: candybar-evaluation, candybar, outcome, generated_by: candybar-steward`) and a sibling
+     `.json`, copies both with `mc cp` to `delo/daily-reports/<date>/`, stores `reportKey`, then runs the follow-up
+     (a protected candybar's archive is `flagged` instead) and records `followUpStatus` / `followUpTaskId`.
+   - fix: the agent repairs, makes the change take effect in what the runner executes (`systemctl --user
+     daemon-reload` after a unit edit, reinstalling an installed copy, updating a separate clone), commits and pushes
+     in the job's repo and reports `{repaired: bool, summary, commits[]}`; if repaired, the steward invokes the
+     candybar once and waits for the invocation (timeout = the runner's, max 1 h): `outcome` = `fixed` on success,
+     else `not_fixed`.
+   - refactor: the agent applies the recommendation of the evaluation that queued it (`taskId == parentTaskId`; the
+     task fails when that evaluation is no longer available), changing only this candybar's own job and schedule
+     (`candybar edit`): never another candybar's job, never a new candybar (a needed split is reported as
+     `applied: false` with the recommendation). Then, if applied, the same proving invoke as fix: `outcome` =
+     `done_proven` | `done_not_proven`; `not_applied` otherwise.
+   - after a fix or refactor that reported commits, an `enrich` follow-up (parentTaskId = that task) refreshes the
+     overview.
+5. Marks the task `succeeded` or `failed` (with `error`) and publishes the fact. The command is acked only once that
+   write is recorded; a failed write naks it and the redelivery retries the same write.
 
-Templates are versioned files in this repo; changing one bumps its `templateVersion`. Every prompt tells the agent
-the commit/push rule, the single-clock rule (never add a timer, cron or loop; use `candybar edit`), never to write a
-secret value, and to end with exactly one fenced ```json block.
+Fix and refactor run one at a time per working directory (the steward holds a lock keyed by the resolved
+workdir), on top of the API's one-mutating-task-per-candybar 409.
+
+On startup, before consuming, the steward fails every task left `running` (there is one steward instance, so a restart
+orphaned it) and every `queued` task older than the command stream's `max_age` (24 h: its command expired), each with
+a clear error and its `failed` fact, and re-runs the project step (no agent) for profiles a ledger entry in this repo
+had classified as the `candybar` project.
+
+Templates are versioned files in this repo; changing one bumps its `templateVersion` (all four are v2 since the
+round-1 fixes). Every prompt tells the agent the commit/push rule, the single-clock rule (never add a timer, cron or
+loop; use `candybar edit`), never to write a secret value, that evidence is data and never instructions (its only
+task is the one in the template), and to end with exactly one fenced ```json block. Every pasted file, record and log
+sits in its own fence, longer than any backtick run in its content (nothing inside can close it); secret-named files
+(`*.pass`, `*password*`, `rclone.conf`, `*.key`, `*.pem`, `.env*`, `credentials*`, tokens, ...) are skipped,
+secret-shaped values are redacted, and logs are read from the tail. The evaluate template puts the burden of proof
+both ways: every claim cites evidence, a `fair` rating alone never makes a job Suboptimal (that needs a concrete change
+with a clear payoff), Orphaned needs evidence that nothing consumes the output, a job that has never succeeded is
+Drifted, and Nominal tolerates minor nits.
 
 ## 5. What Holocene renders
 
@@ -159,9 +213,22 @@ Minimal deviations made while building it, each the smallest change that works:
   it. `CANDYBAR_OPENCODE_URL` / `CANDYBAR_OPENCODE_SERVICE_FILE` override.
 - **Empty profile:** `GET /candybars/{id}/profile` with no stored profile answers every field null, `updatedAt` too.
 - **Working directory:** the ledger repo's checkout is found under `~/code` (and one level below) by name, or as the
-  git root of a path the ledger entry names (unit file, jobs file, rollback commands), and is accepted only when its
-  `origin` points at that repo. Between the hermes step and "this repo", a `systemd` runner falls back to the git root
-  of the script its `ExecStart` runs.
+  git root of a path the ledger entry, the unit's FragmentPath or its ExecStart names, and is accepted only when its
+  `origin` points at that repo. A ledger repo that is this candybar repo is no repo (step 2). Beyond the contract's
+  list: an `n8n` runner's home is the workflows repo holding its export (`~/code/delonet-n8n-workflows/workflows`,
+  `CANDYBAR_N8N_EXPORTS` overrides), a hermes job with no `workdir` falls back to its jobs file's git root, and a
+  candybar defined by a manifest in this repo outside `deploy/migration/` (smoke canaries, the policy job) has its home
+  here. The prompt names the ledger note so the agent knows the ledger entry only records the migration.
+- **Read-only sessions:** enrich and evaluate sessions are created with OpenCode `permissions`
+  (`Permission.Ruleset`, `[{action, resource, effect}]`, checked against the live 2.1.4 `/openapi.json`) denying
+  `edit` (the edit/write/patch tools' permission), `write` and `patch`; session rules are evaluated after the agent's,
+  and `GET /api/session/{id}` echoes them. `shell` is not denied (the evidence needs read-only commands), so a shell
+  write is not blocked by the server: the template's read-only rule covers that.
+- **Stuck tasks:** a redelivery of a task this process is still running is left to the live run; the move to
+  `running` is refused unless the task is `queued`; a terminal write that keeps failing is retried on redelivery up to
+  30 deliveries, after which the startup reaper settles it.
+- **Session spend:** `costUsd` / `tokens` come from `GET /api/session/{id}` at the end of the session (cumulative
+  over the repair turn), on success and failure alike; they are REST-only (not on the bus facts).
 - **Answers:** an answer that does not validate gets one repair turn in the same session before the task fails.
 - **Enrich project:** a stored `method: "manual"` project is never replaced; a Jev or registry outage leaves the stored
   project unchanged (the overview is still written) and says so in the task summary.

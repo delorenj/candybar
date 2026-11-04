@@ -10,14 +10,27 @@ override; `~/.config/opencode/service.json` is a password-only fallback.
 
 Routes (verified against the live server's `/openapi.json`, OpenCode 2.1.4):
 
-- `POST /api/session` `{title, model: {providerID, id}, location: {directory}}`
+- `POST /api/session` `{title, model: {providerID, id}, location: {directory},
+  permissions?}`; `permissions` is a `Permission.Ruleset`, a list of
+  `{action, resource, effect: allow|deny|ask}` evaluated after the agent's own
+  rules (the session's rules win). Read-only sessions deny `edit` (the
+  edit/write/patch tools' permission; `write` and `patch` are denied too in
+  case a build names them separately). `shell` stays allowed (read-only
+  commands are the evidence), so read-only is enforced for file tools only
+  and the prompt rule covers the rest. `GET /api/session/{id}` echoes the
+  stored `permissions`, `cost` and `tokens`.
 - `POST /api/session/{id}/prompt` `{text}` (returns at once; the turn runs)
 - `POST /api/experimental/session/{id}/wait` (204 once idle; we bound each
   call and re-check, so a dropped long poll never loses the outcome)
 - `GET /api/session/{id}/message?order=desc&limit=N`: the `idle` message
   carries the turn's `outcome` (`succeeded|failed|interrupted`), assistant
   messages carry `content[].text`
-- `POST /api/session/{id}/interrupt` on timeout
+- `POST /api/session/{id}/interrupt` on every non-success exit (timeout,
+  failure, cancellation)
+
+A transient error reading messages while waiting is retried (a bounded
+number of consecutive failures); the final read of a finished turn is
+retried before the task fails.
 
 Blocking stdlib HTTP, run off the event loop by the async wrappers.
 """
@@ -49,6 +62,14 @@ PROVIDER = "automaticai"
 WAIT_SLICE_S = 30.0
 REQUEST_TIMEOUT_S = 30.0
 MESSAGE_PAGE = 50
+# Consecutive failed idle checks tolerated while waiting (transient GET errors).
+IDLE_READ_RETRIES = 5
+# Attempts at the final message read once the turn is idle.
+FINAL_READ_ATTEMPTS = 4
+# The edit/write/patch tools: denied in read-only sessions.
+READ_ONLY_PERMISSIONS: tuple[dict[str, str], ...] = tuple(
+    {"action": action, "resource": "*", "effect": "deny"} for action in ("edit", "write", "patch")
+)
 
 
 class OpenCodeError(RuntimeError):
@@ -135,6 +156,7 @@ class TurnResult:
     # Assistant texts written during the turn, newest first (empty ones dropped).
     answers: list[str]
     cost: float | None = None
+    tokens: dict[str, Any] | None = None
 
 
 class OpenCodeClient:
@@ -153,21 +175,21 @@ class OpenCodeClient:
 
     # --- blocking primitives -------------------------------------------------
 
-    def create_session(self, *, title: str, model: str, directory: str) -> tuple[Endpoint, str]:
+    def create_session(
+        self, *, title: str, model: str, directory: str, permissions: list[dict[str, str]] | None = None
+    ) -> tuple[Endpoint, str]:
         endpoint = self._endpoint_factory()
         provider, _, model_id = model.partition("/")
         if not model_id:
             raise OpenCodeError(f"model {model!r} is not <provider>/<id>")
-        _, body = _call(
-            endpoint,
-            "POST",
-            "/api/session",
-            {
-                "title": title,
-                "model": {"providerID": provider, "id": model_id},
-                "location": {"directory": directory},
-            },
-        )
+        request: dict[str, Any] = {
+            "title": title,
+            "model": {"providerID": provider, "id": model_id},
+            "location": {"directory": directory},
+        }
+        if permissions:
+            request["permissions"] = [dict(rule) for rule in permissions]
+        _, body = _call(endpoint, "POST", "/api/session", request)
         session_id = (body or {}).get("data", {}).get("id")
         if not isinstance(session_id, str) or not session_id.startswith("ses"):
             raise OpenCodeError(f"OpenCode created no session: {str(body)[:200]}")
@@ -190,13 +212,27 @@ class OpenCodeClient:
         except OpenCodeError as exc:
             log.warning("could not interrupt %s: %s", session_id, exc)
 
-    def session_cost(self, endpoint: Endpoint, session_id: str) -> float | None:
+    def session_info(self, endpoint: Endpoint, session_id: str) -> dict[str, Any]:
+        """The session record (`cost`, `tokens`, `permissions`, ...), or {} when unreadable."""
         try:
             _, body = _call(endpoint, "GET", f"/api/session/{session_id}")
         except OpenCodeError:
-            return None
-        cost = ((body or {}).get("data") or {}).get("cost")
-        return float(cost) if isinstance(cost, (int, float)) else None
+            return {}
+        data = (body or {}).get("data")
+        return data if isinstance(data, dict) else {}
+
+    def usage(self, endpoint: Endpoint, session_id: str) -> tuple[float | None, dict[str, Any] | None]:
+        """The session's cumulative (cost, tokens), each None when not reported."""
+        info = self.session_info(endpoint, session_id)
+        cost = info.get("cost")
+        tokens = info.get("tokens")
+        return (
+            float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) else None,
+            tokens if isinstance(tokens, dict) else None,
+        )
+
+    def session_cost(self, endpoint: Endpoint, session_id: str) -> float | None:
+        return self.usage(endpoint, session_id)[0]
 
     def _idle_since(self, endpoint: Endpoint, session_id: str, floor_ms: float) -> dict[str, Any] | None:
         for message in self.messages(endpoint, session_id, limit=5):
@@ -210,8 +246,22 @@ class OpenCodeClient:
     ) -> TurnResult:
         """Block until the turn that started at `floor_ms` is idle, or interrupt at the deadline."""
         deadline = self._clock() + timeout_s
+        misses = 0
         while True:
-            idle = self._idle_since(endpoint, session_id, floor_ms)
+            try:
+                idle = self._idle_since(endpoint, session_id, floor_ms)
+                misses = 0
+            except OpenCodeError as exc:
+                # A transient read error says nothing about the turn: retry a
+                # bounded number of times in a row, then give up (the caller
+                # interrupts the session).
+                misses += 1
+                if misses > IDLE_READ_RETRIES:
+                    raise OpenCodeError(
+                        f"OpenCode session {session_id}: {misses} reads in a row failed while waiting ({exc})"
+                    ) from exc
+                log.warning("reading %s while waiting failed (%d/%d): %s", session_id, misses, IDLE_READ_RETRIES, exc)
+                idle = None
             if idle is not None:
                 break
             remaining = deadline - self._clock()
@@ -242,8 +292,9 @@ class OpenCodeClient:
         if outcome != "succeeded":
             error = idle.get("error")
             raise OpenCodeError(f"OpenCode turn {outcome}: {json.dumps(error)[:300] if error else 'no detail'}")
+        messages = self._final_messages(endpoint, session_id)
         answers = []
-        for message in self.messages(endpoint, session_id):
+        for message in messages:
             created = (message.get("time") or {}).get("created") or 0
             if created < floor_ms:
                 break
@@ -251,12 +302,23 @@ class OpenCodeClient:
                 text = _texts(message)
                 if text:
                     answers.append(text)
-        return TurnResult(
-            session_id=session_id,
-            outcome=outcome,
-            answers=answers,
-            cost=self.session_cost(endpoint, session_id),
-        )
+        cost, tokens = self.usage(endpoint, session_id)
+        return TurnResult(session_id=session_id, outcome=outcome, answers=answers, cost=cost, tokens=tokens)
+
+    def _final_messages(self, endpoint: Endpoint, session_id: str) -> list[dict[str, Any]]:
+        """The finished turn's messages: the work is done, so a failed read is retried first."""
+        for attempt in range(1, FINAL_READ_ATTEMPTS + 1):
+            try:
+                return self.messages(endpoint, session_id)
+            except OpenCodeError as exc:
+                if attempt == FINAL_READ_ATTEMPTS:
+                    raise OpenCodeError(
+                        f"OpenCode session {session_id} finished but its answer could not be read "
+                        f"after {attempt} attempts: {exc}"
+                    ) from exc
+                log.warning("reading the answer of %s failed (%d/%d): %s", session_id, attempt, FINAL_READ_ATTEMPTS, exc)
+                self._pause(float(2 ** (attempt - 1)))
+        return []
 
     def _pause(self, seconds: float) -> None:
         # A bounded backoff inside one blocking call, not a schedule.
@@ -265,8 +327,12 @@ class OpenCodeClient:
 
     # --- async wrappers ------------------------------------------------------
 
-    async def start(self, *, title: str, model: str, directory: str) -> tuple[Endpoint, str]:
-        return await asyncio.to_thread(self.create_session, title=title, model=model, directory=directory)
+    async def start(
+        self, *, title: str, model: str, directory: str, permissions: list[dict[str, str]] | None = None
+    ) -> tuple[Endpoint, str]:
+        return await asyncio.to_thread(
+            self.create_session, title=title, model=model, directory=directory, permissions=permissions
+        )
 
     async def turn(self, endpoint: Endpoint, session_id: str, text: str, timeout_s: float) -> TurnResult:
         floor = await asyncio.to_thread(self.prompt, endpoint, session_id, text)
@@ -276,6 +342,9 @@ class OpenCodeClient:
 
     async def stop(self, endpoint: Endpoint, session_id: str) -> None:
         await asyncio.to_thread(self.interrupt, endpoint, session_id)
+
+    async def spend(self, endpoint: Endpoint, session_id: str) -> tuple[float | None, dict[str, Any] | None]:
+        return await asyncio.to_thread(self.usage, endpoint, session_id)
 
 
 SessionCallback = Callable[[str], Awaitable[None]]
