@@ -200,33 +200,50 @@ left (success green, fail red, running neutral).
 How Holocene uses this contract (holocene `apps/api/src/candybar.ts`, `apps/web/app/candybar/`; HOLOC-24, after its
 round-1 review). It only reads and asks; every rule above stays Candybar's:
 
-- **Reads:** one `GET /profiles` and one `GET /steward/tasks?limit=200` per list refresh (10 s cache). When either
-  fails, the steward buttons are off with that reason, and "By project" puts the rows under "Unknown (profiles
-  unavailable)", never "Unclassified".
+- **Reads:** one `GET /profiles` and one `GET /steward/tasks?limit=200` per list refresh (10 s cache). A read that
+  fails for a transient reason (a timeout, a 5xx) does not switch the steward buttons off: Holocene keeps the last good
+  profiles and tasks, marks them stale with their age ("Profiles and steward tasks are 40s old"), and still relies on
+  the 409 below to refuse a duplicate. Only a read that never worked, or a 404 (a Candybar without the route), turns
+  the buttons off with that reason, and "By project" then puts the rows under "Unknown (profiles unavailable)", never
+  "Unclassified".
 - **Steward buttons:** Enrich, Evaluate and Fix (Fix only after a failed last run or 3 failures in the last 10, never
-  when archived). A queued task reads "Evaluate queued 2m", a running one "Evaluating 4m". Past 2 minutes queued it
-  asks whether `candybar-steward` is running. The 202 Task holds the button until the list shows it. Fix is off while
-  a refactor is in flight, mirroring the 409 above.
+  when archived; it stays on the bar for as long as a fix is queued, running or being requested, even if the proving
+  run turned the last result green). A queued task reads "Evaluate queued 2m", a running one "Evaluating 4m". The 202
+  Task holds the button until the list shows it. Fix is off while a refactor is in flight, mirroring the 409 above.
+- **Cancel:** every queued or running task (a refactor included) carries a Cancel button beside the steward buttons.
+  It asks first, then Holocene's `POST /api/modules/candybar/tasks/{taskId}/cancel` (id validated as a UUID) forwards to
+  `POST /steward/tasks/{taskId}/cancel` and answers `{ok, task}`; Candybar's 409 (already finished) and 404 come back
+  as `{error}` with that status, and Holocene words the 409 as information. A task queued for more than 2 minutes says
+  the steward may be down and offers the same Cancel. The task ends `failed` with error "cancelled by operator"; for a
+  running one the steward stops the agent within a minute (see above), and anything a fix or refactor already
+  committed stays.
 - **Confirms:** Fix and Evaluate ask first. The Fix confirm names `overview.source.repo` when there is one. The
   Evaluate confirm says the verdict's follow-up runs on its own and that protected candybars are only flagged.
   Disable and Archive ask too. Enrich, noise, enable and unarchive do not.
+- **One change at a time:** noise, enable or disable, and archive run one at a time per candybar (Definitions and
+  Schedule share the rule): while one request is in flight the others are `aria-disabled` and say why, so Candybar is
+  never asked for two at once. An error note clears after 10 s or on the next action.
 - **409 with `taskId`:** Holocene's proxy reads the task back from `GET /candybars/{id}/steward/tasks?limit=20` and
   shows it as information ("Already running: Evaluate started 3m ago"), not as a failure. A 409 without `taskId`
   (fix on an archived candybar) is a refusal.
 - **Follow-up and tasks:** "Follow-up: refactor queued / done / failed", "archive flagged: protected, not archived",
-  and "flagged for you to decide" for the other flags. Without `followUpStatus` (older rows), the child task whose
-  `parentTaskId` is the evaluation's `taskId` gives the status. Refactor and fix outcomes appear as words ("done,
-  proven by a run", "not applied"). `costUsd` and `tokens` show as "$0.42 · 1,540 tokens"; `cache` is flattened and
+  and "flagged for you to decide" for the other flags. Without `followUpStatus` (older rows), the child task (the one
+  named by `followUpTaskId`, else whose `parentTaskId` is the evaluation's `taskId`) gives both status and words from
+  its own `outcome`: `done` / `done_proven` read "done", `fixed` "fixed", `done_not_proven` "done, not proven",
+  `not_fixed` "not fixed", and `not_applied` "not applied, flagged for you to decide" (a Suboptimal verdict whose
+  refactor changed nothing is flagged, never "done"). Refactor and fix outcomes appear as words in the task list
+  ("done, proven by a run", "not applied"). `costUsd` and `tokens` show as "$0.42 · 1,540 tokens"; `cache` is flattened and
   not counted.
 - **Skip rest of day:** the date is computed in the candybar's own time zone, and the confirm names that date, the
-  zone and the hours of the viewer's day it covers ("on 2026-11-04 (UTC), 7:00 PM tonight to 7:00 PM tomorrow EST").
+  zone and the hours of the viewer's day it covers, each end with its own zone abbreviation, since a DST change can fall
+  inside the span ("on 2026-11-04 (UTC), 7:00 PM tonight EST to 7:00 PM tomorrow EST").
   Holocene's proxy takes the confirmed date as `expectDate` and refuses (409) rather than skip another day. The
   `{date}` sent to Candybar is unchanged.
 - **Archive in the schedule stream:** a `definition.changed` whose definition says `archived: true` drops that
   candybar's rows, including past runs a windowed stream still sends. Later row events for it are ignored until a
   `definition.changed` says `archived: false`.
-- **Not used yet:** `POST /steward/tasks/{taskId}/cancel` (Holocene offers no Cancel) and `PUT .../profile` (no
-  manual project override).
+- **Not used yet:** `PUT .../profile` (no manual project override) and `GET /steward/tasks?active=1` (Holocene reads
+  the newest 200).
 
 ## Implementation notes (candybar, 2026-11-03)
 
