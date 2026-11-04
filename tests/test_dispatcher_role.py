@@ -216,11 +216,16 @@ def test_no_other_module_subscribes_to_ticks():
         ("dispatcher/role.py", "TICK_FILTER"),
         ("executor/role.py", "INVOKE_FILTER"),
         ("api/role.py", "filter_subject"),
+        # steward-contract.md section 4: the steward command durable (no ticks).
+        ("steward/role.py", "STEWARD_FILTER"),
     }, f"unexpected NATS subscription sites: {sorted(found)}"
     from candybar.api import role as api_role
     from candybar.executor import role as executor_role
 
     assert "tick" not in executor_role.INVOKE_FILTER
+    from candybar.steward import role as steward_role
+
+    assert steward_role.STEWARD_FILTER == "bloodbank.cmd.cron.candybar.steward"
     feed = {kw.arg: ast.unparse(kw.value) for kw in calls[("api/role.py", "filter_subject")].keywords}
     assert feed["ordered_consumer"] == "True"
     assert "durable" not in feed and "queue" not in feed

@@ -1,5 +1,5 @@
 """The operator control surface: `ls`, `show`, `next`, `schedule`, `pause`,
-`resume`, `skip`, `edit`, `history`, `tail`.
+`resume`, `archive`, `unarchive`, `skip`, `edit`, `history`, `tail`.
 
 Thin wrappers over the api role (CANDYBAR_API_URL, default
 http://127.0.0.1:8700) through the same REST client `candybar migrate` uses,
@@ -150,7 +150,10 @@ def _table(headers: list[str], rows: list[list[str]]) -> None:
 
 
 def _flags(candybar: dict[str, Any]) -> str:
-    flags = [] if candybar.get("enabled", True) else ["paused"]
+    if candybar.get("archived"):
+        flags = ["archived"]
+    else:
+        flags = [] if candybar.get("enabled", True) else ["paused"]
     if candybar.get("noise"):
         flags.append("noise")
     return ",".join(flags) or "-"
@@ -175,22 +178,26 @@ def ls(
     all_: Annotated[
         bool, typer.Option("--all", "-a", help="Include paused candybars.")
     ] = False,
+    archived: Annotated[
+        bool, typer.Option("--archived", help="Include archived candybars (hidden otherwise).")
+    ] = False,
     tag: Annotated[str | None, typer.Option("--tag", "-t", help="Only candybars with this tag.")] = None,
     hide_noise: Annotated[
         bool, typer.Option("--hide-noise", help="Leave out candybars in the noise collection.")
     ] = False,
     as_json: JsonOption = False,
 ) -> None:
-    """List registered candybars (active ones unless --all)."""
+    """List registered candybars (active ones unless --all; archived ones only with --archived)."""
     try:
         candybars = _api().list_candybars()
     except ApiError as exc:
         raise _fail(exc) from exc
-    paused = sum(1 for c in candybars if not c.get("enabled", True))
+    stored = sum(1 for c in candybars if c.get("archived"))
+    paused = sum(1 for c in candybars if not c.get("enabled", True) and not c.get("archived"))
     shown = [
         c
         for c in candybars
-        if (all_ or c.get("enabled", True))
+        if (c.get("archived") and archived or not c.get("archived") and (all_ or c.get("enabled", True)))
         and (tag is None or tag in c.get("tags", []))
         and not (hide_noise and c.get("noise"))
     ]
@@ -203,8 +210,13 @@ def ls(
     ]
     _table(["NAME", "SCHEDULE", "TZ", "FLAGS", "TAGS", "ID"], rows)
     footer = f"{len(shown)} shown of {len(candybars)}"
+    hidden = []
     if paused and not all_:
-        footer += f" ({paused} paused hidden; --all to include)"
+        hidden.append(f"{paused} paused hidden; --all to include")
+    if stored and not archived:
+        hidden.append(f"{stored} archived hidden; --archived to include")
+    if hidden:
+        footer += f" ({'; '.join(hidden)})"
     typer.echo(footer)
 
 
@@ -233,7 +245,12 @@ def show(
         ("id", detail["id"]),
         ("description", detail.get("description") or "-"),
         ("schedule", f"{detail['schedule']}  ({detail.get('timezone', 'UTC')})"),
-        ("state", "paused" if not detail.get("enabled", True) else "enabled"),
+        (
+            "state",
+            "archived"
+            if detail.get("archived")
+            else "paused" if not detail.get("enabled", True) else "enabled",
+        ),
         ("noise", "yes" if detail.get("noise") else "no"),
         ("tags", ", ".join(detail.get("tags", [])) or "-"),
         ("runs", f"{total} invoked, {ok} succeeded, {total - ok} failed"),
@@ -369,6 +386,33 @@ def _set_enabled(ref: str, enabled: bool) -> None:
     except ApiError as exc:
         raise _fail(exc) from exc
     typer.echo(f"{verb} {candybar['name']}")
+
+
+def _set_archived(ref: str, archived: bool) -> None:
+    api = _api()
+    candybar = _resolve(api, ref)
+    verb = "archived" if archived else "unarchived"
+    if bool(candybar.get("archived")) == archived:
+        typer.echo(f"{candybar['name']} already {verb}")
+        return
+    try:
+        api.set_archived(candybar["id"], archived)
+    except ApiError as exc:
+        raise _fail(exc) from exc
+    if archived:
+        typer.echo(f"archived {candybar['name']} (also paused; `candybar unarchive` reverses it)")
+    else:
+        typer.echo(f"unarchived {candybar['name']} (still paused: `candybar resume {candybar['name']}`)")
+
+
+def archive(ref: RefArgument) -> None:
+    """Archive a candybar: paused and hidden from `ls` (and Holocene) until unarchived."""
+    _set_archived(ref, True)
+
+
+def unarchive(ref: RefArgument) -> None:
+    """Unarchive a candybar. It stays paused until `candybar resume`."""
+    _set_archived(ref, False)
 
 
 def pause(ref: RefArgument) -> None:
@@ -671,6 +715,8 @@ def install(app: typer.Typer) -> None:
     app.command("history")(history)
     app.command("pause")(pause)
     app.command("resume")(resume)
+    app.command("archive")(archive)
+    app.command("unarchive")(unarchive)
     app.command("skip")(skip)
     app.command("edit")(edit)
     app.command("tail")(tail)

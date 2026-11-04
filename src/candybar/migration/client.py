@@ -23,9 +23,13 @@ INVOCATIONS_PAGE = 500
 class ApiError(Exception):
     """The API answered with an error (status set) or could not be reached (status None)."""
 
-    def __init__(self, message: str, *, status: int | None = None) -> None:
+    def __init__(
+        self, message: str, *, status: int | None = None, problem: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(message)
         self.status = status
+        # The API's problem+json body, when it sent one (e.g. a 409's `taskId`).
+        self.problem = problem
 
     @property
     def unreachable(self) -> bool:
@@ -52,13 +56,16 @@ class CandybarApi:
                 raw = response.read().decode()
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode(errors="replace")
+            problem: dict[str, Any] | None = None
             try:
-                problem = json.loads(detail)
-                detail = problem.get("detail") or problem.get("title") or detail
-            except (json.JSONDecodeError, AttributeError):
+                parsed = json.loads(detail)
+                if isinstance(parsed, dict):
+                    problem = parsed
+                    detail = parsed.get("detail") or parsed.get("title") or detail
+            except json.JSONDecodeError:
                 pass
             raise ApiError(
-                f"{method} {path}: {exc.code} {detail}", status=exc.code
+                f"{method} {path}: {exc.code} {detail}", status=exc.code, problem=problem
             ) from exc
         except (urllib.error.URLError, OSError, TimeoutError) as exc:
             raise ApiError(f"candybar API unreachable at {self.base}: {exc}") from exc
@@ -140,6 +147,27 @@ class CandybarApi:
 
     def set_noise(self, candybar_id: str, noise: bool) -> dict[str, Any]:
         return self._call("PUT" if noise else "DELETE", f"/candybars/{self._id(candybar_id)}/noise")
+
+    # The steward contract (steward-contract.md): archive, profile, steward tasks.
+
+    def set_archived(self, candybar_id: str, archived: bool) -> dict[str, Any]:
+        return self._call(
+            "POST", f"/candybars/{self._id(candybar_id)}/archived", {"archived": archived}
+        )
+
+    def profile(self, candybar_id: str) -> dict[str, Any]:
+        return self._call("GET", f"/candybars/{self._id(candybar_id)}/profile")
+
+    def steward(self, candybar_id: str, action: str) -> dict[str, Any]:
+        return self._call("POST", f"/candybars/{self._id(candybar_id)}/steward", {"action": action})
+
+    def candybar_tasks(self, candybar_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        body = self._call("GET", f"/candybars/{self._id(candybar_id)}/steward/tasks?limit={limit}")
+        return list(body.get("tasks", []))
+
+    def tasks(self, *, active: bool = False, limit: int = 100) -> list[dict[str, Any]]:
+        query = "active=1" if active else f"limit={limit}"
+        return list(self._call("GET", f"/steward/tasks?{query}").get("tasks", []))
 
 
 __all__ = ["API_URL_ENV", "ApiError", "CandybarApi", "api_url"]

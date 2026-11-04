@@ -5,7 +5,9 @@ loads a candybar.toml manifest and registers it via the API; `run`
 (Story 1.8) invokes a registered candybar now via the API (AD-12);
 `migrate` (Story 7.5, AD-21) drives the cron-migration ledger; the
 operator control commands (`ls`, `show`, `next`, `schedule`, `history`,
-`pause`, `resume`, `skip`, `edit`, `tail`) live in `candybar.cli.control`.
+`pause`, `resume`, `archive`, `unarchive`, `skip`, `edit`, `tail`) live in
+`candybar.cli.control`; `steward ...` and `profile` (steward-contract.md)
+in `candybar.cli.steward`.
 """
 
 import asyncio
@@ -24,6 +26,7 @@ import typer
 
 from candybar import __version__
 from candybar.cli import control, doctor
+from candybar.cli import steward as steward_cli
 from candybar.cli.migrate import migrate_app
 
 app = typer.Typer(
@@ -37,6 +40,7 @@ DEFAULT_API_URL = "http://127.0.0.1:8700"
 app.add_typer(migrate_app, name="migrate")
 control.install(app)
 doctor.install(app)
+steward_cli.install(app)
 
 
 def _version_callback(value: bool) -> None:

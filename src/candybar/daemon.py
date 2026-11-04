@@ -17,6 +17,7 @@ from .api.role import run_api
 from .dispatcher.role import run_dispatcher
 from .executor.role import run_executor
 from .heartbeat.role import run_heartbeat
+from .steward.role import run_steward
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ ROLES: dict[str, RoleFn] = {
     "dispatcher": run_dispatcher,
     "executor": run_executor,
     "heartbeat": run_heartbeat,
+    # Host-only (steward-contract.md section 4): `candybar-steward.service`.
+    "steward": run_steward,
 }
 
 
