@@ -41,7 +41,11 @@ from ..executor.schema_guard import sleep_or_stop
 from ..registry.schema_guard import SchemaGate, guard_enabled, own_head
 from ..registry.store import create_registry_engine, session_scope
 from .jev import Jev
-from .notify import run_notifier
+from .notify import NOTIFY_SEND_TIMEOUT_S, run_notifier
+
+# After the in-flight tasks are cancelled: how long the notifier keeps
+# announcing their failures before it is told to stop (TimeoutStopSec is 60).
+NOTIFY_DRAIN_S = 3.0
 from .opencode import OpenCodeClient
 from .worker import DEFAULT_COMMAND_MAX_AGE_S, Steward
 
@@ -101,6 +105,7 @@ async def run_steward(stop: asyncio.Event) -> None:
     gate = SchemaGate(engine, expected_head) if expected_head is not None else None
     tasks: set[asyncio.Task[None]] = set()
     notifier: asyncio.Task[None] | None = None
+    notify_stop: asyncio.Event | None = None
     sub = None
     jev = Jev.from_env()
     if jev is None:
@@ -116,7 +121,10 @@ async def run_steward(stop: asyncio.Event) -> None:
         )
         sub = await js.pull_subscribe(STEWARD_FILTER, durable=DURABLE, stream=COMMAND_STREAM, config=config)
         sink = NatsEventSink(nc)
-        notifier = asyncio.create_task(run_notifier(js, stop), name="candybar-steward-notify")
+        # Its own stop: it outlives the task cancellations below, so the
+        # "steward stopped" failures they publish are still announced.
+        notify_stop = asyncio.Event()
+        notifier = asyncio.create_task(run_notifier(js, notify_stop), name="candybar-steward-notify")
         steward = Steward(
             session_factory=lambda: session_scope(engine),
             publish=sink.publish,
@@ -159,9 +167,14 @@ async def run_steward(stop: asyncio.Event) -> None:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
         if notifier is not None:
-            # Stop is set (or we are failing): let it ack what it holds, then go.
-            with suppress(asyncio.TimeoutError, asyncio.CancelledError, Exception):
-                await asyncio.wait_for(notifier, timeout=5)
+            # Give it a moment to fetch the facts the cancelled tasks just
+            # published and finish an in-flight send (else that fact is
+            # redelivered and re-sent after the restart), then stop it.
+            with suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(asyncio.shield(notifier), timeout=NOTIFY_DRAIN_S)
+            notify_stop.set()
+            with suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(notifier, timeout=NOTIFY_SEND_TIMEOUT_S)
         await engine.dispose()
         if sub is not None:
             with suppress(ConnectionClosedError, ConnectionDrainingError, BadSubscriptionError):

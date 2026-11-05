@@ -29,6 +29,7 @@ import asyncio
 import json
 import logging
 import os
+from collections import OrderedDict
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -58,7 +59,8 @@ EVENT_STREAM = "BLOODBANK_EVENTS"
 NOTIFY_FILTER = "bloodbank.evt.cron.steward_task.>"
 NOTIFY_DURABLE = "candybar-steward-notify"
 NOTIFY_MAX_DELIVERIES = 6
-NOTIFY_SEND_TIMEOUT_S = 60.0
+NOTIFY_SEND_TIMEOUT_S = 30.0
+ANNOUNCED_MAX = 512
 ACK_WAIT_SECONDS = 120
 REATTACH_S = 30
 
@@ -114,7 +116,8 @@ def render(task: StewardTaskData, config: NotifyConfig) -> str | None:
     head = f"{mark} Candybar {task.action} · {task.name} → {verdict}"
     lines = [head]
     if task.parent_task_id is not None:
-        lines.append(f"(follow-up of evaluate {str(task.parent_task_id)[:8]})")
+        # An evaluate's fix / refactor, or the enrich a fix / refactor queues.
+        lines.append(f"(follow-up of task {str(task.parent_task_id)[:8]})")
     body = task.summary if task.status == "succeeded" else (task.error or task.summary)
     if body:
         lines += ["", _clip(body)]
@@ -132,6 +135,9 @@ class StewardNotifier:
     def __init__(self, config: NotifyConfig, sender: Sender = hermes_send) -> None:
         self._config = config
         self._send = sender
+        # (task, status) already announced: a terminal write retried after its
+        # fact went out republishes the same fact; say it once.
+        self._announced: OrderedDict[tuple[str, str], None] = OrderedDict()
 
     async def handle_message(self, msg: Any) -> None:
         try:
@@ -144,7 +150,8 @@ class StewardNotifier:
             await msg.ack()  # queued / started: nothing to say yet
             return
         text = render(fact.data, self._config)
-        if text is None:
+        key = (str(fact.data.task_id), fact.data.status)
+        if text is None or key in self._announced:
             await msg.ack()
             return
         try:
@@ -167,6 +174,9 @@ class StewardNotifier:
             )
             await msg.nak(delay=delay)
             return
+        self._announced[key] = None
+        while len(self._announced) > ANNOUNCED_MAX:
+            self._announced.popitem(last=False)
         log.info("steward-notify: announced task %s (%s %s %s)", fact.data.task_id, fact.data.action,
                  fact.data.name, fact.data.outcome or fact.data.status)
         await msg.ack()

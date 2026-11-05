@@ -97,7 +97,7 @@ def test_follow_up_names_its_evaluate_and_failure_shows_the_error() -> None:
     text = render(data("failed", action="fix", parent_task_id=parent, error="opencode timed out"), CONFIG)
     assert text is not None
     assert text.startswith("❌ Candybar fix · skillex-hermes-resync → failed")
-    assert f"follow-up of evaluate {str(parent)[:8]}" in text
+    assert f"follow-up of task {str(parent)[:8]}" in text
     assert "opencode timed out" in text
 
 
@@ -141,3 +141,17 @@ def test_config_defaults_and_off(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config is not None and (config.target, config.profile) == (DEFAULT_TARGET, DEFAULT_PROFILE)
     monkeypatch.setenv(TARGET_ENV, "off")
     assert NotifyConfig.from_env() is None
+
+
+def test_a_republished_terminal_fact_is_announced_once() -> None:
+    sender, task = Sender(), data(outcome="fixed", action="fix")
+    notifier = StewardNotifier(CONFIG, sender)
+    first, again = msg_for(task), msg_for(task)
+
+    async def both() -> None:
+        await notifier.handle_message(first)
+        await notifier.handle_message(again)
+
+    asyncio.run(both())
+    assert first.acks == ["ack"] and again.acks == ["ack"]
+    assert len(sender.sent) == 1
