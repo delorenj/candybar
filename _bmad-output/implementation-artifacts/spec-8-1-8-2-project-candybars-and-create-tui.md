@@ -44,4 +44,4 @@ context:
 ## Review Triage Log
 
 - Round 1 (two adversarial reviewers exercising the real code): 6 core/CLI and 11 TUI findings, all fixed with regression tests except the process note below.
-- Process note: one reviewer run reached the live API and created then archived candybar `a` (id 01a1a6fb-99a2-736a-aa11-a8f112cfca36); it is archived and inert, but holds the name `a`. The API has no hard delete yet (CAND-51).
+- Process note: one reviewer run reached the live API and created then archived candybar `a` (id 01a1a6fb-99a2-736a-aa11-a8f112cfca36); deleted from the registry by hand on 2026-11-04 at the owner's request (no invocations, skips, profile or steward tasks referenced it).
