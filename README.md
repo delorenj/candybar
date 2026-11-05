@@ -447,6 +447,17 @@ In short:
   refresh the overview (a failure to queue it never fails the change).
   Fix and refactor run one at a time per repo (git root of the job's
   checkout).
+- **Every finished task pings the operator.** The steward role also runs a
+  notifier (`steward/notify.py`): a durable consumer
+  (`candybar-steward-notify`) on `bloodbank.evt.cron.steward_task.>` that
+  sends one Telegram message per `completed` / `failed` fact through
+  `hermes -p 33god-pm send --to telegram:7564050286` (the scheduling-policy
+  job's channel): action, candybar, outcome (✅ good, ⚠️ wants a look,
+  ❌ failed), the summary, the report path and a Holocene deep link.
+  Operator cancels are not announced. A failed send is retried with backoff
+  (6 attempts), then logged and dropped. Override with
+  `CANDYBAR_STEWARD_NOTIFY_TARGET` (`off` disables) and
+  `CANDYBAR_STEWARD_NOTIFY_PROFILE` in `~/.config/candybar/steward.env`.
 - **Protected candybars** are tagged `smoke`, `canary`, `watchdog`,
   `policy` or `ops`, named `*watchdog*`, `*backstop*`, `*canary*`,
   `*smoke*`, `*policy*`, `*backup*` or `*restic*`, tagged `backup(s)`, or

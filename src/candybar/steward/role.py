@@ -41,6 +41,7 @@ from ..executor.schema_guard import sleep_or_stop
 from ..registry.schema_guard import SchemaGate, guard_enabled, own_head
 from ..registry.store import create_registry_engine, session_scope
 from .jev import Jev
+from .notify import run_notifier
 from .opencode import OpenCodeClient
 from .worker import DEFAULT_COMMAND_MAX_AGE_S, Steward
 
@@ -99,6 +100,7 @@ async def run_steward(stop: asyncio.Event) -> None:
     engine = create_registry_engine()
     gate = SchemaGate(engine, expected_head) if expected_head is not None else None
     tasks: set[asyncio.Task[None]] = set()
+    notifier: asyncio.Task[None] | None = None
     sub = None
     jev = Jev.from_env()
     if jev is None:
@@ -114,6 +116,7 @@ async def run_steward(stop: asyncio.Event) -> None:
         )
         sub = await js.pull_subscribe(STEWARD_FILTER, durable=DURABLE, stream=COMMAND_STREAM, config=config)
         sink = NatsEventSink(nc)
+        notifier = asyncio.create_task(run_notifier(js, stop), name="candybar-steward-notify")
         steward = Steward(
             session_factory=lambda: session_scope(engine),
             publish=sink.publish,
@@ -155,6 +158,10 @@ async def run_steward(stop: asyncio.Event) -> None:
             for task in list(tasks):
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+        if notifier is not None:
+            # Stop is set (or we are failing): let it ack what it holds, then go.
+            with suppress(asyncio.TimeoutError, asyncio.CancelledError, Exception):
+                await asyncio.wait_for(notifier, timeout=5)
         await engine.dispose()
         if sub is not None:
             with suppress(ConnectionClosedError, ConnectionDrainingError, BadSubscriptionError):
