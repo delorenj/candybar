@@ -5,6 +5,9 @@
 # The deadman is the crank-watchdog exec candybar (CAND-50). It reads scanner
 # cadence dispositions and structured attendance, not Hermes output-file mtime.
 # 288 fires/day -> noise. Rollback: ledger entry hermes:33god-pm:777c511a009c.
+# CAND-52 (2026-11-06): the CAND-49 pinned-image exec adapter is retired. The
+# runner is the native hermes runner again, on the live hermes-agent checkout.
+# Operator rule: a pin is a temporary bandage with an exit ticket, never a home.
 [candybar]
 name = "crank-beat"
 description = "Crank heartbeat: zcrank-gate monitor + agent prods stalled Workspace panes (was hermes 33god-pm:777c511a009c)"
@@ -14,7 +17,7 @@ timezone = "America/New_York"
 noise = true
 
 [candybar.runner]
-kind = "exec"
-argv = ["/home/delorenj/code/33GOD/candybar/.venv/bin/python", "-B", "/home/delorenj/.hermes/profiles/33god-pm/runtime/candybar/crank-beat/3509618461f7831f43ac0c53f219f35492861647/launch.py"]
-workdir = "/home/delorenj"
-timeout_s = 1860
+kind = "hermes"
+profile = "33god-pm"
+job_id = "777c511a009c"
+timeout_s = 1800

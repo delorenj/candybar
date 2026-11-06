@@ -19,3 +19,21 @@ The baseline alias and immutable snapshot SHA-256 remained `8a9b048257306832946d
 ## Verification and rollback
 
 `52 passed, 2 skipped` for scoped adapter and native Hermes-runner tests; Ruff and `git diff --check` passed. Live activation is real, but acknowledgement progression requires a later **admitted** run and must be verified separately. Rollback, if needed, is a supported PATCH of only this Candybar runner to the `original.runner` in `activation.json`, with a readback; retain the Candybar job enabled and its clock. No rollback was performed.
+
+## Retired — CAND-52, 2026-11-06
+
+The operator dropped the pin: a pin is a temporary bandage with an exit ticket, and
+features merge to main. `crank-beat` (`01a1793b…`) was disabled, its in-flight run
+drained (225 s), and the runner PATCHed back to `activation.json`'s original
+`hermes(profile=33god-pm, job_id=777c511a009c, timeout_s=1800)`, read back, and
+re-enabled; id, name, schedule, timezone, noise, tags and enabled were unchanged.
+`activation.json` now records `status=retired`.
+
+Proof on the native runner: scheduled invocation 16:10:00Z, success, exit 0, and the
+33god-pm `usage_audit.jsonl` row for execution `b0124936fd8444a3b5719b1f18acc988`
+is `outcome=completed`, 609,447 tokens (an admitted run, not an economics refusal).
+
+The adapter (`deploy/scoped/crank-beat/`) and `tests/test_scoped_crank.py` are
+deleted; git history keeps them. The promoted image and its receipt dirs stay on
+disk under `~/.hermes/profiles/33god-pm/runtime/candybar/crank-beat/` as inert
+evidence; nothing reads them.
