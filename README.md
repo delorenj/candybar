@@ -196,70 +196,43 @@ as is `--global` anywhere.
 
 ## Automatic sync on save
 
-`candybar watch` is the host-side, **event-driven** manifest watcher. Saving a
-manifest validates it and pushes changed definitions through the API—no manual
-registration, Git push, container rebuild, or daemon restart. It supports both
-project layouts (`.candybar.toml`, `.candybars/*.candybar.toml`) and legacy
-`candybar.toml`. Existing `register` behavior is unchanged.
-
-Enroll authoritative sources in `~/.config/candybar/watch.toml` (or
-`$XDG_CONFIG_HOME/candybar/watch.toml`):
-
-```toml
-projects = ["~/code/my-project"]
-roots = ["~/code/another-project/deploy/candybar"]
-legacy = ["~/code/older-project/ops/nightly/candybar.toml"]
-create_missing = true
-debounce_ms = 750
-retries = 3
-```
-
-`projects` loads each project's two standard locations; `roots` recursively
-discovers both layouts; `legacy` explicitly enrolls individual old-format files.
-Relative config paths resolve against the config directory; `~` expands. Keep
-roots narrow, rather than watching your entire home directory. Discovery skips
-worktrees, symlinked directories, dependency/cache/build trees and test/example
-manifests. Sources discovered under a configured root are enrolled, so choose
-only locations whose files should be authoritative. **Enrollment authorizes
-same-name adoption of untagged registrations**, including legacy manifests under
-an enrolled root; it never overrides another project's ownership tag. Migration
-manifests additionally require the exact ledger registration ID. Do not enroll
-copied definitions or a broad directory containing someone else's manifests.
+**The manifest is discovered from your project or saved file—no global project
+list and no per-repo host configuration.** Both project layouts and plain legacy
+`candybar.toml` use the same validation/reconciliation machinery.
 
 ```bash
-candybar watch --dry-run             # validate + preview, no writes
-candybar watch --once --json         # sync once and read back results
-candybar watch                       # startup reconcile, then native filesystem events
-bash deploy/host/install-watch.sh    # optional persistent host service, preview first
-journalctl --user -u candybar-watch -f
+candybar sync                         # discover this project's manifests and sync once
+candybar sync path/to/candybar.toml    # sync the saved legacy manifest
+candybar sync .candybars/job.candybar.toml  # validate/sync the whole owning project
+candybar sync --dry-run --json        # preview, no registry writes
+candybar watch                       # native events scoped to this project, Ctrl-C to stop
 ```
 
-The installer preserves existing configuration; on a fresh install it writes an
-empty example and stops for enrollment. See [`deploy/README.md`](deploy/README.md).
+The Neovim integration installs **once**: a `BufWritePost` hook asynchronously
+calls `candybar sync <absolute-saved-file>` for Candybar TOML files, with errors
+shown in the editor. Lua does not parse manifests or call the API. It works in
+new repositories without enrollment. Project-entry tooling can activate a native
+project-scoped watcher to cover agent, script and Git changes as well; entering a
+project alone is not a substitute for watching subsequent saves.
 
-- Atomic editor saves are debounced; invalid files leave live definitions alone.
-  A project's files validate together, and duplicate source claims are refused
-  before writes. Separate jobs are not one database transaction: API failures can
-  leave partial progress, reported as unsynced until reconciliation succeeds.
-- Files own definition fields, **not lifecycle state**. Existing enabled/paused,
-  archived and skip state remains untouched; archived jobs stay archived. New
-  jobs are created **paused**, even when the file says `enabled = true`; prove
-  them and use `candybar resume <name>` explicitly. `create_missing = false`
-  restricts sync to existing registrations.
-- Deleting or renaming a file never prunes, archives or deletes a registration.
-  A renamed job is a new definition; the old job remains operator-managed.
-- Legacy migration manifests require their matching ledger entry in `cutover`
-  or `verified` state and the exact registration ID. Rolled-back, planned and
-  decommissioned entries are excluded; missing or ambiguous ledger evidence is
-  an error. The watcher never performs a migration or enables a native clock.
-- API writes are read back before reporting success. API failures receive bounded
-  retries against **latest file contents**; exhausted failures remain visible in
-  the journal. A new save or restart retries; there is no recurring poll loop.
-- Saving the config restarts the managed watcher to load new sources. There is
-  no polling fallback; a native filesystem backend failure exits visibly.
-- A later reconciliation can overwrite schedule/runner edits made directly in
-  Holocene or the API. Edit the enrolled TOML to make definition changes stick.
-  This watcher does not commit files or push Git repositories.
+The old host-wide `candybar-watch.service` enrollment model is retired. Explicit
+`candybar watch --config PATH` remains available as a compatibility escape hatch,
+not the normal workflow. No global config is read by plain `sync` or `watch`.
+
+- Project siblings validate together; duplicate names and foreign ownership are
+  refused before writes. Legacy paths remain relative to the manifest directory.
+- Sync operations are serialized across editor hooks and native watchers, then
+  read current files and API state; there is no second reconciliation logic.
+- Files own definition fields, not lifecycle: pause/archive/skip remain intact.
+  New registrations start paused even if TOML says `enabled = true`; prove them
+  and use `candybar resume <name>` explicitly.
+- Removing a file never deletes or archives a job. Invalid saves leave the last
+  valid registry definition intact. Successful mutations are read back.
+- Legacy migration sources require exact active ledger registration IDs;
+  planned/rolled-back/decommissioned entries remain excluded. The ledger is not
+  rewritten on save: deliberately reconcile it before rollback/re-cutover.
+- Saving authoritative manifests can replace definition edits made directly in
+  Holocene/API. These integrations never commit files or push Git repositories.
 
 ## Runner kinds (Stories 7.3 and 7.4, AD-18, AD-19; n8n)
 

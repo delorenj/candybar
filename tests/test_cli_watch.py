@@ -39,6 +39,10 @@ def core(monkeypatch):
 
     module = SimpleNamespace(load_config=load, reconcile=reconcile, run_watch=run)
     monkeypatch.setitem(sys.modules, "candybar.autosync", module)
+    def context(path):
+        calls.append(("context", path))
+        return "settings"
+    monkeypatch.setitem(sys.modules, "candybar.context_sync", SimpleNamespace(context_config=context))
     return calls, report, module
 
 
@@ -73,7 +77,7 @@ def test_watch_config_error_is_usage_error(core):
         raise ValueError("unknown key")
 
     module.load_config = invalid
-    result = CliRunner().invoke(app, ["watch", "--once"])
+    result = CliRunner().invoke(app, ["watch", "--config", "/tmp/watch.toml", "--once"])
     assert result.exit_code == 2
     assert "unknown key" in result.output
 
@@ -85,7 +89,7 @@ def test_watch_config_type_error_is_usage_error(core):
         raise TypeError("roots must be an array")
 
     module.load_config = invalid
-    result = CliRunner().invoke(app, ["watch", "--once"])
+    result = CliRunner().invoke(app, ["watch", "--config", "/tmp/watch.toml", "--once"])
     assert result.exit_code == 2
     assert "roots must be an array" in result.output
 
@@ -97,13 +101,40 @@ def test_watch_json_requires_one_shot(core):
     assert calls == []
 
 
-def test_watch_uses_xdg_config_and_runs_foreground(core, monkeypatch, tmp_path):
+def test_watch_discovers_context_without_reading_global_config(core, monkeypatch, tmp_path):
     calls, _, _ = core
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     result = CliRunner().invoke(app, ["watch"])
     assert result.exit_code == 0, result.output
-    config = tmp_path / "candybar/watch.toml"
-    assert calls == [("load", config), ("watch", "settings", config)]
+    assert calls == [("context", None), ("watch", "settings", None)]
+
+
+@pytest.mark.parametrize('message,expected', [
+    ('no candybar manifests in context: /empty', 0),
+    ('excluded candybar context: /repo/tests', 2),
+    ('unsafe candybar context: /symlink', 2),
+])
+def test_if_present_only_suppresses_empty_context(core, monkeypatch, message, expected):
+    calls, _, _ = core
+
+    def invalid(path):
+        raise ValueError(message)
+
+    monkeypatch.setitem(sys.modules, 'candybar.context_sync', SimpleNamespace(context_config=invalid))
+    result = CliRunner().invoke(app, ['watch', '--if-present'])
+    assert result.exit_code == expected, result.output
+    assert not calls
+    if expected == 0:
+        assert not result.output
+    else:
+        assert message in result.output
+
+
+def test_watch_rejects_path_with_config(core):
+    calls, _, _ = core
+    result = CliRunner().invoke(app, ['watch', '/repo', '--config', '/watch.toml'])
+    assert result.exit_code == 2
+    assert not calls
 
 
 def test_watch_backend_failure_is_nonzero(core):

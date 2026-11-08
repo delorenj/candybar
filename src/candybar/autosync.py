@@ -8,6 +8,8 @@ watcher readiness explicit before the first API request.
 """
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import logging
 import os
 import queue
@@ -15,7 +17,7 @@ import signal
 import threading
 import tomllib
 from collections import Counter
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -275,7 +277,33 @@ def _sync_one(config, api, definition, project, ledger_path, report, dry_run):
         raise ValueError(f'{name}: API changed operator-owned lifecycle state')
 
 
+@contextmanager
+def _reconcile_lock():
+    """Serialize editor saves and native workers sharing a registry endpoint.
+
+    The flock is process-wide and released on crash. Lock state lives outside
+    repositories; no project enrollment or persistent inventory is required.
+    """
+    from .migration.client import api_url
+
+    base = Path(os.environ.get('XDG_RUNTIME_DIR', str(Path.home() / '.cache'))) / 'candybar'
+    base.mkdir(parents=True, exist_ok=True, mode=0o700)
+    key = hashlib.sha256(api_url().encode()).hexdigest()[:24]
+    with (base / f'sync-{key}.lock').open('a') as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
 def reconcile(config: WatchConfig, api=None, *, dry_run: bool = False) -> ReconcileReport:
+    """Serialize and re-read manifests before reconciling against the registry."""
+    with _reconcile_lock():
+        return _reconcile(config, api, dry_run=dry_run)
+
+
+def _reconcile(config: WatchConfig, api=None, *, dry_run: bool = False) -> ReconcileReport:
     """Validate all enrolled sources before any write; never delete or enable."""
     report = ReconcileReport()
     try:
@@ -299,8 +327,8 @@ def reconcile(config: WatchConfig, api=None, *, dry_run: bool = False) -> Reconc
         for removed in sorted(config._known.keys() - counts.keys()):
             report.results.append({'name': removed, 'source': '', 'status': 'source-removed'})
         report.errors.extend(f'duplicate manifest claim: {name}' for name, count in counts.items() if count > 1)
-        if report.errors:
-            return report  # Global fail-closed also protects invalid siblings' name claims.
+        if report.errors or not definitions:
+            return report  # No registry access when the last manifest was removed.
         with ExitStack() as stack:
             for ledger in sorted({p for _, _, p in definitions if p is not None}):
                 stack.enter_context(locked(ledger))

@@ -25,7 +25,7 @@ from uuid import UUID
 import typer
 
 from candybar import __version__
-from candybar.cli import control, create, doctor, watch
+from candybar.cli import control, create, doctor, sync, watch
 from candybar.cli import steward as steward_cli
 from candybar.cli.migrate import migrate_app
 
@@ -43,6 +43,7 @@ create.install(app)
 doctor.install(app)
 steward_cli.install(app)
 watch.install(app)
+sync.install(app)
 
 
 def _version_callback(value: bool) -> None:

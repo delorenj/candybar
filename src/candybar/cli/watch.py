@@ -17,9 +17,12 @@ def default_config() -> Path:
 
 
 def watch(
+    path: Annotated[
+        Path | None, typer.Argument(help="Project directory or saved manifest; defaults to current project."),
+    ] = None,
     config: Annotated[
         Path | None,
-        typer.Option("--config", "-c", help="Watch config (default: $XDG_CONFIG_HOME/candybar/watch.toml)."),
+        typer.Option("--config", "-c", help="Explicit legacy watcher config; otherwise discover current project."),
     ] = None,
     once: Annotated[
         bool, typer.Option("--once", help="Reconcile once and exit instead of watching filesystem events."),
@@ -27,27 +30,39 @@ def watch(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Preview one reconciliation without changing the registry."),
     ] = False,
+    if_present: Annotated[
+        bool, typer.Option("--if-present", help="Exit quietly when this context has no manifests (shell entry hooks)."),
+    ] = False,
     as_json: Annotated[
         bool, typer.Option("--json", help="Print a one-shot report as JSON (requires --once or --dry-run)."),
     ] = False,
 ) -> None:
     """Sync project and legacy candybar manifests on save, through the API.
 
-    Configuration explicitly enrolls project directories, legacy files, or small
-    discovery roots. New registrations start paused. Existing pause/archive/skip
-    state is never synchronized, and removing a file never deletes a job.
+    Discover the current project automatically; no global enrollment is needed.
+    --config retains explicit configured mode for compatibility. New registrations
+    start paused; existing pause/archive/skip state is never synchronized.
     No polling backend, Git push, or recurring schedule is used.
     """
     from candybar.autosync import load_config, reconcile, run_watch
 
-    path = (config or default_config()).expanduser().absolute()
+    config_path = config.expanduser().absolute() if config is not None else None
+    if config is not None and path is not None:
+        typer.echo("pass a project path or --config, not both", err=True)
+        raise typer.Exit(code=2)
     if as_json and not (once or dry_run):
         typer.echo("--json requires --once or --dry-run", err=True)
         raise typer.Exit(code=2)
     try:
-        settings = load_config(path)
+        if config_path is not None:
+            settings = load_config(config_path)
+        else:
+            from candybar.context_sync import context_config
+            settings = context_config(path)
     except (OSError, TypeError, ValueError) as exc:
-        typer.echo(f"invalid watch config {path}: {exc}", err=True)
+        if if_present and isinstance(exc, ValueError) and str(exc).startswith("no candybar manifests in context:"):
+            return
+        typer.echo(f"invalid watch context {config_path or path or Path.cwd()}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
     if once or dry_run:
         report = reconcile(settings, dry_run=dry_run)
@@ -66,7 +81,7 @@ def watch(
         return
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     try:
-        run_watch(settings, config_path=path)
+        run_watch(settings, config_path=config_path)
     except KeyboardInterrupt:
         pass
     except (OSError, ValueError, RuntimeError) as exc:

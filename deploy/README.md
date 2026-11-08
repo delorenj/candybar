@@ -37,7 +37,25 @@ Notes:
 - `scripts/check-deploy-hygiene.sh` (repo root) gates every push: no LAN IPs,
   no plaintext-secret shapes on any deploy surface.
 
-## Host manifest watcher
+## Project/editor autosync (current)
+
+No repository enrollment is needed. `candybar sync [SAVED_FILE|PROJECT]` resolves
+local context and performs one API reconciliation; `candybar watch [PROJECT]`
+uses native events for that context. The one-time LazyVim `BufWritePost` and Zsh
+`chpwd` integrations live in the canonical `zshyzsh` dotfiles repo. Editor saves
+run asynchronously, errors appear in Neovim, and rapid saves coalesce per file.
+Shell activation starts a checkout-scoped watcher in the background; leaving
+the checkout or exiting the shell stops it. Logs:
+`~/.local/state/candybar/project-watch.log` (or `$XDG_STATE_HOME`). New shells
+load the hook automatically; existing shells can `source "$ZC/candybar.zsh"`.
+Existing Neovim sessions can run `:lua require("config.candybar").setup()`.
+
+The central enrolled `candybar-watch.service` has been **disabled and stopped**.
+The old config is ignored by plain `sync` and `watch`; it remains available only
+when explicitly passed with `--config`. The following installer/config material
+is compatibility documentation, not a requirement for adding projects.
+
+## Legacy configured host watcher (opt-in compatibility)
 
 The optional `host/candybar-watch.service` runs `candybar watch` from this
 checkout's venv. It uses native filesystem events, not a timer, and writes only

@@ -197,7 +197,9 @@ def test_source_removal_is_reported_without_registry_mutation(tmp_path):
     api = FakeApi()
     assert reconcile(config, api).ok
     file.unlink()
+    reads = api.reads
     report = reconcile(config, api)
+    assert api.reads == reads
     assert report.ok and report.results == [{'name': 'job', 'source': '', 'status': 'source-removed'}]
     assert len(api.rows) == 1 and len(api.writes) == 1
 
