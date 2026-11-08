@@ -21,6 +21,7 @@ dependencies = [
     "typer==0.27.3",
     "pyyaml==6.0.3",
     "textual==8.2.8",
+    "watchfiles==1.1.1",
 ]
 
 [project.scripts]

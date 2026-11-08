@@ -1,0 +1,17 @@
+# Copy to ~/.config/candybar/watch.toml and enroll authoritative sources.
+# Relative paths resolve against THIS config file's directory; ~ expands.
+# Keep roots small: every non-excluded directory uses a native watch.
+roots = []
+projects = []
+legacy = []
+
+# Examples (replace the empty arrays above; do not repeat keys):
+# projects = ["~/code/my-project"]
+# roots = ["~/code/my-project/deploy/candybar"]
+# legacy = ["~/code/my-project/ops/nightly/candybar.toml"]
+# ledger = "~/code/33GOD/candybar/deploy/migration/ledger.yaml"
+
+# New registrations are ALWAYS created paused, regardless of enabled in TOML.
+create_missing = true
+debounce_ms = 750
+retries = 3

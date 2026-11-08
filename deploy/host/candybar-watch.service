@@ -1,0 +1,21 @@
+# Event-driven Candybar manifest reconciliation. Not a timer or another clock.
+# Preview config with `candybar watch --dry-run` before enabling this unit.
+[Unit]
+Description=Candybar manifest autosync (native filesystem events)
+Documentation=file://%h/code/33GOD/candybar/deploy/README.md
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/33GOD/candybar
+Environment=PYTHONUNBUFFERED=1
+Environment=CANDYBAR_API_URL=https://candybar.delo.sh
+Environment=PATH=%h/code/33GOD/candybar/.venv/bin:%h/.local/share/mise/shims:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/code/33GOD/candybar/.venv/bin/candybar watch
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

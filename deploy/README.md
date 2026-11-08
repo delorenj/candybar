@@ -37,6 +37,55 @@ Notes:
 - `scripts/check-deploy-hygiene.sh` (repo root) gates every push: no LAN IPs,
   no plaintext-secret shapes on any deploy surface.
 
+## Host manifest watcher
+
+The optional `host/candybar-watch.service` runs `candybar watch` from this
+checkout's venv. It uses native filesystem events, not a timer, and writes only
+through the API (`https://candybar.delo.sh` in the unit). It does not need database
+credentials or restart the executor/steward. Run `uv sync --frozen` first.
+
+```bash
+bash deploy/host/install-watch.sh      # fresh install creates empty config and stops
+# Edit ~/.config/candybar/watch.toml to enroll projects, small roots, or legacy files.
+uv run candybar watch --dry-run       # inspect all proposed changes and errors
+bash deploy/host/install-watch.sh      # preview again, enable/start only if valid
+systemctl --user is-active candybar-watch.service
+journalctl --user -u candybar-watch -f
+```
+
+The example is `host/watch.toml.example`. This host's reviewed enrollment is
+`host/watch.delonet.toml` (79 existing definitions at rollout, two inactive
+migration sources excluded). To use it here:
+
+```bash
+install -m 600 deploy/host/watch.delonet.toml ~/.config/candybar/watch.toml
+uv run candybar watch --dry-run
+bash deploy/host/install-watch.sh
+```
+
+That enrollment excludes SDK/smoke fixtures and foreign worktrees; it does not
+claim that registry-only jobs have a local manifest. Add a new owning project to
+`projects`, a legacy manifest to `legacy`, or an intentionally scoped discovery
+root to `roots` as its source becomes authoritative.
+
+The installer never overwrites an
+existing config; `--dry-run` previews without installing/starting. The unit is
+linked from this checkout and a generated drop-in points at the selected XDG
+config. Config changes cause the managed service to restart and reconcile.
+Native-backend errors exit rather than falling back to polling. After an outage,
+bounded retries re-read the newest manifests; exhaustion is logged as unsynced
+and a later save or service restart retries it.
+
+Both project layouts and plain legacy `candybar.toml` are supported. Migration
+manifests consult their ledger and never cut over, revive, or create a missing
+ledger-owned registration. Duplicate names across authoritative files fail
+validation. New non-migration jobs start paused; existing pause/archive/skip
+state is preserved. Deletions never prune. See the root README's
+[autosync contract](../README.md#automatic-sync-on-save) before enrollment.
+
+This service is deliberately separate from `host/install.sh`: refreshing the
+executor/steward must not silently enroll manifests or start autosync.
+
 ## Host executor (Story 7.2, AD-17)
 
 `host/candybar-executor.service` runs `candybar daemon --roles executor` from

@@ -1,0 +1,22 @@
+# Live manifest enrollment for the Candybar host watcher.
+# Paths are the canonical source locations; tests/examples/worktrees are not enrolled.
+roots = [
+  "~/code/33GOD/candybar/deploy/migration/manifests",
+  "~/code/33GOD/candybar/deploy/policy",
+  "~/code/gruvato/deploy/candybar",
+  "~/code/33GOD/bloodbank/integrations/n8n-workflows/dev-journal/candybar",
+]
+projects = [
+  "~/code/delonet-n8n-workflows",
+  "~/code/33GOD/bloodbank",
+  "~/code/33GOD/bloodbank/services/target-watch",
+  "~/code/green-in-between",
+]
+legacy = [
+  "~/code/HeyMa/components/wax/deploy/candybar/wax-calls-sync/candybar.toml",
+  "~/code/Milkshake/ops/candybar/mercury-backstop/candybar.toml",
+]
+ledger = "~/code/33GOD/candybar/deploy/migration/ledger.yaml"
+create_missing = true
+debounce_ms = 750
+retries = 3

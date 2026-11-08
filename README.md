@@ -194,6 +194,73 @@ comes from; `--json` gives both the local definition and the registry row.
 Outside a project, or in one with no candybars, it is the registry-wide list,
 as is `--global` anywhere.
 
+## Automatic sync on save
+
+`candybar watch` is the host-side, **event-driven** manifest watcher. Saving a
+manifest validates it and pushes changed definitions through the API—no manual
+registration, Git push, container rebuild, or daemon restart. It supports both
+project layouts (`.candybar.toml`, `.candybars/*.candybar.toml`) and legacy
+`candybar.toml`. Existing `register` behavior is unchanged.
+
+Enroll authoritative sources in `~/.config/candybar/watch.toml` (or
+`$XDG_CONFIG_HOME/candybar/watch.toml`):
+
+```toml
+projects = ["~/code/my-project"]
+roots = ["~/code/another-project/deploy/candybar"]
+legacy = ["~/code/older-project/ops/nightly/candybar.toml"]
+create_missing = true
+debounce_ms = 750
+retries = 3
+```
+
+`projects` loads each project's two standard locations; `roots` recursively
+discovers both layouts; `legacy` explicitly enrolls individual old-format files.
+Relative config paths resolve against the config directory; `~` expands. Keep
+roots narrow, rather than watching your entire home directory. Discovery skips
+worktrees, symlinked directories, dependency/cache/build trees and test/example
+manifests. Sources discovered under a configured root are enrolled, so choose
+only locations whose files should be authoritative. **Enrollment authorizes
+same-name adoption of untagged registrations**, including legacy manifests under
+an enrolled root; it never overrides another project's ownership tag. Migration
+manifests additionally require the exact ledger registration ID. Do not enroll
+copied definitions or a broad directory containing someone else's manifests.
+
+```bash
+candybar watch --dry-run             # validate + preview, no writes
+candybar watch --once --json         # sync once and read back results
+candybar watch                       # startup reconcile, then native filesystem events
+bash deploy/host/install-watch.sh    # optional persistent host service, preview first
+journalctl --user -u candybar-watch -f
+```
+
+The installer preserves existing configuration; on a fresh install it writes an
+empty example and stops for enrollment. See [`deploy/README.md`](deploy/README.md).
+
+- Atomic editor saves are debounced; invalid files leave live definitions alone.
+  A project's files validate together, and duplicate source claims are refused
+  before writes. Separate jobs are not one database transaction: API failures can
+  leave partial progress, reported as unsynced until reconciliation succeeds.
+- Files own definition fields, **not lifecycle state**. Existing enabled/paused,
+  archived and skip state remains untouched; archived jobs stay archived. New
+  jobs are created **paused**, even when the file says `enabled = true`; prove
+  them and use `candybar resume <name>` explicitly. `create_missing = false`
+  restricts sync to existing registrations.
+- Deleting or renaming a file never prunes, archives or deletes a registration.
+  A renamed job is a new definition; the old job remains operator-managed.
+- Legacy migration manifests require their matching ledger entry in `cutover`
+  or `verified` state and the exact registration ID. Rolled-back, planned and
+  decommissioned entries are excluded; missing or ambiguous ledger evidence is
+  an error. The watcher never performs a migration or enables a native clock.
+- API writes are read back before reporting success. API failures receive bounded
+  retries against **latest file contents**; exhausted failures remain visible in
+  the journal. A new save or restart retries; there is no recurring poll loop.
+- Saving the config restarts the managed watcher to load new sources. There is
+  no polling fallback; a native filesystem backend failure exits visibly.
+- A later reconciliation can overwrite schedule/runner edits made directly in
+  Holocene or the API. Edit the enrolled TOML to make definition changes stick.
+  This watcher does not commit files or push Git repositories.
+
 ## Runner kinds (Stories 7.3 and 7.4, AD-18, AD-19; n8n)
 
 A candybar defines how the executor starts it with **exactly one** of
