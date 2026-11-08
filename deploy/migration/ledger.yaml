@@ -713,19 +713,21 @@ jobs:
     schedule: OnCalendar=*-*-* 16:00:00; Persistent=true; RandomizedDelaySec=60
     jitter_s: 60
     unit: tolt-forge-daily.timer
-    unit_file: /home/delorenj/code/lost-things-forge/foundry/cron/tolt-forge-daily.timer
+    unit_file: /home/delorenj/.local/state/candybar/rollback-units/tolt-forge-daily.timer
   deviations:
   - RandomizedDelaySec=60 dropped (now fires exactly 16:00 local)
   - Persistent=true catch-up replaced by candybar misfire policy
   native_failing: true
   source_of_truth:
     repo: delorenj/lost-things-forge
-    path: foundry/cron/tolt-forge-daily.timer
-    commit: 0753cc4cfc7178ca6d3d2ab24ee56083551ff280
+    path: .candybars/tolt-forge-daily.candybar.toml
+    commit: 8ef4cd2978688ed96f1120fb8ba0b074b4bd4532
   disable:
   - systemctl --user disable --now tolt-forge-daily.timer
   rollback:
-  - systemctl --user enable --now /home/delorenj/code/lost-things-forge/foundry/cron/tolt-forge-daily.timer
+  - mkdir -p "$HOME/.local/state/candybar/rollback-units"
+  - git -C /home/delorenj/code/tolt/lost-things-forge show 0753cc4cfc7178ca6d3d2ab24ee56083551ff280:foundry/cron/tolt-forge-daily.timer > "$HOME/.local/state/candybar/rollback-units/tolt-forge-daily.timer"
+  - systemctl --user enable --now "$HOME/.local/state/candybar/rollback-units/tolt-forge-daily.timer"
   status: verified
   candybar_id: 01a17938-5381-7f92-8f1e-6966648dd452
   cutover_at: '2026-10-26T17:18:17.559351Z'
@@ -747,6 +749,10 @@ jobs:
     action: verify
     outcome: ok
     detail: 'invocation 0f43ac97-3ed8-5c03-9ada-c9a084e864b6 (scheduled) fail exit=1 runtime=8561ms memory=384258048B cpu=0.3707 (result parity: the job already failed natively)'
+  - at: '2026-11-08T10:51:47Z'
+    action: source-of-truth
+    outcome: updated
+    detail: 'Ownership moves to delorenj/lost-things-forge .candybars/tolt-forge-daily.candybar.toml; production schedule and systemd runner retained. Tracked native timer removed; rollback restores exact former timer bytes from commit 0753cc4c into ~/.local/state/candybar/rollback-units before enabling by path.'
 - id: systemd:tolt-items-daily
   wave: '7.16'
   candybar:
@@ -766,7 +772,7 @@ jobs:
     schedule: OnCalendar=*-*-* 03:00:00; Persistent=true; RandomizedDelaySec=120
     jitter_s: 120
     unit: tolt-items-daily.timer
-    unit_file: /home/delorenj/code/lost-things-forge/foundry/cron/tolt-items-daily.timer
+    unit_file: /home/delorenj/.local/state/candybar/rollback-units/tolt-items-daily.timer
   deviations:
   - RandomizedDelaySec=120 dropped (now fires exactly 03:00 local)
   - Persistent=true catch-up replaced by candybar misfire policy
@@ -774,12 +780,14 @@ jobs:
   native_failing: true
   source_of_truth:
     repo: delorenj/lost-things-forge
-    path: foundry/cron/tolt-items-daily.timer
-    commit: 0753cc4cfc7178ca6d3d2ab24ee56083551ff280
+    path: .candybars/tolt-items-daily.candybar.toml
+    commit: 8ef4cd2978688ed96f1120fb8ba0b074b4bd4532
   disable:
   - systemctl --user disable --now tolt-items-daily.timer
   rollback:
-  - systemctl --user enable --now /home/delorenj/code/lost-things-forge/foundry/cron/tolt-items-daily.timer
+  - mkdir -p "$HOME/.local/state/candybar/rollback-units"
+  - git -C /home/delorenj/code/tolt/lost-things-forge show 0753cc4cfc7178ca6d3d2ab24ee56083551ff280:foundry/cron/tolt-items-daily.timer > "$HOME/.local/state/candybar/rollback-units/tolt-items-daily.timer"
+  - systemctl --user enable --now "$HOME/.local/state/candybar/rollback-units/tolt-items-daily.timer"
   status: verified
   candybar_id: 01a17938-6fff-7821-bcf3-3048d43cce18
   cutover_at: '2026-10-26T17:18:24.754946Z'
@@ -801,6 +809,10 @@ jobs:
     action: verify
     outcome: ok
     detail: 'invocation 4013f95d-b416-589f-a229-ad0250f5dddf (scheduled) fail exit=1 runtime=39237ms memory=212303872B cpu=0.0677 (result parity: the job already failed natively)'
+  - at: '2026-11-08T10:51:47Z'
+    action: source-of-truth
+    outcome: updated
+    detail: 'Ownership moves to delorenj/lost-things-forge .candybars/tolt-items-daily.candybar.toml; production schedule and systemd runner retained. Tracked native timer removed; rollback restores exact former timer bytes from commit 0753cc4c into ~/.local/state/candybar/rollback-units before enabling by path.'
 - id: systemd:pr-crusher
   wave: '7.16'
   candybar:
