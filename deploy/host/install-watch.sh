@@ -7,13 +7,20 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 conf="${XDG_CONFIG_HOME:-$HOME/.config}/candybar/watch.toml"
 cli="$repo/.venv/bin/candybar"
+# Match the unit's default, and persist any deliberate shell override below.
+api_url="${CANDYBAR_API_URL:-https://candybar.delo.sh}"
+export CANDYBAR_API_URL="$api_url"
 case "${1:-}" in
   ""|--dry-run) ;;
   *) printf 'Usage: %s [--dry-run]\n' "$0" >&2; exit 2 ;;
 esac
 [[ -x "$cli" ]] || { printf '%s\n' "Run uv sync --frozen in the checkout first." >&2; exit 1; }
-mkdir -p "$(dirname "$conf")"
 if [[ ! -e "$conf" ]]; then
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    printf 'No watch config at %s; preview made no changes. Run without --dry-run to create the empty example.\n' "$conf"
+    exit 0
+  fi
+  mkdir -p "$(dirname "$conf")"
   install -m 600 "$here/watch.toml.example" "$conf"
   printf 'Created %s. Enroll sources, then rerun this installer.\n' "$conf"
   exit 0
@@ -27,7 +34,7 @@ fi
 dropin="$HOME/.config/systemd/user/candybar-watch.service.d"
 mkdir -p "$dropin"
 # systemd quotes its own argument syntax, not shell syntax. Python escapes paths.
-CANDYBAR_INSTALL_CLI="$cli" CANDYBAR_INSTALL_CONFIG="$conf" \
+CANDYBAR_INSTALL_CLI="$cli" CANDYBAR_INSTALL_CONFIG="$conf" CANDYBAR_INSTALL_REPO="$repo" \
   "$repo/.venv/bin/python" - "$dropin/10-config.conf" <<'PY'
 import os
 import pathlib
@@ -38,7 +45,23 @@ def quote(value):
 
 cli = quote(os.environ['CANDYBAR_INSTALL_CLI'])
 config = quote(os.environ['CANDYBAR_INSTALL_CONFIG'])
-pathlib.Path(sys.argv[1]).write_text(f'[Service]\nExecStart=\nExecStart={cli} watch --config {config}\n')
+repo = os.environ['CANDYBAR_INSTALL_REPO']
+# Environment=/WorkingDirectory= are not ExecStart: $ has no special meaning.
+def setting(value):
+    return '"' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"'
+
+path = os.pathsep.join([
+    repo + '/.venv/bin', str(pathlib.Path.home() / '.local/share/mise/shims'),
+    str(pathlib.Path.home() / '.local/bin'), '/usr/local/bin', '/usr/bin', '/bin',
+])
+endpoint = setting('CANDYBAR_API_URL=' + os.environ['CANDYBAR_API_URL'])
+pathlib.Path(sys.argv[1]).write_text(
+    '[Service]\nExecStart=\n'
+    f'ExecStart={cli} watch --config {config}\n'
+    f'WorkingDirectory={setting(repo)}\n'
+    f'Environment={endpoint}\n'
+    f'Environment={setting("PATH=" + path)}\n'
+)
 PY
 systemctl --user enable "$here/candybar-watch.service"
 systemctl --user daemon-reload

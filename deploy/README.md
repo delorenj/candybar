@@ -68,10 +68,13 @@ claim that registry-only jobs have a local manifest. Add a new owning project to
 `projects`, a legacy manifest to `legacy`, or an intentionally scoped discovery
 root to `roots` as its source becomes authoritative.
 
-The installer never overwrites an
-existing config; `--dry-run` previews without installing/starting. The unit is
-linked from this checkout and a generated drop-in points at the selected XDG
-config. Config changes cause the managed service to restart and reconcile.
+The installer never overwrites an existing config. `--dry-run` writes nothing,
+including on a fresh install with no config. Preview and the installed worker
+use the **same** endpoint: `CANDYBAR_API_URL` when set, otherwise
+`https://candybar.delo.sh`. A generated drop-in persists that endpoint, the
+selected XDG config, and this checkout's `ExecStart`, `WorkingDirectory` and
+`PATH`; it does not depend on the user manager inheriting the shell environment.
+The unit is linked from this checkout. Config changes restart and reconcile.
 Native-backend errors exit rather than falling back to polling. After an outage,
 bounded retries re-read the newest manifests; exhaustion is logged as unsynced
 and a later save or service restart retries it.
@@ -80,7 +83,11 @@ Both project layouts and plain legacy `candybar.toml` are supported. Migration
 manifests consult their ledger and never cut over, revive, or create a missing
 ledger-owned registration. Duplicate names across authoritative files fail
 validation. New non-migration jobs start paused; existing pause/archive/skip
-state is preserved. Deletions never prune. See the root README's
+state is preserved. Deletions never prune. The watcher does **not** rewrite the
+committed migration ledger: after editing an active migration manifest, reconcile
+its ledger definition deliberately **before a future rollback/re-cutover**. The
+cutover command uses the ledger snapshot and could otherwise restore old fields;
+ordinary autosync does not perform or trigger that operation. See the root README's
 [autosync contract](../README.md#automatic-sync-on-save) before enrollment.
 
 This service is deliberately separate from `host/install.sh`: refreshing the
