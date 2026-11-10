@@ -698,7 +698,7 @@ jobs:
   wave: '7.16'
   candybar:
     name: tolt-forge-daily
-    description: "Foundry game loop of Tower of Lost Things on headless Claude Code (subscription): sessions back to back, up to 4 fresh games a day"
+    description: 'Foundry game loop of Tower of Lost Things on headless Claude Code (subscription): sessions back to back, up to 4 fresh games a day'
     tags:
     - migrated
     - llm
@@ -752,7 +752,7 @@ jobs:
   - at: '2026-11-08T10:51:47Z'
     action: source-of-truth
     outcome: updated
-    detail: 'Ownership moves to delorenj/lost-things-forge .candybars/tolt-forge-daily.candybar.toml; production schedule and systemd runner retained. Tracked native timer removed; rollback restores exact former timer bytes from commit 0753cc4c into ~/.local/state/candybar/rollback-units before enabling by path.'
+    detail: Ownership moves to delorenj/lost-things-forge .candybars/tolt-forge-daily.candybar.toml; production schedule and systemd runner retained. Tracked native timer removed; rollback restores exact former timer bytes from commit 0753cc4c into ~/.local/state/candybar/rollback-units before enabling by path.
 - id: systemd:tolt-items-daily
   wave: '7.16'
   candybar:
@@ -812,7 +812,7 @@ jobs:
   - at: '2026-11-08T10:51:47Z'
     action: source-of-truth
     outcome: updated
-    detail: 'Ownership moves to delorenj/lost-things-forge .candybars/tolt-items-daily.candybar.toml; production schedule and systemd runner retained. Tracked native timer removed; rollback restores exact former timer bytes from commit 0753cc4c into ~/.local/state/candybar/rollback-units before enabling by path.'
+    detail: Ownership moves to delorenj/lost-things-forge .candybars/tolt-items-daily.candybar.toml; production schedule and systemd runner retained. Tracked native timer removed; rollback restores exact former timer bytes from commit 0753cc4c into ~/.local/state/candybar/rollback-units before enabling by path.
 - id: systemd:pr-crusher
   wave: '7.16'
   candybar:
@@ -4060,3 +4060,122 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a19295-b2fe-76e4-9910-6a479982132e enabled; first fire 2026-11-01T09:20:00Z
+- id: systemd:system:tailscale-monitor.timer
+  wave: '7.16'
+  candybar:
+    name: tailscale-monitor
+    description: Tailscale connection monitor; restarts tailscaled or re-runs tailscale up when the tailnet drops (system service, runs as root)
+    tags:
+    - migrated
+    - infra
+    - tailscale
+    schedule: '*/5 * * * *'
+    timezone: America/New_York
+    runner:
+      kind: exec
+      argv:
+      - /usr/bin/sudo
+      - -n
+      - /usr/bin/systemctl
+      - start
+      - --wait
+      - tailscale-monitor.service
+      env: {}
+      timeout_s: 240
+  native:
+    kind: systemd-timer
+    schedule: OnBootSec=2min; OnUnitActiveSec=5min; AccuracySec=30s (system scope)
+    jitter_s: 30
+    unit: tailscale-monitor.timer
+    unit_file: /home/delorenj/code/infra/systemd/system/tailscale-monitor.timer
+  deviations:
+  - OnBootSec=2min boot trigger dropped
+  - OnUnitActiveSec=5min (monotonic) replaced by wall-clock */5
+  - system-scope unit started through sudo -n by the exec runner (the systemd runner is --user only)
+  native_failing: false
+  source_of_truth:
+    repo: delorenj/infra
+    path: systemd/system/tailscale-monitor.timer
+    commit: 3dadacd52570e3fcedd6726b2e7fadbb96c03a8e
+  disable:
+  - sudo -n systemctl disable --now tailscale-monitor.timer
+  rollback:
+  - sudo -n systemctl enable --now /home/delorenj/code/infra/systemd/system/tailscale-monitor.timer
+  status: verified
+  candybar_id: 01a1c791-569d-78b3-aa6e-71ba8c1e10e4
+  cutover_at: '2026-11-10T22:25:53.732726Z'
+  verification:
+    invocation_id: 0454caa3-1857-5e91-8394-ef730b3184df
+    result: success
+    at: '2026-11-10T22:30:01.091236Z'
+  disable_pending: false
+  history:
+  - at: '2026-11-10T22:24:00Z'
+    action: note
+    outcome: ok
+    detail: system-scope timer disabled by hand (sudo -n systemctl disable --now) just before cutover, because the migrate probe only asks systemctl --user and read the system timer as not-found/retired, so cutover would have skipped the disable commands
+  - at: '2026-11-10T22:25:53.732726Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1c791-569d-78b3-aa6e-71ba8c1e10e4 enabled; first fire 2026-11-10T22:30:00Z
+  - at: '2026-11-10T22:32:18.835554Z'
+    action: verify
+    outcome: ok
+    detail: invocation 0454caa3-1857-5e91-8394-ef730b3184df (scheduled) success exit=0 runtime=508ms memory=9285632B cpu=0.0738
+- id: systemd:system:docker-stack-ssbnk-cleanup.timer
+  wave: '7.16'
+  candybar:
+    name: ssbnk-cleanup
+    description: ssbnk screenshot retention cleanup (docker compose maintenance profile, real deletion) via the system service
+    tags:
+    - migrated
+    - docker
+    - ssbnk
+    schedule: 0 2 * * *
+    timezone: America/New_York
+    runner:
+      kind: exec
+      argv:
+      - /usr/bin/sudo
+      - -n
+      - /usr/bin/systemctl
+      - start
+      - --wait
+      - docker-stack-ssbnk-cleanup.service
+      env: {}
+      timeout_s: 1200
+  native:
+    kind: systemd-timer
+    schedule: OnCalendar=*-*-* 02:00:00; Persistent=true (system scope)
+    jitter_s: 0
+    unit: docker-stack-ssbnk-cleanup.timer
+    unit_file: /home/delorenj/docker/systemd/docker-stack-ssbnk-cleanup.timer
+  deviations:
+  - Persistent=true catch-up replaced by candybar misfire policy
+  - system-scope unit started through sudo -n by the exec runner (the systemd runner is --user only)
+  native_failing: true
+  source_of_truth:
+    repo: delorenj/docker
+    path: systemd/docker-stack-ssbnk-cleanup.timer
+    commit: 39185863c18399d6b940d3b0c94fb92de1384dc8
+  disable:
+  - sudo -n systemctl disable --now docker-stack-ssbnk-cleanup.timer
+  rollback:
+  - sudo -n systemctl enable --now /home/delorenj/docker/systemd/docker-stack-ssbnk-cleanup.timer
+  status: cutover
+  candybar_id: 01a1c790-8b9c-7068-adab-de8f3970fc29
+  cutover_at: '2026-11-10T22:25:01.526364Z'
+  verification:
+    invocation_id: null
+    result: null
+    at: null
+  disable_pending: false
+  history:
+  - at: '2026-11-10T22:24:00Z'
+    action: note
+    outcome: ok
+    detail: system-scope timer disabled by hand (sudo -n systemctl disable --now) just before cutover, because the migrate probe only asks systemctl --user and read the system timer as not-found/retired, so cutover would have skipped the disable commands
+  - at: '2026-11-10T22:25:01.526364Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1c790-8b9c-7068-adab-de8f3970fc29 enabled; first fire 2026-11-11T07:00:00Z
