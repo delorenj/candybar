@@ -16,7 +16,6 @@ from candybar.events.builders import STEWARD_FACT_FOR_STATUS
 from candybar.events.envelope import StewardTaskData
 from candybar.steward.notify import (
     DEFAULT_PROFILE,
-    DEFAULT_TARGET,
     NOTIFY_MAX_DELIVERIES,
     TARGET_ENV,
     NotifyConfig,
@@ -135,12 +134,50 @@ def test_unparseable_fact_is_terminated() -> None:
     assert msg.acks == ["term"]
 
 
-def test_config_defaults_and_off(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_defaults_local_and_explicit_route(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(TARGET_ENV, raising=False)
     config = NotifyConfig.from_env()
-    assert config is not None and (config.target, config.profile) == (DEFAULT_TARGET, DEFAULT_PROFILE)
+    assert (config.target, config.profile) == ("", DEFAULT_PROFILE)
     monkeypatch.setenv(TARGET_ENV, "off")
-    assert NotifyConfig.from_env() is None
+    assert NotifyConfig.from_env().target == ""
+    monkeypatch.setenv(TARGET_ENV, "telegram:operator")
+    assert NotifyConfig.from_env().target == "telegram:operator"
+
+
+@pytest.mark.parametrize(("status", "action", "outcome"), [
+    ("succeeded", "enrich", "done"), ("succeeded", "evaluate", "Nominal"),
+    ("succeeded", "fix", "fixed"), ("succeeded", "fix", "not_fixed"),
+    ("failed", "evaluate", None),
+])
+def test_default_route_acks_facts_without_sender(status: str, action: str, outcome: str | None) -> None:
+    sender = Sender()
+    msg = msg_for(data(status, action=action, outcome=outcome, error="agent failed"))
+    asyncio.run(StewardNotifier(NotifyConfig("", "p", CONFIG.holocene, CONFIG.reports_dir), sender)
+                .handle_message(msg))
+    assert msg.acks == ["ack"] and sender.sent == []
+
+
+def test_queued_backlog_is_not_replayed_when_operator_route_enabled() -> None:
+    sender = Sender()
+    task = data(action="evaluate", outcome="Drifted")
+    old = msg_for(task)
+    new = msg_for(data(action="evaluate", outcome="Drifted"))
+    # Envelope timestamps, not task-created timestamps, define a new notification.
+    cutoff = datetime.now(UTC)
+    new_fact = build_steward_task_fact(STEWARD_FACT_FOR_STATUS["succeeded"],
+                                       data(action="evaluate", outcome="Drifted"))
+    new.data = new_fact.model_copy(update={"time": cutoff.replace(year=cutoff.year + 1)}).model_dump_json().encode()
+    old_fact = build_steward_task_fact(STEWARD_FACT_FOR_STATUS[task.status], task)
+    old.data = old_fact.model_copy(update={"time": cutoff.replace(year=cutoff.year - 1)}).model_dump_json().encode()
+    notifier = StewardNotifier(CONFIG, sender, route_started_at=cutoff)
+
+    async def both() -> None:
+        await notifier.handle_message(old)
+        await notifier.handle_message(new)
+
+    asyncio.run(both())
+    assert old.acks == ["ack"] and new.acks == ["ack"]
+    assert len(sender.sent) == 1
 
 
 def test_a_republished_terminal_fact_is_announced_once() -> None:
