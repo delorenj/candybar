@@ -3779,6 +3779,10 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation b958e9f7-c33a-5c29-9d43-5447484cffd3 (scheduled) success exit=0 runtime=25720ms memory=75460608B cpu=0.7316
+  - at: '2026-11-10T21:55:00Z'
+    action: retire-native
+    outcome: ok
+    detail: operator order; telnyx-s3-intake.timer unit file deleted from ~/.config/systemd/user and HeyMa components/telnyx-s3-intake/deploy (it was disabled and inactive since cutover); the candybar stays enabled and the rollback above no longer applies
 - id: systemd:gruvato-acoustid-check.timer
   wave: '7.11'
   candybar:
