@@ -2,7 +2,7 @@
   "project_name": "candybar",
   "project_description": "",
   "project_id": "candybar",
-  "repo_path": "/home/delorenj/code/33GOD/candybar",
+  "repo_path": "~/code/33GOD/candybar",
   "ticket_provider": {
     "type": "plane",
     "workspace": "33god",
