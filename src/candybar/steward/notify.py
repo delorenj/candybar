@@ -1,26 +1,10 @@
-"""Push every finished steward task to the operator (Telegram through `hermes send`).
+"""Consume finished steward facts durably; default to local receipts, not chat.
 
-Enrich, Fix, Evaluate and their follow-ups run for minutes, so whoever
-started one has usually walked away by the time it ends. The results used to
-land only in the registry, the Holocene tab and (for an evaluate) a report
-file under ~/code/DeLoDocs/Reports, none of which tells anyone anything.
-
-This is an event-driven consumer of the steward's own facts, not a clock: a
-durable pull consumer (`candybar-steward-notify`) on BLOODBANK_EVENTS,
-filtered to `bloodbank.evt.cron.steward_task.>`, that sends one message per
-`completed` / `failed` fact. It runs inside the steward role (the host, where
-`hermes` and its profile credentials live). A task the operator cancelled is
-not announced (they know). Delivery is at least once: a send that fails is
-retried with backoff up to NOTIFY_MAX_DELIVERIES, then logged and dropped, so
-a Telegram outage never wedges the consumer.
-
-Config (environment, all optional):
-
-- CANDYBAR_STEWARD_NOTIFY_TARGET: `hermes send --to` target (default the
-  operator's Telegram DM, as the scheduling-policy job uses); `off` disables.
-- CANDYBAR_STEWARD_NOTIFY_PROFILE: the Hermes profile whose bot sends it
-  (default `33god-pm`).
-- CANDYBAR_HOLOCENE_URL: the Candybar tab, for the deep link.
+The steward task registry, reports and task facts remain the evidence. A configured
+CANDYBAR_STEWARD_NOTIFY_TARGET explicitly opts into operator messages; absent or
+`off` keeps delivery local while still draining the durable consumer. On opt-in,
+only facts published after this notifier started can be sent: a backlog built
+while the route was local must never turn into a burst of Telegram messages.
 """
 
 from __future__ import annotations
@@ -33,6 +17,7 @@ from collections import OrderedDict
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -67,7 +52,6 @@ REATTACH_S = 30
 TARGET_ENV = "CANDYBAR_STEWARD_NOTIFY_TARGET"
 PROFILE_ENV = "CANDYBAR_STEWARD_NOTIFY_PROFILE"
 HOLOCENE_ENV = "CANDYBAR_HOLOCENE_URL"
-DEFAULT_TARGET = "telegram:7564050286"
 DEFAULT_PROFILE = "33god-pm"
 DEFAULT_HOLOCENE = "https://holocene.delo.sh/candybar"
 CANCELLED = "cancelled by operator"
@@ -87,10 +71,11 @@ class NotifyConfig:
     reports_dir: Path
 
     @classmethod
-    def from_env(cls) -> NotifyConfig | None:
-        target = os.environ.get(TARGET_ENV, DEFAULT_TARGET).strip()
-        if target.lower() in {"", "off", "none", "0", "false"}:
-            return None
+    def from_env(cls) -> NotifyConfig:
+        # An absent target is a local-only route, not an opt-out of consuming facts.
+        target = os.environ.get(TARGET_ENV, "").strip()
+        if target.lower() in {"off", "none", "0", "false"}:
+            target = ""
         return cls(
             target=target,
             profile=os.environ.get(PROFILE_ENV, "").strip() or DEFAULT_PROFILE,
@@ -132,9 +117,11 @@ def render(task: StewardTaskData, config: NotifyConfig) -> str | None:
 class StewardNotifier:
     """Turns steward task facts into operator messages. Never raises from handle_message."""
 
-    def __init__(self, config: NotifyConfig, sender: Sender = hermes_send) -> None:
+    def __init__(self, config: NotifyConfig, sender: Sender = hermes_send,
+                 *, route_started_at: datetime | None = None) -> None:
         self._config = config
         self._send = sender
+        self._route_started_at = route_started_at
         # (task, status) already announced: a terminal write retried after its
         # fact went out republishes the same fact; say it once.
         self._announced: OrderedDict[tuple[str, str], None] = OrderedDict()
@@ -149,8 +136,16 @@ class StewardNotifier:
         if not isinstance(fact, (StewardTaskCompletedEvent, StewardTaskFailedEvent)):
             await msg.ack()  # queued / started: nothing to say yet
             return
-        text = render(fact.data, self._config)
         key = (str(fact.data.task_id), fact.data.status)
+        # Ack only the notifier copy. The task registry, report and Bloodbank fact
+        # remain intact. A route enabled later never replays the quiet backlog.
+        if not self._config.target or (self._route_started_at is not None and
+                                       fact.time < self._route_started_at):
+            log.info("steward-notify: local task %s (%s %s %s)", fact.data.task_id,
+                     fact.data.action, fact.data.name, fact.data.outcome or fact.data.status)
+            await msg.ack()
+            return
+        text = render(fact.data, self._config)
         if text is None or key in self._announced:
             await msg.ack()
             return
@@ -185,10 +180,9 @@ class StewardNotifier:
 async def run_notifier(js: Any, stop: asyncio.Event, config: NotifyConfig | None = None) -> None:
     """Attach the durable and announce finished tasks until stop. Logs, never raises."""
     config = config if config is not None else NotifyConfig.from_env()
-    if config is None:
-        log.info("steward-notify: disabled (%s=off)", TARGET_ENV)
-        return
-    notifier = StewardNotifier(config)
+    # This cutoff is established before attaching the existing durable. Events
+    # queued under the former noisy policy (or while local-only) stay local.
+    notifier = StewardNotifier(config, route_started_at=datetime.now(UTC))
     consumer = ConsumerConfig(
         durable_name=NOTIFY_DURABLE,
         filter_subject=NOTIFY_FILTER,
@@ -204,7 +198,8 @@ async def run_notifier(js: Any, stop: asyncio.Event, config: NotifyConfig | None
             sub = await js.pull_subscribe(
                 NOTIFY_FILTER, durable=NOTIFY_DURABLE, stream=EVENT_STREAM, config=consumer
             )
-            log.info("steward-notify: announcing finished tasks to %s via profile %s", config.target, config.profile)
+            log.info("steward-notify: %s via profile %s",
+                     f"operator route {config.target}" if config.target else "local-only", config.profile)
             while not stop.is_set():
                 try:
                     messages = await sub.fetch(1, timeout=1)
