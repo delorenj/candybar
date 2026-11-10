@@ -1,0 +1,126 @@
+{
+  "definition_drift": {},
+  "doctor": {
+    "exit_code": 2,
+    "status": "unknown",
+    "unknown": [
+      "systemd:user:newapi-allowances.timer: canonical migration directory lock held; inspect migrate/autosync owner and retry doctor --live"
+    ],
+    "violations": [
+      {
+        "id": "systemd:system:docker-stack-ssbnk-cleanup.timer",
+        "message": "not a Candybar; register the recurring job in Candybar and retire its native clock"
+      },
+      {
+        "id": "systemd:system:tailscale-monitor.timer",
+        "message": "not a Candybar; register the recurring job in Candybar and retire its native clock"
+      }
+    ]
+  },
+  "enabled": true,
+  "gate": {
+    "exit_code": 0,
+    "installed_python": "/home/delorenj/.agents/tools/jev-clairic/bin/zcrank-gate.py",
+    "policy_keys": [
+      "scheduling-policy|local|systemd:system:docker-stack-ssbnk-cleanup.timer",
+      "scheduling-policy|local|systemd:system:tailscale-monitor.timer",
+      "scheduling-policy|local|unknown:systemd:user:newapi-allowances.timer"
+    ],
+    "python_sha256": "951be5a85526821c2d0bf3fa0f52ffb73d3e27b5805b04c454f7114762f61741",
+    "script": "/home/delorenj/.hermes/profiles/33god-pm/scripts/zcrank-gate.sh",
+    "stable_across_diagnostics": true
+  },
+  "invocation": {
+    "candybarId": "01a186d3-5649-7faf-ba9e-a90057ac491e",
+    "costUsd": null,
+    "cpuLoad": 0.3785,
+    "errorMessage": null,
+    "exitCode": 0,
+    "finishedAt": "2026-11-10T14:45:27.168462+00:00",
+    "gpuLoad": 0.0,
+    "id": "b0202a41-0002-4266-b106-a4c50dabf142",
+    "idempotencyKey": "candybar:01a186d3-5649-7faf-ba9e-a90057ac491e:manual:391c6e82-8d4f-4c3f-a6cb-a0a9f4b77ced",
+    "memoryPeakBytes": 70578176,
+    "result": "success",
+    "runtimeMs": 935,
+    "startedAt": "2026-11-10T14:45:26.232381+00:00",
+    "stderrTail": null,
+    "tickId": null,
+    "tokenSpend": 0,
+    "trigger": "manual"
+  },
+  "limits": [
+    "Full candybar sync timed out at 45 seconds under existing shared reconcile lock; no locks bypassed and no watcher/session stopped.",
+    "Canonical tests: 113 passed, 3 failed due canonical migration lock held. Same reviewed commit in its isolated worktree: 116 passed in 10.19s. Ruff passed. Agents: 24 passed, 5 subtests passed."
+  ],
+  "local_receipt": {
+    "delivery": "local",
+    "invocation_id": "b0202a41-0002-4266-b106-a4c50dabf142",
+    "message": "recorded locally; no transport",
+    "status": "success",
+    "token_spend": 0,
+    "trigger": "manual"
+  },
+  "manifest_path": "/home/delorenj/code/33GOD/candybar/deploy/policy/candybar.toml",
+  "manifest_sha256": "2152633e69d7edc11a224cd3d976bad422669f44e9db1ddc08773653865fad97",
+  "native_clock_matches": [
+    {
+      "row": {
+        "enabled": true,
+        "id": "hermes:33god-pm:777c511a009c",
+        "job_id": "777c511a009c",
+        "profile": "33god-pm",
+        "recurring": true,
+        "scheduler": "external"
+      },
+      "source": "hermes"
+    }
+  ],
+  "policy_id": "01a186d3-5649-7faf-ba9e-a90057ac491e",
+  "prompt": {
+    "deliver": "local",
+    "failure_deliver": "local",
+    "job_id": "777c511a009c",
+    "monitor_script": "zcrank-gate.sh",
+    "scheduler": "external",
+    "sha256": "37af85be4c7486b224258c002ff5a39d954cb84402bb7f04f5beb378389af19f",
+    "source": "/home/delorenj/.agents/tools/jev-clairic/hermes/crank-beat-prompt.txt",
+    "stored_matches_source": true
+  },
+  "read_at_unix": 1794322255.9182198,
+  "reviewed_commits": {
+    "agents": "6a28d039ff722670ac49ec6c420cd7216fccb92e",
+    "candybar": "8adf45de45b0ba579ecaaffde7bf47623c9beb0d"
+  },
+  "runner": {
+    "argv": [
+      "/home/delorenj/code/33GOD/candybar/.venv/bin/python",
+      "-m",
+      "candybar.transition_exec",
+      "--state-file",
+      "/home/delorenj/.local/state/candybar-scheduling-policy/transitions.json",
+      "--local-only",
+      "--timeout",
+      "120",
+      "--",
+      "/home/delorenj/code/33GOD/candybar/.venv/bin/python",
+      "-m",
+      "candybar.scheduling_drift",
+      "--policy",
+      "/home/delorenj/code/33GOD/candybar/deploy/scheduling-policy.json",
+      "--report",
+      "/home/delorenj/.local/state/candybar-scheduling-policy/report.json"
+    ],
+    "env": {},
+    "kind": "exec",
+    "timeout_s": 210,
+    "workdir": "/home/delorenj/code/33GOD/candybar"
+  },
+  "safety": {
+    "legacy_pending_present": false,
+    "paused_until_runtime_gate_proof": true,
+    "restarts": false,
+    "telegram_tests": false,
+    "unrelated_agents_diff_preserved": true
+  }
+}
