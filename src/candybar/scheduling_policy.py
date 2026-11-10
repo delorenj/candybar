@@ -259,8 +259,10 @@ def rollback_evidence(exception: dict, registry_source: dict, base: str | None) 
             return "pass", "canonical rolled-back ledger and exact disabled registration verified"
         finally:
             os.close(fd)
+    except BlockingIOError:
+        return "unknown", "canonical migration directory lock held; inspect migrate/autosync owner and retry doctor --live"
     except (OSError, LedgerError, ValueError, TypeError, KeyError, urllib.error.URLError):
-        return "unknown", "canonical rollback ledger/registry unavailable, malformed or migrating; inspect and retry doctor --live"
+        return "unknown", "canonical rollback ledger/registry unavailable or malformed; inspect and retry doctor --live"
 
 
 def audit(inventory: dict, exceptions: dict, *, base: str | None = None) -> dict:

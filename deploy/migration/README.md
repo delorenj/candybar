@@ -47,12 +47,18 @@ remote acceptance followed by interruption before local commit/removal can cause
 a duplicate. The Hermes endpoint has no idempotency-key contract here; this is not
 exactly-once delivery and does not add a scheduler or inference.
 
-The Candybar-owned `deploy/policy/candybar.toml` direct-exec job emits one
-aggregate count-only new/cleared condition notification per changed audit via
-the existing `33god-pm` route; no timer names, provider quotas, models, or
-job contents enter Telegram. It was registered disabled and drilled first;
-its committed manifest reflects the enabled production state. Its
-report is `/home/delorenj/.local/state/candybar-scheduling-policy/report.json`.
+The Candybar-owned `deploy/policy/candybar.toml` direct-exec job uses
+`transition_exec --local-only`, with **no profile, target or failure sender**.
+Audit detection is unchanged; transitions and execution errors stay in
+`/home/delorenj/.local/state/candybar-scheduling-policy/transitions.json.local-report.json`
+and `.local-events.jsonl`; the full audit remains `report.json` in that directory.
+The existing zcrank agent-attention gate consumes active fault identities, not
+raw operator notifications; recovery and noncritical diagnostics remain local.
+A legacy `.pending.json` is preserved and refused, never replayed on Telegram
+or silently deleted. Inspect and deliberately quarantine it before a local-only
+proof if present; keep the job paused until independent review and that proof.
+Definition sync must not resume the job. The manifest's `enabled` is creation
+metadata, not proof of runtime activation.
 AD-22's independent `candybar-watchdog.timer` remains outside Candybar because
 Candybar cannot watch its own clock. CI checks a clean fixture and proves a
 rogue-timer fixture exits 1; machine drift is reported, not an automatic CI
