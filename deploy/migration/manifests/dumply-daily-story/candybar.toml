@@ -1,13 +1,14 @@
 # Migrated from hermes:dumply:8aecd027dbd0 (wave 7.17, AD-19/AD-21).
-# Dumply (Carrie's agent) runs one TIKT story a day — interactive Telegram
-# group session, Plane ticket work, trivia video renders. Hermes keeps the
-# Telegram delivery/session; candybar owns the 20:30 America/New_York
-# schedule. Rollback: ledger entry hermes:dumply:8aecd027dbd0.
+# Dumply (Carrie's agent) runs one TIKT story per scheduled session — interactive
+# Telegram group session, Plane ticket work, trivia video renders. Hermes keeps
+# delivery/session; candybar owns Sunday 20:30 America/New_York during the
+# TIKT-6 approval wait. Restore daily via candybar edit when lessons resume.
+# Rollback: ledger entry hermes:dumply:8aecd027dbd0.
 [candybar]
 name = "dumply-daily-story"
 description = "Dumply daily TIKT story session (was hermes dumply:8aecd027dbd0); telegram:-5546637302"
 tags = ["migrated", "hermes-agent", "wave-7-17"]
-schedule = "30 20 * * *"
+schedule = "30 20 * * 0"
 timezone = "America/New_York"
 
 [candybar.runner]

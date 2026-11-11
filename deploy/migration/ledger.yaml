@@ -1201,7 +1201,7 @@ jobs:
     - migrated
     - hermes-agent
     - wave-7-17
-    schedule: 30 20 * * *
+    schedule: 30 20 * * 0
     timezone: America/New_York
     runner:
       kind: hermes
