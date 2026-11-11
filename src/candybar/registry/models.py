@@ -101,6 +101,9 @@ class Invocation(Base):
     # Executor-measured from the cgroup scope (Story 3.1, migration 0002).
     memory_peak_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     cpu_load: Mapped[float] = mapped_column(Double, nullable=False, default=0.0)
+    # CPU time in core-seconds as the runner measured it; NULL = not measured
+    # (cpu_load cannot say that: it reads 0 when unmeasured; migration 0010).
+    cpu_seconds: Mapped[float | None] = mapped_column(Double, nullable=True)
     # Executor-measured via nvidia-smi pmon (Story 3.2, migration 0004).
     gpu_load: Mapped[float] = mapped_column(Double, nullable=False, default=0.0)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -208,6 +211,24 @@ class StewardTask(Base):
     )
 
 
+class CandybarCost(Base):
+    """One candybar's rolling-window cost totals (migration 0010).
+
+    `totals` holds sums and counts only (`registry.store.COST_TOTALS_SQL`);
+    averages, projections and tiers are derived at read time (`candybar.costs`),
+    so a changed schedule or threshold needs no recompute.
+    """
+
+    __tablename__ = "candybar_costs"
+
+    candybar_id: Mapped[UUID] = mapped_column(
+        ForeignKey("candybars.id", ondelete="CASCADE"), primary_key=True
+    )
+    window_days: Mapped[int] = mapped_column(nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    totals: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
 # Names the sole-writer guard and migration agree on.
 TABLES = (
     "candybars",
@@ -216,4 +237,5 @@ TABLES = (
     "dispatch_cursor",
     "candybar_profiles",
     "steward_tasks",
+    "candybar_costs",
 )

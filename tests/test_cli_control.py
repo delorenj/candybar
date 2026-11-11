@@ -37,6 +37,7 @@ import candybar.api.stream as stream_module
 from candybar.api.stream import ScheduleStream
 from candybar.cli import control
 from candybar.cli.main import app
+from candybar.costs import DEFAULT_THRESHOLDS, UNITS, build_cost, what_ifs
 from candybar.events import (
     build_candybar_completed,
     build_candybar_failed,
@@ -197,8 +198,38 @@ class FakeApi:
         return [c for c in self.calls if c.method != "GET"]
 
 
+def cost_object(schedule: str = "*/5 * * * *", fires: float = 288.0, **totals: Any) -> dict[str, Any]:
+    """A `cost` object as the API builds it; no totals = a candybar with no runs yet."""
+    return build_cost(
+        {"runs": 0, **totals} if totals else None,
+        window_days=7,
+        computed_at=UNIT_NOW if totals else None,
+        schedule=schedule,
+        timezone="UTC",
+        runner_kind="exec",
+        now=UNIT_NOW,
+        thresholds=DEFAULT_THRESHOLDS,
+        fires=fires,
+    )
+
+
+def cost_route(name: str, candybar_id: str, cost: dict[str, Any]) -> dict[str, Any]:
+    """`GET /candybars/{id}/cost`'s body."""
+    return {
+        "candybarId": candybar_id,
+        "name": name,
+        "cost": cost,
+        "whatIf": what_ifs(cost, DEFAULT_THRESHOLDS),
+        "thresholds": {
+            d: {"yellow": y, "red": r, "unit": UNITS[d]} for d, (y, r) in DEFAULT_THRESHOLDS.items()
+        },
+        "configError": None,
+    }
+
+
 def cb(name: str, cid: str, **kw: Any) -> dict[str, Any]:
     """A candybar in the contract definition shape (GET /candybars items)."""
+    kw.setdefault("cost", cost_object())
     return {
         "id": cid,
         "name": name,
@@ -346,6 +377,7 @@ def test_ls_api_error_exits_1(fake: FakeApi) -> None:
 def test_name_resolves_through_the_listing_then_reads_by_id(listing: FakeApi) -> None:
     listing.on("GET", f"/candybars/{ID_ALPHA}", {**ALPHA, "totalInvoked": 4, "totalSuccessful": 3})
     listing.on("GET", f"/candybars/{ID_ALPHA}/runner", {"runner": None, "entrypoint": "/bin/true"})
+    listing.on("GET", f"/candybars/{ID_ALPHA}/cost", cost_route("alpha-report", ID_ALPHA, ALPHA["cost"]))
     listing.on("GET", f"/candybars/{ID_ALPHA}/invocations", {"candybarId": ID_ALPHA, "invocations": []})
     result = invoke_cli(["show", "alpha-report"])
     assert result.exit_code == 0, result.output
@@ -355,6 +387,7 @@ def test_name_resolves_through_the_listing_then_reads_by_id(listing: FakeApi) ->
 def test_id_resolves_without_the_listing(fake: FakeApi) -> None:
     fake.on("GET", f"/candybars/{ID_ALPHA}", {**ALPHA, "totalInvoked": 0, "totalSuccessful": 0})
     fake.on("GET", f"/candybars/{ID_ALPHA}/runner", {"runner": None, "entrypoint": "/bin/true"})
+    fake.on("GET", f"/candybars/{ID_ALPHA}/cost", cost_route("alpha-report", ID_ALPHA, ALPHA["cost"]))
     result = invoke_cli(["show", ID_ALPHA, "--runs", "0"])
     assert result.exit_code == 0, result.output
     assert "/candybars" not in [c.path for c in fake.calls]
@@ -431,6 +464,7 @@ def test_resolve_id_helper_returns_the_id(listing: FakeApi) -> None:
 def _show_routes(fake: FakeApi, detail: dict[str, Any], runner: dict[str, Any], runs: Any) -> None:
     fake.on("GET", f"/candybars/{detail['id']}", detail)
     fake.on("GET", f"/candybars/{detail['id']}/runner", runner)
+    fake.on("GET", f"/candybars/{detail['id']}/cost", cost_route(detail["name"], detail["id"], detail["cost"]))
     fake.on("GET", f"/candybars/{detail['id']}/invocations", {"candybarId": detail["id"], "invocations": runs})
 
 
@@ -465,6 +499,7 @@ def test_show_a_paused_noise_runner_candybar(listing: FakeApi, frozen_now: datet
 def test_show_runs_zero_skips_the_invocations_read(listing: FakeApi) -> None:
     listing.on("GET", f"/candybars/{ID_ALPHA}", {**ALPHA, "totalInvoked": 0, "totalSuccessful": 0})
     listing.on("GET", f"/candybars/{ID_ALPHA}/runner", {"runner": None, "entrypoint": "/x"})
+    listing.on("GET", f"/candybars/{ID_ALPHA}/cost", cost_route("alpha-report", ID_ALPHA, ALPHA["cost"]))
     assert invoke_cli(["show", "alpha-report", "--runs", "0"]).exit_code == 0
     assert listing.of("GET", f"/candybars/{ID_ALPHA}/invocations") == []
 
@@ -1425,6 +1460,7 @@ def _invocation_row(candybar_id: UUID, **kw: Any) -> SimpleNamespace:
         "id": uuid4(), "candybar_id": candybar_id, "trigger": "scheduled", "tick_id": None,
         "idempotency_key": "k", "result": "success", "exit_code": 0, "error_message": None,
         "stderr_tail": None, "runtime_ms": 1500, "memory_peak_bytes": 4096, "cpu_load": 0.25,
+        "cpu_seconds": 0.375,
         "gpu_load": 0.0, "token_spend": 7, "cost_usd": None,
         "started_at": NOW - timedelta(minutes=10), "finished_at": NOW - timedelta(minutes=9),
     }

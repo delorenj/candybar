@@ -32,6 +32,7 @@ from candybar.executor.runner import ProcessRegistry
 from candybar.executor.systemd_runner import (
     SystemdHost,
     cpu_load,
+    cpu_seconds,
     ensure_installed,
     read_held_units,
     run_systemd,
@@ -162,11 +163,17 @@ def test_slice_path_nests_dashed_slices() -> None:
     assert slice_path("") == ""
 
 
-def test_cpu_load_is_cpu_time_over_the_main_process_span() -> None:
+def test_cpu_load_is_cpu_time_over_the_span_it_is_given() -> None:
     assert cpu_load(1_000_000_000, 2_000_000) == 0.5  # 1 s CPU in a 2 s span
     assert cpu_load(None, 2_000_000) == 0.0
     assert cpu_load(0, 2_000_000) == 0.0
     assert cpu_load(5, 0) == 0.0
+
+
+def test_cpu_seconds_is_none_not_zero_when_unmeasured() -> None:
+    assert cpu_seconds(1_500_000_000) == 1.5
+    assert cpu_seconds(None) is None
+    assert cpu_seconds(0) is None
 
 
 def test_uint_treats_unset_markers_as_unmeasured() -> None:
@@ -246,16 +253,30 @@ def test_success_is_metered_from_the_units_own_accounting(stub: Stub) -> None:
     outcome = run_unit(stub)
     assert outcome.exit_code == 0 and resolve_outcome(outcome).success
     assert outcome.memory_peak_bytes == 52428800
-    assert outcome.cpu_load == 0.5  # 1 s CPU over the 2 s main-process span
+    assert outcome.cpu_seconds == 1.0  # CPUUsageNSec: 1 s of CPU, whatever the span
     assert outcome.detail is None and outcome.stderr_tail == ""
     assert outcome.scoped is True
 
 
-def test_cpu_falls_back_to_wall_runtime_without_unit_timestamps(stub: Stub) -> None:
-    props = {**RAN_OK, "ExecMainStartTimestampMonotonic": "0", "ExecMainExitTimestampMonotonic": "0"}
+def test_cpu_load_divides_by_the_whole_activation_not_the_last_exec_start(stub: Stub) -> None:
+    """A oneshot with ExecStartPre lines: ExecMain*Timestamp spans only the LAST command.
+
+    Found by the cost aggregate (2026-11-11): 4.3 core-s of real CPU over a 3 s
+    ExecMain span and a 20 s activation read as 1.4 busy cores, 10-100,000x too
+    high on the units that run several commands. The load is CPU over the whole
+    `start --wait`, and `cpu_seconds` is the unit's CPUUsageNSec itself.
+    """
+    props = {
+        **RAN_OK,
+        "ExecMainStartTimestampMonotonic": "17000000",
+        "ExecMainExitTimestampMonotonic": "20000000",  # the last command ran 3 s
+        "CPUUsageNSec": "4300000000",  # the whole unit used 4.3 s of CPU
+    }
     stub.set(show=[LOADED, props], start_sleep=0.2)
     outcome = run_unit(stub)
-    assert 0 < outcome.cpu_load <= 5.0  # 1 s of CPU over ~0.2 s wall: finite, positive
+    assert outcome.cpu_seconds == 4.3
+    assert outcome.cpu_load == cpu_load(4_300_000_000, outcome.runtime_ms * 1000)
+    assert outcome.cpu_load * outcome.runtime_ms / 1000 == pytest.approx(4.3, rel=0.01)
 
 
 def test_a_collected_unit_meters_zero_but_still_succeeds(stub: Stub) -> None:

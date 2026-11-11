@@ -22,9 +22,14 @@ Three pieces of plumbing make that work, each reality-checked on systemd 257:
    never starts because the holder is up.
 
 3. Accounting is read from the unit after exit: `MemoryPeak` -> the memory
-   gauge; `CPUUsageNSec` over the unit's own main-process span
-   (`ExecMainExitTimestamp - ExecMainStartTimestamp`, monotonic) -> CPU load;
-   `Result` / `ExecMainStatus` -> success or fail; the stderr tail from the
+   gauge; `CPUUsageNSec` -> CPU seconds, and over the run's wall time (the
+   whole `start --wait`) -> CPU load. `CPUUsageNSec` covers EVERY process the
+   unit ran (ExecStartPre, each ExecStart, ExecStopPost), so it must be
+   divided by the whole activation, never by `ExecMain*Timestamp`: those span
+   only the LAST command, and on a oneshot with several ExecStart/ExecStartPre
+   lines that divided minutes of CPU by seconds of wall time (10-100,000x too
+   high, found by the cost aggregate, 2026-11-11; the rows it wrote keep a NULL
+   `cpu_seconds`, migration 0010). `Result` / `ExecMainStatus` -> success or fail; the stderr tail from the
    journal for that `InvocationID`; GPU from pmon pids found in the unit's
    cgroup. Metering is best-effort and reads 0, like the exec runner; the
    verdict never depends on it.
@@ -349,10 +354,21 @@ def unit_cgroup_dir(slice_name: str, unit: str, *, fs_root: str = "/sys/fs/cgrou
 
 
 def cpu_load(cpu_nsec: int | None, span_us: int) -> float:
-    """Average busy cores over the unit's own main-process span; 0 when unmeasured."""
+    """Average busy cores over `span_us` of wall time; 0 when unmeasured.
+
+    `span_us` must be the whole activation (`runtime_ms * 1000`): the unit's
+    CPUUsageNSec is the sum over everything it ran, not just its main process.
+    """
     if not cpu_nsec or span_us <= 0:
         return 0.0
     return round((cpu_nsec / 1000) / span_us, 4)
+
+
+def cpu_seconds(cpu_nsec: int | None) -> float | None:
+    """CPU core-seconds of the unit's whole activation; None when unmeasured."""
+    if not cpu_nsec or cpu_nsec <= 0:
+        return None
+    return cpu_nsec / 1_000_000_000
 
 
 async def _journal_tail(host: SystemdHost, invocation_id: str) -> str:
@@ -540,11 +556,10 @@ async def _outcome(
     verdict = props.get("Result", "")
     invocation = props.get("InvocationID", "")
     start_us = _uint(props.get("ExecMainStartTimestampMonotonic")) or 0
-    exit_us = _uint(props.get("ExecMainExitTimestampMonotonic")) or 0
     ran = bool(invocation) or start_us > 0
     memory_peak = _uint(props.get("MemoryPeak")) or 0
-    span_us = exit_us - start_us if exit_us > start_us > 0 else runtime_ms * 1000
-    load = cpu_load(_uint(props.get("CPUUsageNSec")), span_us)
+    cpu_nsec = _uint(props.get("CPUUsageNSec"))
+    load = cpu_load(cpu_nsec, runtime_ms * 1000)
 
     exit_code: int | None
     detail: str | None = None
@@ -582,6 +597,7 @@ async def _outcome(
         finished_at=datetime.now(UTC),
         memory_peak_bytes=memory_peak,
         cpu_load=load,
+        cpu_seconds=cpu_seconds(cpu_nsec),
         gpu_load=gpu_load,
         detail=detail,
     )
@@ -592,6 +608,7 @@ __all__ = [
     "HOLDER_UNIT",
     "SystemdHost",
     "cpu_load",
+    "cpu_seconds",
     "ensure_installed",
     "run_systemd",
     "show",

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from nats.errors import (
     BadSubscriptionError,
@@ -37,6 +38,7 @@ from ..registry.store import (
     invocation_by_key,
     list_skips,
     record_terminal_invocation,
+    refresh_costs,
     session_scope,
 )
 from .gpu import GPU_SAMPLER
@@ -48,6 +50,28 @@ from .systemd_runner import unit_busy as systemd_unit_busy
 from .worker import RETRY_ON_ABANDON_TAG, Executor
 
 log = logging.getLogger(__name__)
+
+
+async def record_and_refresh_cost(engine: Any, rec: TerminalInvocation) -> bool:
+    """Write the terminal row, then refresh that candybar's cost totals.
+
+    False when the key already holds a terminal result (a same-key race). The
+    cost aggregate is event-driven: this candybar's totals are recomputed when
+    one of its invocations reaches a terminal state (no poll, no timer). It is
+    best-effort and in its own transaction, so a failure there never un-records
+    the run; `candybar cost --refresh` repairs it.
+    """
+    try:
+        async with session_scope(engine) as session:
+            await record_terminal_invocation(session, rec)
+    except DuplicateInvocationError:
+        return False
+    try:
+        async with session_scope(engine) as session:
+            await refresh_costs(session, rec.candybar_id)
+    except Exception:
+        log.warning("cost refresh failed for candybar %s", rec.candybar_id, exc_info=True)
+    return True
 COMMAND_STREAM = "BLOODBANK_COMMANDS"
 INVOKE_FILTER = "bloodbank.cmd.cron.candybar.invoke"
 DURABLE = "candybar-executor-invoke"
@@ -105,12 +129,7 @@ async def _run_executor(stop: asyncio.Event) -> None:
                 return await get_run_target(session, candybar_id)
 
         async def record(rec: TerminalInvocation) -> bool:
-            try:
-                async with session_scope(engine) as session:
-                    await record_terminal_invocation(session, rec)
-                return True
-            except DuplicateInvocationError:
-                return False
+            return await record_and_refresh_cost(engine, rec)
 
         async def claim(row: InvocationClaim) -> bool:
             try:

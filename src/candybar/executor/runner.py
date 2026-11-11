@@ -98,6 +98,9 @@ class RunOutcome:
     # Executor-measured from the cgroup scope (Story 3.1); 0 when unmeasured.
     memory_peak_bytes: int = 0
     cpu_load: float = 0.0
+    # CPU core-seconds the run used; None when the runner could not measure it
+    # (cpu_load reads 0 for that, which cannot tell "idle" from "unmeasured").
+    cpu_seconds: float | None = None
     # Executor-measured via nvidia-smi pmon (Story 3.2); 0 when GPU-less.
     gpu_load: float = 0.0
     # Why a nonzero exit failed, when the runner knows better than the code
@@ -400,6 +403,7 @@ async def run_invocation(
             finished_at=datetime.now(UTC),
             memory_peak_bytes=memory_peak,
             cpu_load=metering.cpu_load(cpu_used, runtime_ms),
+            cpu_seconds=metering.cpu_seconds(cpu_used),
             gpu_load=gpu_load,
             detail=f"timed out after {timeout_s:g}s and was killed" if timed_out else None,
         )

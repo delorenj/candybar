@@ -224,6 +224,7 @@ def record_from_row(row: Invocation) -> TerminalInvocation:
         finished_at=row.finished_at or row.created_at,
         memory_peak_bytes=row.memory_peak_bytes or 0,
         cpu_load=row.cpu_load or 0.0,
+        cpu_seconds=row.cpu_seconds,
         gpu_load=row.gpu_load or 0.0,
     )
 
@@ -573,6 +574,7 @@ class Executor:
             finished_at=outcome.finished_at,
             memory_peak_bytes=outcome.memory_peak_bytes,
             cpu_load=outcome.cpu_load,
+            cpu_seconds=outcome.cpu_seconds,
             gpu_load=outcome.gpu_load,
         )
         await self._finalize(

@@ -1,4 +1,4 @@
-"""The operator control surface: `ls`, `show`, `next`, `schedule`, `pause`,
+"""The operator control surface: `ls`, `show`, `cost`, `next`, `schedule`, `pause`,
 `resume`, `archive`, `unarchive`, `skip`, `edit`, `history`, `tail`.
 
 Thin wrappers over the api role (CANDYBAR_API_URL, default
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -27,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 import typer
 
+from candybar.cli.costview import cost_cell, cost_lines, dimension_cell
 from candybar.dispatcher.firetimes import fire_times
 from candybar.migration.client import INVOCATIONS_PAGE, ApiError, CandybarApi
 from candybar.project import (
@@ -40,6 +42,8 @@ from candybar.project import (
     project_at,
     project_of_tags,
 )
+
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 JsonOption = Annotated[bool, typer.Option("--json", help="Print the raw API JSON.")]
 RefArgument = Annotated[str, typer.Argument(metavar="NAME|ID", help="Candybar name or registry id.")]
@@ -155,11 +159,17 @@ def _duration(ms: int | None) -> str:
 
 
 def _table(headers: list[str], rows: list[list[str]]) -> None:
+    # Cells may carry ANSI colour (the COST column): pad by what is visible.
+    def shown(cell: str) -> int:
+        return len(ANSI.sub("", cell))
+
     widths = [len(h) for h in headers]
     for row in rows:
-        widths = [max(w, len(cell)) for w, cell in zip(widths, row, strict=True)]
+        widths = [max(w, shown(cell)) for w, cell in zip(widths, row, strict=True)]
     for row in [headers, *rows]:
-        typer.echo("  ".join(cell.ljust(w) for cell, w in zip(row, widths, strict=True)).rstrip())
+        typer.echo(
+            "  ".join(cell + " " * (w - shown(cell)) for cell, w in zip(row, widths, strict=True)).rstrip()
+        )
 
 
 def _flags(candybar: dict[str, Any]) -> str:
@@ -256,10 +266,18 @@ def _ls_registry(
         _print_json(shown)
         return
     rows = [
-        [c["name"], c["schedule"], c.get("timezone", "UTC"), _flags(c), ",".join(c.get("tags", [])), c["id"]]
+        [
+            c["name"],
+            c["schedule"],
+            c.get("timezone", "UTC"),
+            _flags(c),
+            cost_cell(c.get("cost")),
+            ",".join(c.get("tags", [])),
+            c["id"],
+        ]
         for c in sorted(shown, key=lambda c: c["name"])
     ]
-    _table(["NAME", "SCHEDULE", "TZ", "FLAGS", "TAGS", "ID"], rows)
+    _table(["NAME", "SCHEDULE", "TZ", "FLAGS", "COST", "TAGS", "ID"], rows)
     footer = f"{len(shown)} shown of {len(candybars)}"
     hidden = []
     if paused and not all_:
@@ -355,9 +373,10 @@ def _ls_project(
         _print_json([{k: e[k] for k in keys} for e in entries])
     else:
         _table(
-            ["NAME", "SCHEDULE", "TZ", "STATE", "SYNC", "SOURCE", "ID"],
+            ["NAME", "SCHEDULE", "TZ", "STATE", "COST", "SYNC", "SOURCE", "ID"],
             [
-                [e["name"], e["schedule"], e["tz"], e["state"], e["sync"], e["source"],
+                [e["name"], e["schedule"], e["tz"], e["state"],
+                 cost_cell((e["registered"] or {}).get("cost")), e["sync"], e["source"],
                  (e["registered"] or {}).get("id", "-")]
                 for e in entries
             ],
@@ -595,10 +614,19 @@ def show(
         detail = api.get_candybar(candybar["id"]) or candybar
         runner = api.runner(candybar["id"])
         runs = api.invocations(candybar["id"], limit) if limit else []
+        cost_detail = api.cost(candybar["id"])
     except ApiError as exc:
         raise _fail(exc) from exc
     if as_json:
-        _print_json({**detail, **runner, "invocations": runs})
+        _print_json(
+            {
+                **detail,
+                **runner,
+                "invocations": runs,
+                "whatIf": cost_detail.get("whatIf", []),
+                "costThresholds": cost_detail.get("thresholds", {}),
+            }
+        )
         return
     now = _now()
     total = detail.get("totalInvoked", 0)
@@ -618,6 +646,7 @@ def show(
         ("tags", ", ".join(detail.get("tags", [])) or "-"),
         ("runs", f"{total} invoked, {ok} succeeded, {total - ok} failed"),
         ("created", _when(detail.get("createdAt"), now)),
+        *cost_lines(cost_detail.get("cost") or detail.get("cost"), cost_detail.get("whatIf"), now=now),
     ]
     if runner.get("runner"):
         lines.append(("runner", json.dumps(runner["runner"])))
@@ -629,6 +658,97 @@ def show(
     if runs:
         typer.echo("")
         _runs_table(runs, now)
+
+
+def cost(
+    ref: Annotated[
+        str | None,
+        typer.Argument(metavar="[NAME|ID]", help="One candybar's cost breakdown; omit for the ranking."),
+    ] = None,
+    all_: Annotated[
+        bool, typer.Option("--all", "-a", help="Include paused and archived candybars.")
+    ] = False,
+    limit: Annotated[
+        int, typer.Option("--limit", "-n", min=0, help="Rows to show (0 = every candybar).")
+    ] = 20,
+    refresh: Annotated[
+        bool,
+        typer.Option(
+            "--refresh", help="Recompute every candybar's cost totals first (backfill / window change)."
+        ),
+    ] = False,
+    as_json: JsonOption = False,
+) -> None:
+    """What the candybars cost to run, most expensive first.
+
+    Per-day figures project each candybar's per-run average at its CURRENT
+    schedule, so you can see what an interval costs before changing it. Tiers
+    are green, yellow and red per dimension (CPU core-seconds, GPU-seconds,
+    memory GiB-hours, tokens, USD), the overall tier is the worst one, and
+    unmeasured (hollow, grey) is never green. With a NAME it prints that
+    candybar's per-run and per-day breakdown and what hourly or daily would cost.
+    """
+    api = _api()
+    try:
+        if refresh:
+            only = _resolve(api, ref)["id"] if ref else None
+            done = api.refresh_costs(only)
+            typer.echo(
+                f"refreshed {done['refreshed']} candybar cost row(s) over {done['windowDays']} days",
+                err=as_json,
+            )
+        if ref:
+            _cost_one(api, _resolve(api, ref), as_json=as_json)
+            return
+        view = api.costs()
+    except ApiError as exc:
+        raise _fail(exc) from exc
+    entries = [
+        e
+        for e in view["candybars"]
+        if all_ or (e["enabled"] and not e["archived"])
+    ]
+    shown = entries if limit == 0 else entries[:limit]
+    if as_json:
+        _print_json({**view, "candybars": shown})
+        return
+    rows = [
+        [
+            cost_cell(e["cost"]),
+            e["name"],
+            e["schedule"],
+            str(e["cost"]["runs"]),
+            *[dimension_cell(e["cost"], d) for d in ("cpu", "gpu", "memory", "tokens", "usd")],
+        ]
+        for e in shown
+    ]
+    _table(
+        ["COST", "NAME", "SCHEDULE", "RUNS", "CPU s/d", "GPU s/d", "MEM GiB·h/d", "TOKENS/d", "USD/d"],
+        rows,
+    )
+    footer = f"{len(shown)} shown of {len(entries)}; per day at the current schedule, {view['windowDays']}-day window"
+    if len(entries) < len(view["candybars"]):
+        footer += f" ({len(view['candybars']) - len(entries)} paused/archived hidden; --all to include)"
+    typer.echo(footer)
+    if view.get("configError"):
+        typer.echo(f"warning: {view['configError']}", err=True)
+
+
+def _cost_one(api: CandybarApi, candybar: dict[str, Any], *, as_json: bool) -> None:
+    detail = api.cost(candybar["id"])
+    if as_json:
+        _print_json(detail)
+        return
+    lines = [("name", detail["name"]), *cost_lines(detail["cost"], detail["whatIf"])]
+    width = max(len(key) for key, _ in lines)
+    for key, value in lines:
+        typer.echo(f"{key.rjust(width)}  {value}")
+    bars = detail["thresholds"]
+    typer.echo("")
+    typer.echo(
+        "bars (yellow / red per day): "
+        + "; ".join(f"{d} {b['yellow']:g} / {b['red']:g} {b['unit']}" for d, b in bars.items())
+    )
 
 
 def next_(as_json: JsonOption = False) -> None:
@@ -1074,6 +1194,7 @@ def install(app: typer.Typer) -> None:
     app.command("ls")(ls)
     app.command("list")(ls)
     app.command("show")(show)
+    app.command("cost")(cost)
     app.command("next")(next_)
     app.command("schedule")(schedule)
     app.command("history")(history)

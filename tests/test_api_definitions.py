@@ -45,7 +45,7 @@ PROBLEM = "application/problem+json"
 def test_contract_parse_found_the_documented_fields() -> None:
     assert LIST_KEYS == {
         "id", "name", "description", "tags", "schedule", "timezone", "noise", "enabled",
-        "archived", "createdAt",
+        "archived", "createdAt", "cost",
     }
     assert dict(LIST_FIELDS)["tags"] == "list" and dict(LIST_FIELDS)["noise"] == "bool"
     assert dict(LIST_FIELDS)["enabled"] == "bool"

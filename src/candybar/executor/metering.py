@@ -102,9 +102,17 @@ def cpu_load(usage_delta_usec: int, runtime_ms: int) -> float:
     return round(usage_delta_usec / (runtime_ms * 1000), CPU_LOAD_DECIMALS)
 
 
+def cpu_seconds(usage_delta_usec: int) -> float | None:
+    """CPU core-seconds for a usage delta; None (not 0) when nothing was measured."""
+    if usage_delta_usec <= 0:
+        return None
+    return usage_delta_usec / 1_000_000
+
+
 __all__ = [
     "CONTROLLERS",
     "cpu_load",
+    "cpu_seconds",
     "enable_controllers",
     "read_cpu_usage_usec",
     "read_memory_peak",

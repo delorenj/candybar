@@ -216,7 +216,11 @@ def test_systemd_runner_is_recorded_with_the_units_own_accounting(
             assert msg.acked == 1
             row = await harness.by_key(cmd.idempotency_key)
             assert row.result == "success"
-            assert row.memory_peak_bytes == 52428800 and row.cpu_load == 0.5
+            assert row.memory_peak_bytes == 52428800
+            # The unit's CPUUsageNSec (1 s) is the run's core-seconds; the load is that over the
+            # whole activation's wall time (the one the executor measured), not the last ExecStart's.
+            assert row.cpu_seconds == 1.0
+            assert row.cpu_load == pytest.approx(1.0 / (row.runtime_ms / 1000), rel=0.01)
             assert stub.calls("start") == [["--user", "start", "--wait", "cache-prune.service"]]
             assert await _counters(engine, cid) == (1, 1)
         finally:

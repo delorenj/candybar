@@ -86,6 +86,19 @@ class CandybarApi:
                 return None
             raise
 
+    def cost(self, candybar_id: str) -> dict[str, Any]:
+        """One candybar's cost object, thresholds and what-if cadences."""
+        return self._call("GET", f"/candybars/{self._id(candybar_id)}/cost")
+
+    def costs(self) -> dict[str, Any]:
+        """Every candybar's cost, most expensive first, with the live thresholds."""
+        return self._call("GET", "/costs")
+
+    def refresh_costs(self, candybar_id: str | None = None) -> dict[str, Any]:
+        """Recompute the cost totals now (all candybars, or one)."""
+        query = f"?candybarId={self._id(candybar_id)}" if candybar_id else ""
+        return self._call("POST", f"/costs/refresh{query}")
+
     def runner(self, candybar_id: str) -> dict[str, Any]:
         return self._call("GET", f"/candybars/{self._id(candybar_id)}/runner")
 

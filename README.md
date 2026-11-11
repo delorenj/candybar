@@ -188,7 +188,7 @@ another project; exit 1). `enabled` is creation-time state only: `pause` and
 `resume` own it afterwards, so a sync never flips it.
 
 `candybar ls` inside a repo lists the project's candybars with their registry
-`STATE` (enabled, paused, archived, unregistered) and `SYNC` (`ok`, `new`,
+`STATE` (enabled, paused, archived, unregistered), their `COST` (see "Cost") and `SYNC` (`ok`, `new`,
 `drift:<fields>`, `orphan`, `unowned`, `conflict:<project>`) and the file each
 comes from; `--json` gives both the local definition and the registry row.
 Outside a project, or in one with no candybars, it is the registry-wide list,
@@ -400,7 +400,7 @@ The shapes are `_bmad-output/specs/spec-cron-framework/holocene-view-contract.md
 field for field (`tests/contract_shapes.py` parses them out of that file):
 
 ```bash
-curl https://candybar.delo.sh/candybars          # [{id, name, description, tags, schedule, timezone, noise, enabled, createdAt}, ...] oldest first
+curl https://candybar.delo.sh/candybars          # [{id, name, description, tags, schedule, timezone, noise, enabled, archived, createdAt, cost}, ...] oldest first
 curl https://candybar.delo.sh/candybars/<id>     # the same + {totalInvoked, totalSuccessful}
 curl -X POST https://candybar.delo.sh/candybars -H 'content-type: application/json' \
   -d '{"name":"my-job","schedule":"*/5 * * * *","entrypoint":"/abs/run.sh"}'   # 201, single shape
@@ -693,7 +693,8 @@ CANDYBAR_API_URL=https://candybar.delo.sh` off-box), and prints JSON with
 
 ```bash
 candybar ls [--all] [--archived] [--tag T] [--hide-noise]   # paused hidden unless --all, archived unless --archived
-candybar show <name> [-n 5]                      # definition, runner, totals, latest runs
+candybar show <name> [-n 5]                      # definition, runner, totals, cost breakdown + what-ifs, latest runs
+candybar cost [<name>] [--all] [-n 20] [--refresh]   # what each candybar costs, most expensive first (see "Cost")
 candybar next                                    # the single next fire
 candybar schedule [--ahead 12] [--back 2] [-c <name>] [--hide-noise]   # fires around now, with results
 candybar history <name> [-n 20] [--failed]       # runs with runtime, memory, CPU, tokens, error
@@ -712,6 +713,123 @@ candybar tail [--hide-noise] [--ticks] [--json]  # live invocations, skips, defi
 Times print in the local zone of the machine the CLI runs on; `skip --at` reads a
 naive time the same way, and `--today`/`--date` are dates in the candybar's own
 timezone.
+
+## Cost
+
+Every candybar carries a `cost`: what it takes to run, as per-run averages, a
+projection to one day at its **current schedule**, and a green, yellow or red
+tier, so you can pick an interval by reading a number. It is a required field
+of the API shape (never null, on the list and on every single-definition
+response), and manifest authors never write it. There is nothing to declare:
+the runner kind and the runs themselves say what was measured.
+
+```bash
+candybar cost                  # most expensive first: tier, name, and each dimension per day
+candybar cost <name>           # one candybar: per run, per day, tiers, and what hourly or daily would cost
+candybar cost --refresh        # recompute every candybar's totals first (backfill, or after a window change)
+candybar ls                    # a COST column: ● RED 3.8k core-s/day, ● YEL, ● GRN, ○ unmeasured
+candybar show <name>           # the same breakdown, with its latest runs
+```
+
+`● RED` / `● YEL` / `● GRN` carry the tier in the tag as well as the colour, so
+a pipe or a colour-blind read keeps it. The hollow grey `○ unmeasured` is **not**
+green: it means nothing was measured (no runs yet, or no run reported the
+figure).
+
+**Dimensions**, each projected to a day (per-run average x fires per day):
+
+| dimension | unit | measured by |
+|---|---|---|
+| `cpu` | core-seconds/day | the executor: cgroup `cpu.stat`, or the unit's `CPUUsageNSec` (systemd runner) |
+| `gpu` | GPU-seconds/day | `nvidia-smi pmon` (1.0 = one GPU saturated for a second) |
+| `memory` | GiB-hours/day | peak memory x wall time: a footprint, not a bill |
+| `tokens` | tokens/day | self-reported by the job (result file) or the runner (Hermes) |
+| `usd` | dollars/day | self-reported (`cost_usd`) |
+
+The overall tier is the **worst measured dimension**, and `driver` names it
+(`cost.driver`, the figure beside the dot in `ls`).
+
+**Thresholds** (per day, yellow at / red at), set from the live 7-day
+distribution on 2026-11-11 (enabled jobs, projected at their schedules; CPU
+p50 was 5 core-s/day, p90 145, p95 916):
+
+| dimension | yellow | red | what that caught on 2026-11-11 |
+|---|---|---|---|
+| cpu core-s/day | 300 | 1,800 | red: crank-beat, ipm-internal-dashboard, telnyx-s3-intake, skillex-hermes-resync. Yellow: holocene-pad-roster, bloodbank-agent-hooks-health, mobile-deploy-hub-macwatch, deploy-smoke-hermes |
+| gpu s/day | 300 | 1,800 | uncalibrated: nothing used the GPU in the window |
+| memory GiB-h/day | 0.5 | 2 | red: gruvato-em-pass. Yellow: telnyx-s3-intake, restic-dbdumps, crank-beat |
+| tokens/day | 250k | 2M | red: crank-beat (~10M). Yellow: token-optimization, token-usage-report, aperture-lane-beat |
+| usd/day | $0.10 | $1.00 | $1/day is the order of the $20-40/month OpenRouter budget. Nothing reports USD yet |
+
+Half a core all day (1,800 core-s) is red because that is a job holding a
+quarter of an idle desk's capacity forever; five core-minutes a day (300) is
+the point a job starts to show up in the top 15. Override any subset with
+`CANDYBAR_COST_THRESHOLDS='{"cpu": [300, 1800], "tokens": [100000, 1000000]}'`
+(`[yellow, red]`, read by the api role); a bad value falls back to the defaults
+and is reported as `configError` on `GET /costs` and `GET /candybars/{id}/cost`
+and as a warning by `candybar cost`.
+
+**How it stays current.** The executor refreshes a candybar's totals when one
+of its invocations reaches a terminal state (one `INSERT ... SELECT ... ON
+CONFLICT` into `candybar_costs`, after the terminal row commits; best-effort,
+so a failure never un-records a run). There is no timer or poll. The window is
+7 days (`CANDYBAR_COST_WINDOW_DAYS`, 1-90, read by the executor and api). The
+**projection is computed at read time** from the stored totals and the current
+schedule (fires per day counted by the same DST-correct `fire_times` the
+dispatcher uses; a weekly or monthly cron is counted over a year), so changing a
+schedule, a threshold or the window's reading needs no recompute.
+`candybar cost --refresh` (`POST /costs/refresh`) rebuilds every row. The table
+holds sums and counts only; averages and tiers are derived.
+
+**What counts as measured, and what does not.**
+
+- **CPU, GPU and memory** come from the executor's own meters. A run it could not
+  meter (no cgroup scope; a systemd run recorded before the 2026-11-11 fix) is
+  not counted, and a candybar with no metered run reads `unmeasured` in those
+  dimensions. An **n8n** candybar is never metered: the workflow runs inside n8n
+  and the runner only sees its webhook client, so its CPU and memory stay
+  `unmeasured` (its self-reported tokens do count).
+- **GPU** reads 0 both when nothing used the GPU and when `nvidia-smi` is
+  missing, so it is `unmeasured` until a run in the window actually used the GPU.
+- **Tokens and USD** count only what runs reported. The SDKs write
+  `token_spend: 0` when a job never set it, so 0 and "did not report" look alike
+  in a row: a candybar counts as reporting tokens only when some run in the
+  window reported more than 0, and until then its token tier is `unmeasured`,
+  never green. The average is over all runs, and `measuredRuns.tokens` plus a
+  note ("99 of 1966 runs reported tokens") show how much of it was reported.
+- A schedule that never fires (manual-only) is projected from the runs it
+  actually had; a projection far above the observed runs per day (overlap skips,
+  a young schedule) carries a note.
+
+**Token and USD attribution by runner kind** (audited 2026-11-11):
+
+| runner | tokens | USD |
+|---|---|---|
+| `exec` | only if the job writes `metrics.token_spend` (SDK `ctx.add_tokens`) | only if the job writes `metrics.cost_usd` |
+| `systemd` | the same, through the result file the drop-in's env points at | the same |
+| `hermes` | yes: input + output tokens from the `cron-run-result:` line (Hermes reads them from `cron/usage_audit.jsonl`) | no: the line carries no cost, and Hermes records `cost_usd` as null for gateway routes |
+| `n8n` | only what the workflow's verdict reports (`tokenSpend`) | only what it reports (`costUsd`) |
+
+No runner reports USD today, so the USD tier is `unmeasured` everywhere until a
+job or the Hermes result line starts to.
+
+**Systemd CPU fix (2026-11-11).** The systemd runner divided the unit's whole
+`CPUUsageNSec` by the wall span of only its LAST `ExecStart`
+(`ExecMain*Timestamp`), so a oneshot with `ExecStartPre` lines or several
+`ExecStart` lines reported 10 to 100,000 times too much CPU
+(milkshake-ledger-backup averaged 320,790 busy-core-seconds a run for a true 4.3).
+The load is now over the whole activation, and migration 0010's
+`invocations.cpu_seconds` records core-seconds directly (NULL = not measured).
+Systemd rows written before the fix keep a NULL `cpu_seconds`, so they never
+count; the journal cannot recover them.
+
+**API.** `GET /candybars` and every single-definition response carry
+`cost`; `GET /candybars/{id}/cost` adds the thresholds and a `whatIf` at every
+15 minutes, hourly and daily; `GET /costs` returns every candybar most
+expensive first (tier, then how far the driving dimension is through its red
+bar) with the live thresholds; `POST /costs/refresh[?candybarId=]` recomputes.
+The shape is in `_bmad-output/specs/spec-cron-framework/holocene-view-contract.md`.
+The stream's definition rows do not carry it; re-read the list.
 
 ## Migrate a cron job onto candybar (Story 7.5, AD-21)
 
@@ -920,8 +1038,9 @@ curl https://candybar.delo.sh/invocations/<invocation_id>
 curl 'https://candybar.delo.sh/candybars/<candybar_id>/invocations?limit=20'   # newest first, 1..500, default 50
 ```
 
-Each record has `runtimeMs`, `memoryPeakBytes`, `cpuLoad`, `gpuLoad`,
-`tokenSpend` and `costUsd` (null when not reported). It also has the
+Each record has `runtimeMs`, `memoryPeakBytes`, `cpuLoad`, `cpuSeconds`
+(null when the runner could not measure the run), `gpuLoad`, `tokenSpend` and
+`costUsd` (null when not reported). It also has the
 identity, trigger and outcome fields: `id`, `candybarId`, `trigger`,
 `tickId`, `idempotencyKey`, `result`, `exitCode`, `errorMessage`,
 `stderrTail`, `startedAt` and `finishedAt`. A row is written only when the

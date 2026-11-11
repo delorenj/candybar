@@ -90,6 +90,17 @@ from prometheus_client.exposition import choose_encoder
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from candybar.costs import (
+    DEFAULT_WINDOW_DAYS,
+    UNITS,
+    CostConfigError,
+    build_cost,
+    fires_per_day,
+    load_thresholds,
+    sort_key,
+    what_ifs,
+    window_days,
+)
 from candybar.dispatcher.schedule import group_skips, widen_skip_window
 from candybar.events.builders import (
     STEWARD_FACT_FOR_STATUS,
@@ -115,12 +126,14 @@ from candybar.registry import (
     add_rest_of_day_skip,
     fire_results,
     get_candybar,
+    get_cost,
     get_invocation,
     get_profile,
     get_steward_task,
     insert_candybar,
     insert_steward_task,
     list_candybars,
+    list_costs,
     list_invocations,
     list_profiles,
     list_skips,
@@ -129,6 +142,7 @@ from candybar.registry import (
     lock_noise_batch,
     name_taken,
     occurrence_skip_id,
+    refresh_costs,
     rest_of_day_skip_id,
     skip_stored,
     update_candybar,
@@ -401,6 +415,8 @@ def invocation_row_json(row: Any) -> dict[str, Any]:
         "runtimeMs": row.runtime_ms,
         "memoryPeakBytes": row.memory_peak_bytes or 0,
         "cpuLoad": row.cpu_load or 0.0,
+        # Core-seconds as the runner measured them; null = not measured.
+        "cpuSeconds": row.cpu_seconds,
         "gpuLoad": row.gpu_load or 0.0,
         "tokenSpend": row.token_spend or 0,
         "costUsd": float(row.cost_usd) if row.cost_usd is not None else None,
@@ -425,6 +441,45 @@ def create_app(
     live = stream or ScheduleStream(session_factory=session_factory, now=clock)
     app = FastAPI(title="candybar", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.stream = live
+
+    # Cost (README "Cost"): thresholds and the window are config, read once. A bad
+    # override must not stop the control plane: it falls back to the defaults
+    # and the reason rides on `GET /candybars/{id}/cost` (`configError`).
+    thresholds, thresholds_error = load_thresholds()
+    try:
+        cost_window = window_days()
+    except CostConfigError as exc:
+        log.error("%s; using %d days", exc, DEFAULT_WINDOW_DAYS)
+        cost_window, thresholds_error = DEFAULT_WINDOW_DAYS, thresholds_error or str(exc)
+
+    async def cost_json(row: Any, cost_row: Any | None) -> dict[str, Any]:
+        """The always-present `cost` object: derived at read time from the stored totals."""
+        at = clock()
+        kind = (row.runner or {}).get("kind", "exec")
+        # Counting a schedule's fires walks croniter: off the event loop, cached per day.
+        fires = await asyncio.to_thread(fires_per_day, row.schedule, row.timezone, at)
+        return build_cost(
+            cost_row.totals if cost_row is not None else None,
+            window_days=cost_row.window_days if cost_row is not None else cost_window,
+            computed_at=cost_row.computed_at if cost_row is not None else None,
+            schedule=row.schedule,
+            timezone=row.timezone,
+            runner_kind=kind,
+            now=at,
+            thresholds=thresholds,
+            fires=fires,
+        )
+
+    def thresholds_json() -> dict[str, Any]:
+        return {
+            dim: {"yellow": yellow, "red": red, "unit": UNITS[dim]}
+            for dim, (yellow, red) in thresholds.items()
+        }
+
+    async def detail_json(session: Any, row: Any) -> dict[str, Any]:
+        """`candybar_detail_json` plus the candybar's cost (never null)."""
+        cost = await cost_json(row, await get_cost(session, row.id))
+        return {**candybar_detail_json(row), "cost": cost}
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -510,13 +565,22 @@ def create_app(
                 409, "Candybar name already registered", f"name {manifest.name!r} is taken"
             )
 
-        return JSONResponse(status_code=201, content=candybar_detail_json(row))
+        return JSONResponse(
+            status_code=201,
+            content={**candybar_detail_json(row), "cost": await cost_json(row, None)},
+        )
 
     @app.get("/candybars")
     async def definitions() -> JSONResponse:
         """Every registered candybar in the contract definition shape, oldest first."""
         async with session_factory() as session:
-            body = [candybar_row_json(row) for row in await list_candybars(session)]
+            rows = await list_candybars(session)
+            costs = await list_costs(session)
+        aggregates = await asyncio.gather(*(cost_json(row, costs.get(row.id)) for row in rows))
+        body = [
+            {**candybar_row_json(row), "cost": cost}
+            for row, cost in zip(rows, aggregates, strict=True)
+        ]
         return JSONResponse(content=body)
 
     @app.get("/candybars/{candybar_id}")
@@ -524,7 +588,7 @@ def create_app(
         """One definition plus its registry counters."""
         async with session_factory() as session:
             row = await get_candybar(session, candybar_id)
-            body = candybar_detail_json(row) if row is not None else None
+            body = await detail_json(session, row) if row is not None else None
         if body is None:
             return problem(404, "Candybar not found", f"no candybar registered with id {candybar_id}")
         return JSONResponse(content=body)
@@ -549,6 +613,86 @@ def create_app(
         if body is None:
             return problem(404, "Candybar not found", f"no candybar registered with id {candybar_id}")
         return JSONResponse(content=body)
+
+    @app.get("/candybars/{candybar_id}/cost")
+    async def cost_of(candybar_id: UUID) -> JSONResponse:
+        """One candybar's cost in full: the object, the thresholds and what-if cadences.
+
+        Outside the Holocene contract (the list and detail shapes carry the
+        `cost` object itself). `whatIf` replays the same per-run averages at
+        other cadences, so "what would hourly cost" is a read, not a guess.
+        """
+        async with session_factory() as session:
+            row = await get_candybar(session, candybar_id)
+            if row is None:
+                return problem(
+                    404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                )
+            cost = await cost_json(row, await get_cost(session, candybar_id))
+            name = row.name
+        return JSONResponse(
+            content={
+                "candybarId": str(candybar_id),
+                "name": name,
+                "cost": cost,
+                "whatIf": what_ifs(cost, thresholds),
+                "thresholds": thresholds_json(),
+                "configError": thresholds_error,
+            }
+        )
+
+    @app.get("/costs")
+    async def costs_view() -> JSONResponse:
+        """Every candybar's cost, most expensive first (tier, then the driver's progress to red).
+
+        One read for the `candybar cost` table and any dashboard: the sort uses
+        the live thresholds, which the client cannot know.
+        """
+        async with session_factory() as session:
+            rows = await list_candybars(session)
+            costs = await list_costs(session)
+        aggregates = await asyncio.gather(*(cost_json(row, costs.get(row.id)) for row in rows))
+        entries = [
+            {
+                "id": str(row.id),
+                "name": row.name,
+                "schedule": row.schedule,
+                "timezone": row.timezone,
+                "enabled": row.enabled,
+                "archived": row.archived,
+                "noise": row.noise,
+                "tags": list(row.tags),
+                "cost": cost,
+            }
+            for row, cost in zip(rows, aggregates, strict=True)
+        ]
+        entries.sort(key=lambda e: (*sort_key(e["cost"], thresholds), e["name"]))
+        return JSONResponse(
+            content={
+                "windowDays": cost_window,
+                "thresholds": thresholds_json(),
+                "configError": thresholds_error,
+                "candybars": entries,
+            }
+        )
+
+    @app.post("/costs/refresh")
+    async def costs_refresh(
+        candybar_id: Annotated[UUID | None, Query(alias="candybarId")] = None,
+    ) -> JSONResponse:
+        """Recompute the cost totals now: one candybar (`?candybarId=`) or all of them.
+
+        The executor already keeps each candybar's totals current as its runs
+        finish; this is the explicit full recompute (backfill after a deploy or
+        a window change). It is a write of derived data only.
+        """
+        async with session_factory() as session:
+            if candybar_id is not None and await get_candybar(session, candybar_id) is None:
+                return problem(
+                    404, "Candybar not found", f"no candybar registered with id {candybar_id}"
+                )
+            refreshed = await refresh_costs(session, candybar_id, window_days=cost_window)
+        return JSONResponse(content={"refreshed": refreshed, "windowDays": cost_window})
 
     @app.patch("/candybars/{candybar_id}")
     async def update(candybar_id: UUID, body: UpdateRequest) -> JSONResponse:
@@ -578,7 +722,7 @@ def create_app(
                 changes = {k: wanted[k] for k in patch if wanted[k] != current[k]}
                 if not changes:
                     # Nothing differs from the stored row: no fact, no write.
-                    return JSONResponse(content=candybar_detail_json(row))
+                    return JSONResponse(content=await detail_json(session, row))
                 if "entrypoint" in changes and current["runner"] is not None:
                     changes["runner"] = None  # the fact reports the implicit switch too
 
@@ -605,7 +749,7 @@ def create_app(
                     )
 
                 row = await update_candybar(session, row, changes)
-                result = candybar_detail_json(row)
+                result = await detail_json(session, row)
         except DuplicateNameError:
             # Rename race: another writer took the name between the check and
             # the flush (session_scope rolled back; the fact may already be out).
@@ -635,7 +779,7 @@ def create_app(
                 )
             if getattr(row, flag) == value:
                 # Already in that state: no fact, no write.
-                return JSONResponse(content=candybar_detail_json(row))
+                return JSONResponse(content=await detail_json(session, row))
             event = build_candybar_updated(
                 candybar_id=candybar_id, name=row.name, changes={flag: value}
             )
@@ -649,7 +793,7 @@ def create_app(
                     f"could not publish candybar.updated; the {flag} flag is unchanged",
                 )
             row = await update_candybar(session, row, {flag: value})
-            result = candybar_detail_json(row)
+            result = await detail_json(session, row)
         return JSONResponse(content=result)
 
     async def set_noise(candybar_id: UUID, noise: bool) -> JSONResponse:
@@ -992,7 +1136,7 @@ def create_app(
             wanted = {"archived": True, "enabled": False} if body.archived else {"archived": False}
             changes = {k: v for k, v in wanted.items() if getattr(row, k, None) != v}
             if not changes:
-                return JSONResponse(content=candybar_detail_json(row))
+                return JSONResponse(content=await detail_json(session, row))
             event = build_candybar_updated(candybar_id=candybar_id, name=row.name, changes=changes)
             try:
                 await sink.publish(event)
@@ -1004,7 +1148,7 @@ def create_app(
                     "could not publish candybar.updated; the archived flag is unchanged",
                 )
             row = await update_candybar(session, row, changes)
-            result = candybar_detail_json(row)
+            result = await detail_json(session, row)
         return JSONResponse(content=result)
 
     @app.get("/candybars/{candybar_id}/profile")

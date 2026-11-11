@@ -126,6 +126,7 @@ def test_known_invocation_returns_the_full_record(rig: Any) -> None:
         "runtimeMs": 1234,
         "memoryPeakBytes": 64 * 1024 * 1024,
         "cpuLoad": 0.75,
+        "cpuSeconds": None,  # a row the runner did not meter: not measured, not 0
         "gpuLoad": 0.5,
         "tokenSpend": 1200,
         "costUsd": 0.03,

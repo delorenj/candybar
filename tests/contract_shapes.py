@@ -43,6 +43,10 @@ def _brace_fields(route: str) -> list[tuple[str, str | None]]:
 LIST_FIELDS = _brace_fields("GET /candybars")
 EXTRA_SINGLE_FIELDS = _brace_fields("GET /candybars/{id}")
 LIST_KEYS = {name for name, _ in LIST_FIELDS}
+# The stream's `definition` is a patch of name/schedule/noise (the client never replaces a
+# whole definition from it), so it is the list shape without the derived cost: a client
+# re-reads `GET /candybars` for that.
+STREAM_DEFINITION_KEYS = LIST_KEYS - {"cost"}
 SINGLE_KEYS = LIST_KEYS | {name for name, _ in EXTRA_SINGLE_FIELDS}
 
 
@@ -57,6 +61,8 @@ def _uuid(value: Any) -> bool:
     return isinstance(value, str) and str(UUID(value)) == value
 
 
+COST_TIERS = {"green", "yellow", "red", "unmeasured"}
+
 # Value checks per contract field. The key SET is the contract's; this map
 # must cover exactly it, so a field added to the contract fails loudly here.
 FIELD_CHECKS: dict[str, Any] = {
@@ -70,6 +76,7 @@ FIELD_CHECKS: dict[str, Any] = {
     "enabled": lambda v: isinstance(v, bool),
     "archived": lambda v: isinstance(v, bool),
     "createdAt": _utc_iso,
+    "cost": lambda v: isinstance(v, dict) and v.get("tier") in COST_TIERS and "perDay" in v,
     "totalInvoked": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
     "totalSuccessful": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
 }

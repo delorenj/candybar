@@ -56,7 +56,7 @@ from candybar.events import (
 from candybar.events.vocabulary import tick_id_for_minute
 from candybar.registry import SKIP_OCCURRENCE, SKIP_REST_OF_DAY, SkipEntry
 from contract_shapes import (
-    LIST_KEYS,
+    STREAM_DEFINITION_KEYS,
     assert_contract_shape,
     assert_schedule_row,
     live_update_patch_clause,
@@ -299,7 +299,7 @@ def assert_event_contract(event: dict[str, Any]) -> None:
     for row in data.get("rows", []):
         assert_schedule_row(row)
     if "definition" in data:
-        assert_contract_shape(data["definition"], LIST_KEYS)
+        assert_contract_shape(data["definition"], STREAM_DEFINITION_KEYS)
 
 
 # Builders for the production facts, with an explicit fact time.

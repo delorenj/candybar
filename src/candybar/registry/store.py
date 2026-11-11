@@ -25,12 +25,14 @@ from sqlalchemy import (
     func,
     or_,
     select,
+    text,
     update,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
+from ..costs import window_days as cost_window_days
 from ..runners import runner_label
 from ..text import scrub_optional
 from ..timezones import DEFAULT_TIMEZONE, resolve_timezone
@@ -41,6 +43,7 @@ from .models import (
     SKIP_REST_OF_DAY,
     STEWARD_ACTIVE_STATUSES,
     Candybar,
+    CandybarCost,
     CandybarProfile,
     DispatchCursor,
     Invocation,
@@ -602,6 +605,8 @@ class TerminalInvocation:
     memory_peak_bytes: int = 0
     cpu_load: float = 0.0
     gpu_load: float = 0.0
+    # CPU core-seconds the runner measured; None = not measured (migration 0010).
+    cpu_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -664,6 +669,7 @@ async def claim_invocation(session: AsyncSession, claim: InvocationClaim) -> Non
             token_spend=0,
             memory_peak_bytes=0,
             cpu_load=0.0,
+            cpu_seconds=None,
             gpu_load=0.0,
             started_at=claim.started_at,
             created_at=now,
@@ -716,6 +722,7 @@ async def record_terminal_invocation(session: AsyncSession, record: TerminalInvo
             cost_usd=record.cost_usd,
             memory_peak_bytes=record.memory_peak_bytes,
             cpu_load=record.cpu_load,
+            cpu_seconds=record.cpu_seconds,
             gpu_load=record.gpu_load,
             started_at=record.started_at,
             finished_at=record.finished_at,
@@ -747,6 +754,7 @@ async def record_terminal_invocation(session: AsyncSession, record: TerminalInvo
             cost_usd=record.cost_usd,
             memory_peak_bytes=record.memory_peak_bytes,
             cpu_load=record.cpu_load,
+            cpu_seconds=record.cpu_seconds,
             gpu_load=record.gpu_load,
             started_at=record.started_at,
             finished_at=record.finished_at,
@@ -759,6 +767,92 @@ async def record_terminal_invocation(session: AsyncSession, record: TerminalInvo
         if "invocations_idempotency_key_key" in str(exc):
             raise DuplicateInvocationError(record.idempotency_key) from exc
         raise
+
+
+# ---------------------------------------------------------------------------
+# Cost aggregates (migration 0010; `candybar.costs` derives everything else).
+
+# Sums and counts only. A run counts toward CPU/GPU/memory when the runner
+# measured it (`cpu_seconds` set; memory above 0) and the candybar is not n8n
+# (the workflow runs inside n8n, so the runner's own meters see only its
+# webhook client). Tokens and USD count every run; `tokenRuns` / `usdRuns`
+# say how many actually reported one.
+_COST_SELECT = """
+INSERT INTO candybar_costs (candybar_id, window_days, computed_at, totals)
+SELECT m.candybar_id, CAST(:days AS integer), CAST(:now AS timestamptz), jsonb_build_object(
+    'runs', count(m.id),
+    'failedRuns', count(m.id) FILTER (WHERE m.result = 'fail'),
+    'firstRunAt', min(m.started_at),
+    'lastRunAt', max(m.started_at),
+    'runtimeMs', coalesce(sum(m.runtime_ms), 0),
+    'cpuRuns', count(*) FILTER (WHERE m.metered),
+    'cpuSeconds', coalesce(sum(m.cpu_seconds) FILTER (WHERE m.metered), 0),
+    'gpuSeconds',
+        coalesce(sum(m.gpu_load * m.runtime_ms / 1000.0) FILTER (WHERE m.metered), 0),
+    'memRuns', count(*) FILTER (WHERE m.metered AND m.memory_peak_bytes > 0),
+    'memPeakBytesSum',
+        coalesce(sum(m.memory_peak_bytes) FILTER (WHERE m.metered AND m.memory_peak_bytes > 0), 0),
+    'memPeakBytesMax',
+        coalesce(max(m.memory_peak_bytes) FILTER (WHERE m.metered AND m.memory_peak_bytes > 0), 0),
+    'memGibSeconds',
+        coalesce(sum(m.memory_peak_bytes / 1073741824.0 * m.runtime_ms / 1000.0)
+                 FILTER (WHERE m.metered AND m.memory_peak_bytes > 0), 0),
+    'tokenSum', coalesce(sum(m.token_spend), 0),
+    'tokenRuns', count(*) FILTER (WHERE m.token_spend > 0),
+    'usdSum', coalesce(sum(m.cost_usd), 0),
+    'usdRuns', count(m.cost_usd)
+)
+FROM (
+    SELECT c.id AS candybar_id, i.id, i.result, i.started_at, i.runtime_ms, i.cpu_seconds,
+           i.gpu_load, i.memory_peak_bytes, i.token_spend, i.cost_usd,
+           (i.cpu_seconds IS NOT NULL
+            AND coalesce(c.runner ->> 'kind', 'exec') <> 'n8n') AS metered
+    FROM candybars AS c
+    LEFT JOIN invocations AS i
+      ON i.candybar_id = c.id AND i.result IS NOT NULL AND i.started_at >= CAST(:since AS timestamptz)
+    {where}
+) AS m
+GROUP BY m.candybar_id
+ON CONFLICT (candybar_id) DO UPDATE
+SET window_days = EXCLUDED.window_days,
+    computed_at = EXCLUDED.computed_at,
+    totals = EXCLUDED.totals
+"""
+
+
+async def refresh_costs(
+    session: AsyncSession,
+    candybar_id: UUID | None = None,
+    *,
+    window_days: int | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Recompute one candybar's cost totals (or every candybar's) over the rolling window.
+
+    One INSERT ... SELECT ... ON CONFLICT statement: the executor calls it after
+    each terminal write (event-driven, no poll), and `candybar cost --refresh`
+    calls it for all rows (backfill, and a window change). Returns the rows
+    written.
+    """
+    days = window_days if window_days is not None else cost_window_days()
+    stamp = now or datetime.now(UTC)
+    params: dict[str, object] = {"days": days, "now": stamp, "since": stamp - timedelta(days=days)}
+    where = ""
+    if candybar_id is not None:
+        where = "WHERE c.id = CAST(:candybar_id AS uuid)"
+        params["candybar_id"] = candybar_id
+    result = await session.execute(text(_COST_SELECT.format(where=where)), params)
+    return result.rowcount
+
+
+async def list_costs(session: AsyncSession) -> dict[UUID, CandybarCost]:
+    """Every aggregated candybar's cost row, keyed by candybar id."""
+    result = await session.execute(select(CandybarCost))
+    return {row.candybar_id: row for row in result.scalars().all()}
+
+
+async def get_cost(session: AsyncSession, candybar_id: UUID) -> CandybarCost | None:
+    return await session.get(CandybarCost, candybar_id)
 
 
 # ---------------------------------------------------------------------------

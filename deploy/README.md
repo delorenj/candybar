@@ -255,11 +255,21 @@ systemctl --user restart candybar-executor candybar-steward          # host role
 
 The first time on a host, `deploy/host/install.sh` does the unit installs and
 the restart. A change to the registry (a new migration, such as 0006's `runner`
-column, 0007's `enabled` flag or 0008's archive flag, profiles and steward
+column, 0007's `enabled` flag, 0008's archive flag or 0010's `cpu_seconds`
+column and `candybar_costs` table, profiles and steward
 tasks) is why the order is container first. Then prove it: `curl -s https://candybar.delo.sh/healthz`, and
 the next minute tick must show a `deploy-smoke` invocation
 (`journalctl --user -u candybar-executor` or
 `GET /candybars/<id>/invocations`).
+
+After 0010 (the cost aggregate, README "Cost") run `uv run candybar cost
+--refresh` once: it fills `candybar_costs` for every candybar from the runs
+already recorded, and from then on the executor keeps each row current when
+one of that candybar's invocations finishes. `GET /candybars` carries a
+non-null `cost` on every candybar before and after that backfill (an
+unaggregated one reads `unmeasured`). The executor and steward hold at the
+schema guard until the container's `alembic upgrade head` has run, so a
+host restart before the container is up just waits.
 
 Rollback to the single-container shape: `systemctl --user disable --now
 candybar-executor`, then restore the pre-7.2 `deploy/compose.yml` (the

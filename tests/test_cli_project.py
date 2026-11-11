@@ -596,7 +596,7 @@ def test_ls_project_table_states_and_sync(repo: Path, defs: dict[str, CandybarDe
     result = run("ls")
     assert result.exit_code == 0, result.output
     header = result.output.splitlines()[0].split()
-    assert header == ["NAME", "SCHEDULE", "TZ", "STATE", "SYNC", "SOURCE", "ID"]
+    assert header == ["NAME", "SCHEDULE", "TZ", "STATE", "COST", "SYNC", "SOURCE", "ID"]
 
     alpha = result.output.splitlines()
     alpha_line = next(ln for ln in alpha if ln.startswith("alpha"))
