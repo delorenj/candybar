@@ -3835,6 +3835,10 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation b609caaa-ba31-5563-abbb-2cbd6713ec3c (scheduled) success exit=0 runtime=98ms memory=20938752B cpu=0.8091
+  - at: '2026-11-11T21:50:00Z'
+    action: retire-native
+    outcome: ok
+    detail: operator order; gruvato-acoustid-check.timer unit file deleted from delorenj/gruvato deploy/ (never installed in ~/.config/systemd/user after cutover; doctor flagged the repo file); the candybar stays enabled and the rollback above no longer applies
 - id: systemd:mobile-deploy-hub-catchup.timer
   wave: '7.11'
   candybar:
