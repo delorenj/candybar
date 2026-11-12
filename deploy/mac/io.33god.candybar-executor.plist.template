@@ -14,9 +14,16 @@
     - CANDYBAR_CGROUP_ROOT is empty: macOS has no cgroup v2, so invocations run
       unscoped and memory/CPU meter as 0 (execution never depends on it).
     - Metrics and health on loopback only.
-    - LimitLoadToSessionType includes Background so the label can be bootstrapped
-      into either gui/<uid> or user/<uid> (without it user/<uid> fails with
-      "5: Input/output error").
+    - LimitLoadToSessionType is exactly ONE session type, chosen by install-executor.sh
+      from its domain option (gui is Aqua, user is Background). Without the key user/<uid> fails to
+      bootstrap ("5: Input/output error"), but listing both types would let launchd load a
+      second copy into the other domain at the next login, and two executors on one durable
+      can run the same exec job twice (the overlap guard is per process).
+    - No ProcessType: "Background" would throttle every job the executor spawns (a 06:00
+      report included), and the Linux unit sets no such limit.
+    - ExitTimeOut 60 matches the Linux unit's TimeoutStopSec: the executor SIGTERMs its
+      in-flight children on stop, but macOS has no cgroup sweep for one that ignores it;
+      see README, "Stopping the executor".
 -->
 <plist version="1.0">
 <dict>
@@ -58,14 +65,9 @@
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
 	<key>ExitTimeOut</key>
-	<integer>20</integer>
-	<key>ProcessType</key>
-	<string>Background</string>
+	<integer>60</integer>
 	<key>LimitLoadToSessionType</key>
-	<array>
-		<string>Aqua</string>
-		<string>Background</string>
-	</array>
+	<string>__SESSION_TYPE__</string>
 	<key>StandardOutPath</key>
 	<string>__HOME__/Library/Logs/33god/candybar-executor.out.log</string>
 	<key>StandardErrorPath</key>

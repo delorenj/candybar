@@ -12,7 +12,6 @@ import json
 import os
 import plistlib
 import re
-import struct
 import subprocess
 import sys
 import urllib.error
@@ -20,7 +19,6 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
-from xml.parsers.expat import ExpatError
 
 from candybar.migration.ledger import LedgerError, load_ledger
 
@@ -153,7 +151,8 @@ def scan_launchd_plists(dirs: list[Path]) -> tuple[dict[str, dict], list[dict]]:
             try:
                 with path.open("rb") as handle:
                     data = plistlib.load(handle)
-            except (ValueError, ExpatError, OSError, struct.error, OverflowError):
+            except Exception:  # noqa: BLE001 - plistlib raises AttributeError/TypeError on a malformed <date> and more;
+                # whatever the reason, this file is unreadable, and one such file must not abort the scan of the others.
                 files.append({"file": shown, "clocks": [], "unreadable": True})
                 continue
             if not isinstance(data, dict) or not isinstance(data.get("Label"), str) or not data["Label"]:
@@ -196,14 +195,29 @@ def parse_launchctl_services(text: str) -> set[str]:
     return labels
 
 
-def parse_launchctl_disabled(text: str) -> set[str]:
-    """Labels marked disabled by `launchctl print-disabled <domain>` (`"label" => disabled`)."""
+def parse_launchctl_overrides(text: str) -> tuple[set[str], set[str]]:
+    """(disabled, enabled) labels from `launchctl print-disabled <domain>` (`"label" => disabled|enabled`).
+
+    An `enabled` override beats a plist's own `Disabled` key, so both halves matter.
+    The legacy spellings are `true` (disabled) and `false` (enabled).
+    """
     disabled: set[str] = set()
+    enabled: set[str] = set()
     for line in text.splitlines():
         match = _DISABLED_ROW.match(line)
-        if match and match.group(2).lower() in {"disabled", "true"}:
+        if not match:
+            continue
+        value = match.group(2).lower()
+        if value in {"disabled", "true"}:
             disabled.add(match.group(1))
-    return disabled
+        elif value in {"enabled", "false"}:
+            enabled.add(match.group(1))
+    return disabled, enabled
+
+
+def parse_launchctl_disabled(text: str) -> set[str]:
+    """Labels marked disabled by `launchctl print-disabled <domain>` (`"label" => disabled`)."""
+    return parse_launchctl_overrides(text)[0]
 
 
 def launchctl_clocks(text: str) -> list[str]:
@@ -216,9 +230,29 @@ def launchctl_clocks(text: str) -> list[str]:
     return clocks
 
 
-# Labels owned by the OS and by app login items: not user-configured clocks, and
-# hundreds of them are loaded in every GUI domain.
+# Labels owned by the OS and by app login items, hundreds of which are loaded in every
+# domain and are runtime-generated or Apple-owned. They are only probed for clocks when a
+# plist in a scanned directory names them; a loaded one with no such plist is a stated
+# coverage boundary (`not_audited`), not an approval: nothing here blesses a clock.
 LAUNCHD_SKIP_PROBE = ("com.apple.", "application.", "0x", "[", "UIKitApplication:")
+LAUNCHD_NOT_PROBED = ("loaded jobs with no plist in the scanned directories whose label starts with "
+                      + ", ".join(f"'{prefix}'" for prefix in LAUNCHD_SKIP_PROBE) + " (OS-owned or runtime-generated)")
+LAUNCHD_SERVICE_GONE = 113  # `launchctl print` exit for "Could not find service"
+
+
+def probe_launchd_service(run, domain: str, label: str) -> list[str] | None:
+    """Clock keys of the live definition of one loaded job, or None if it unloaded since the listing.
+
+    The live definition is what fires, and it can differ from the plist on disk (an edited
+    file that was never booted out and re-bootstrapped), so loaded jobs are always probed.
+    Only "service not found" is the benign race; any other failure is an unreadable inventory.
+    """
+    probe = run(["launchctl", "print", f"{domain}/{label}"])
+    if probe.returncode:
+        if probe.returncode == LAUNCHD_SERVICE_GONE or "could not find service" in probe.stderr.lower():
+            return None
+        raise ValueError("launchctl service probe failed")
+    return launchctl_clocks(probe.stdout)
 
 
 def launchd_jobs(dirs: list[Path] | None = None, uid: int | None = None, run=command) -> list[dict]:
@@ -226,10 +260,10 @@ def launchd_jobs(dirs: list[Path] | None = None, uid: int | None = None, run=com
 
     Sources, combined per label: plists in ~/Library/LaunchAgents, /Library/LaunchAgents
     and /Library/LaunchDaemons (loads at login/boot unless disabled), the loaded
-    services of the `gui/<uid>` and `user/<uid>` domains, and the disabled overrides of
-    both. A loaded job with no plist on disk (`launchctl submit`, a bootstrap from
-    elsewhere) is probed with `launchctl print`. Read-only: only `print` and
-    `print-disabled` are ever run.
+    services of the `gui/<uid>`, `user/<uid>` and `system` domains, and the enable/disable
+    overrides of all three (an `enabled` override beats a plist's `Disabled`). Every loaded
+    job is probed with `launchctl print <domain>/<label>` and its live clock keys are unioned
+    with the plist's. Read-only: only `print` and `print-disabled` are ever run.
     """
     uid = os.getuid() if uid is None else uid
     dirs = dirs if dirs is not None else [Path.home() / "Library/LaunchAgents", Path("/Library/LaunchAgents"),
@@ -237,7 +271,8 @@ def launchd_jobs(dirs: list[Path] | None = None, uid: int | None = None, run=com
     plists, unlabeled = scan_launchd_plists(dirs)
     loaded: dict[str, list[str]] = {}
     disabled: set[str] = set()
-    for domain in (f"gui/{uid}", f"user/{uid}"):
+    enabled: set[str] = set()
+    for domain in (f"gui/{uid}", f"user/{uid}", "system"):
         printed = run(["launchctl", "print", domain])
         if printed.returncode:
             if "could not find domain" in printed.stderr.lower():
@@ -248,20 +283,34 @@ def launchd_jobs(dirs: list[Path] | None = None, uid: int | None = None, run=com
         overrides = run(["launchctl", "print-disabled", domain])
         if overrides.returncode:
             raise ValueError("launchctl print-disabled failed")
-        disabled |= parse_launchctl_disabled(overrides.stdout)
+        domain_disabled, domain_enabled = parse_launchctl_overrides(overrides.stdout)
+        disabled |= domain_disabled
+        enabled |= domain_enabled
     rows = {}
     for label, plist in plists.items():
+        if label in enabled:
+            off = False
+        elif label in disabled:
+            off = True
+        else:
+            off = plist["disabled"]
         rows[label] = {"id": f"launchd:{label}", "label": label, "clocks": plist["clocks"],
-                       "active": bool(loaded.get(label)) or not (plist["disabled"] or label in disabled),
-                       "domains": sorted(loaded.get(label, []))}
-    for label, domains in loaded.items():
-        if label in rows or label.startswith(LAUNCHD_SKIP_PROBE):
+                       "active": bool(loaded.get(label)) or not off, "domains": sorted(loaded.get(label, []))}
+    for label, domains in sorted(loaded.items()):
+        if label.startswith(LAUNCHD_SKIP_PROBE) and label not in rows:
             continue
-        probe = run(["launchctl", "print", f"{domains[0]}/{label}"])
-        if probe.returncode:
-            continue  # unloaded between the listing and the probe
-        rows[label] = {"id": f"launchd:{label}", "label": label, "clocks": launchctl_clocks(probe.stdout),
-                       "active": True, "domains": sorted(domains)}
+        live: set[str] = set()
+        seen = False
+        for domain in domains:
+            clocks = probe_launchd_service(run, domain, label)
+            if clocks is not None:
+                seen = True
+                live |= set(clocks)
+        if label in rows:
+            rows[label]["clocks"] = sorted(set(rows[label]["clocks"]) | live)
+        elif seen:  # loaded with no plist on disk (`launchctl submit`, a bootstrap from elsewhere)
+            rows[label] = {"id": f"launchd:{label}", "label": label, "clocks": sorted(live), "active": True,
+                           "domains": sorted(domains)}
     for entry in unlabeled:
         # No Label means no label to match against `launchctl` and nothing to load by
         # name: a per-file row, active only if it carries a clock key.
@@ -370,9 +419,9 @@ def collect(base: str, home: Path, n8n_export: Path | None = None) -> dict:
         # Absent `platform` means Linux, so Linux inventories keep their exact shape.
         inventory["platform"] = "darwin"
         inventory["scope"] = ("launchd plists in ~/Library/LaunchAgents, /Library/LaunchAgents and /Library/LaunchDaemons "
-                              "plus the loaded jobs of gui/<uid> and user/<uid>; current-user crontab; all local Hermes profiles; "
-                              "optional n8n export")
-        inventory["not_audited"] = ["remote hosts", "other users' private crontabs", "the system launchd domain",
+                              "plus the loaded jobs and enable/disable overrides of gui/<uid>, user/<uid> and system; "
+                              "current-user crontab; all local Hermes profiles; optional n8n export")
+        inventory["not_audited"] = ["remote hosts", "other users' private crontabs", LAUNCHD_NOT_PROBED,
                                     "jobs only loaded into other users' domains", "at(1) jobs",
                                     "n8n" if not n8n_export else "remote n8n drift since export"]
     return inventory

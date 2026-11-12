@@ -25,7 +25,7 @@ def transition(report: dict, previous: dict) -> tuple[dict, list[str]]:
             held = old - current
         else:
             prefixes = {"systemd-user": "systemd:user:", "systemd-system": "systemd:system:",
-                        "crontab": "crontab:", "hermes": "hermes:", "n8n": "n8n:"}
+                        "launchd": "launchd:", "crontab": "crontab:", "hermes": "hermes:", "n8n": "n8n:"}
             held = {key for key in old - current if any(key.startswith(prefixes.get(name, "unknown:" + name))
                                                         for name in unavailable)
                     or any(item.startswith(key + ":") for item in report["unknown"])}

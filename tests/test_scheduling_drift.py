@@ -44,3 +44,18 @@ def test_multiple_bypass_clocks_get_one_count_only_message():
     assert len(messages) == 1
     assert "2 new bypass" in messages[0]
     assert "newapi" not in messages[0] and "rogue" not in messages[0]
+
+
+def test_unavailable_launchd_source_holds_its_clocks_instead_of_declaring_them_cleared():
+    # The launchd source has its own prefix: without it the drift job fell back to "unknown:launchd",
+    # printed "1 cleared" when launchctl failed, then "1 new bypass" again when it recovered.
+    fail = {"status": "fail", "violations": [{"id": "launchd:io.example.resync"}], "unknown": []}
+    state, first = transition(fail, {"conditions": []})
+    assert "1 new bypass" in first[0]
+    unknown = {"status": "unknown", "violations": [], "unknown": ["launchd: unavailable inventory"]}
+    held, messages = transition(unknown, state)
+    assert "launchd:io.example.resync" in held["conditions"]
+    assert all("0 cleared" in line for line in messages)  # the held clock is not declared recovered
+    _, recovered = transition(fail, held)
+    # launchctl recovered: only the unknown condition resolves, there is no duplicate "new bypass" alert.
+    assert len(recovered) == 1 and "0 new bypass, 0 cleared" in recovered[0] and "1 resolved" in recovered[0]

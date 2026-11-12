@@ -34,8 +34,19 @@ Only `exec` is supported in this profile.
 | `../compose.mac.yml` | overlay on `compose.yml`; every removal is an explicit `!reset` / `!override` and is asserted by `tests/test_compose_mac.py` |
 | `io.33god.candybar-executor.plist.template` | LaunchAgent: `RunAtLoad` + `KeepAlive` only, explicit `PATH`, loopback metrics, no secret |
 | `run-executor.sh` | the plist's program: forces `CANDYBAR_CGROUP_ROOT=""`, injects `PGPASSWORD` through `env-op-resolve`, `exec`s `candybar daemon --roles executor` |
-| `install-executor.sh` | renders the plist (`--dry-run` prints it), optionally bootstraps it (`--load`) |
+| `install-executor.sh` | renders the plist for one domain (`--dry-run` prints it), lints it before replacing the old one, optionally (re)bootstraps it (`--load`) |
 | `executor.env.op`, `compose.env.op` | `op://` references only, resolved from the interim 0600 store |
+
+## Stopping the executor
+
+`launchctl bootout` (and `kickstart -k`) send SIGTERM to the executor and wait
+`ExitTimeOut` (60 s, the Linux unit's `TimeoutStopSec`) before SIGKILL. On SIGTERM the
+executor SIGTERMs every in-flight child (each job runs in its own process group, so the
+signal reaches the job's tree), waits for them and records them failed. Linux's
+`KillMode=mixed` additionally sweeps the cgroup; macOS has none. So a job that ignores
+SIGTERM for the whole 60 s survives the SIGKILLed executor as an untracked orphan. Before
+an owner-window bootout, check `candybar ls` / `candybar history` for a long-running job
+that traps SIGTERM.
 
 ## `CANDYBAR_CGROUP_ROOT=""`
 
@@ -76,8 +87,9 @@ until then the answer is none.
 
 `uv run candybar doctor --repo . --live --json` on a Mac audits `launchd` instead
 of systemd: plists in `~/Library/LaunchAgents`, `/Library/LaunchAgents` and
-`/Library/LaunchDaemons`, the loaded services of `gui/<uid>` and `user/<uid>`
-(`launchctl print`, `print-disabled`; read-only verbs only), the user crontab
+`/Library/LaunchDaemons`, the loaded services of `gui/<uid>`, `user/<uid>` and `system`
+and their enable/disable overrides (`launchctl print`, `print-disabled`; read-only verbs
+only; an `enabled` override beats a plist's `Disabled`), the user crontab
 (`crontab -l`), every Hermes profile and the registry. `StartInterval` and
 `StartCalendarInterval` on an enabled or loaded job are reported as bypass clocks
 with the exact id `launchd:<label>`. One bad plist never aborts the inventory: a plist
@@ -88,9 +100,14 @@ key; a plist that cannot be parsed or read becomes a per-file `unreadable` row, 
 the report `unknown` (exit 2, it cannot be certified clock-free) while every other job is
 still audited and listed. `WatchPaths`, `KeepAlive`, `RunAtLoad` and
 `ThrottleInterval` are supervision or events and are never flagged. Findings are
-observations: other people's launchd jobs are listed, never disabled. The system
-launchd domain and other users' domains are not audited (stated in the report's
-`not_audited`). Exit codes are unchanged: 0 clean, 1 bypass, 2 an inventory source
+observations: other people's launchd jobs are listed, never disabled. Every loaded job
+is probed with `launchctl print <domain>/<label>` so the live definition is audited, not just
+the file on disk (an edited plist whose job was never booted out still fires); any probe
+failure other than "service not found" makes the report `unknown`. One stated coverage
+boundary, in the report's `not_audited`: loaded jobs with no plist in the scanned
+directories whose label starts with `com.apple.`, `application.`, `0x`, `[` or
+`UIKitApplication:` (OS-owned or runtime-generated) are not probed. That is a disclosure,
+not an approval, and no exception is implied. Other users' domains are not audited either. Exit codes are unchanged: 0 clean, 1 bypass, 2 an inventory source
 unavailable.
 
 ## W5-2 install recipe
@@ -155,7 +172,11 @@ the PATH from `~/.config/33god/launchd-agent.env`.
    ```
    Check both domains for the label before `print`/`kickstart`/`bootout`
    (`launchctl print gui/$(id -u)/io.33god.candybar-executor`, then `user/...`);
-   `--domain user` bootstraps into `user/<uid>` instead (the plist allows both).
+   `--domain user` bootstraps into `user/<uid>` instead; the installer renders exactly one
+   `LimitLoadToSessionType` for the domain it is given (gui is `Aqua`, user is `Background`), so
+   a later login can never load a second copy next to the first. Re-running it with `--load`
+   lints the new plist before replacing the old one, boots out this one label if it is loaded
+   in the target domain, and refuses (exit 73, nothing written) if it is loaded in the other.
    The executor sits at the schema guard until step 5 has run, then opens by itself.
 7. **CLI on PATH.** `ln -s ~/code/33GOD/candybar/.venv/bin/candybar ~/.local/bin/candybar`
    (only if no `candybar` exists there already; check first). The CLI's default API is

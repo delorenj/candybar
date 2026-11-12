@@ -43,8 +43,12 @@ def fake_launchctl(calls=None, *, gui=None, user=None):
     table = {
         ("print", "gui/501"): gui if gui is not None else completed(text("print-gui.txt")),
         ("print", "user/501"): user if user is not None else completed(text("print-user.txt")),
+        ("print", "system"): completed(text("print-system.txt")),
         ("print-disabled", "gui/501"): completed(text("print-disabled-gui.txt")),
         ("print-disabled", "user/501"): completed(text("print-disabled-user.txt")),
+        ("print-disabled", "system"): completed(text("print-disabled-system.txt")),
+        ("print", "system/test.system-daemon-loop"): completed(text("print-system-service-interval.txt")),
+        ("print", "system/test.system-daemon-quiet"): completed(text("print-service-quiet.txt")),
         ("print", "gui/501/test.submitted-loop"): completed(text("print-service-interval.txt")),
         ("print", "gui/501/test.submitted-quiet"): completed(text("print-service-quiet.txt")),
         ("print", "user/501/test.user-domain-only"): completed(text("print-service-calendar.txt")),
@@ -56,7 +60,10 @@ def fake_launchctl(calls=None, *, gui=None, user=None):
         assert argv[0] == "launchctl"
         if calls is not None:
             calls.append(argv)
-        return table[(argv[1], argv[2])]
+        key = (argv[1], argv[2])
+        if key not in table and argv[1] == "print":
+            return completed(text("print-service-quiet.txt"))  # a loaded job with a plist: its live definition has no clock
+        return table[key]
 
     return run
 
@@ -65,6 +72,27 @@ def empty_launchctl(argv):
     """A host with nothing loaded and nothing disabled: only the plists on disk matter."""
     assert argv[0] == "launchctl" and argv[1] in {"print", "print-disabled"}
     return completed("\tservices = {\n\t}\n" if argv[1] == "print" else "disabled services = {\n}\n")
+
+
+def launchctl_with(*, gui_labels=(), disabled=(), enabled=(), probes=None, calls=None):
+    """A host with exactly these loaded gui jobs, overrides and `launchctl print` probe answers."""
+    services = "".join(f"\t\t0\t0\t{label}\n" for label in gui_labels)
+    overrides = "".join(f'\t\t"{label}" => disabled\n' for label in disabled)
+    overrides += "".join(f'\t\t"{label}" => enabled\n' for label in enabled)
+
+    def run(argv):
+        if calls is not None:
+            calls.append(argv)
+        verb, target = argv[1], argv[2]
+        if verb == "print" and target == "gui/501":
+            return completed(f"gui/501 = {{\n\tservices = {{\n{services}\t}}\n}}\n")
+        if verb == "print" and target in {"user/501", "system"}:
+            return completed("\tservices = {\n\t}\n")
+        if verb == "print-disabled":
+            return completed(f"\tdisabled services = {{\n{overrides}\t}}\n" if target == "gui/501" else "disabled services = {\n}\n")
+        return (probes or {})[target]
+
+    return run
 
 
 def jobs(**kwargs):
@@ -232,6 +260,68 @@ def test_launchctl_failure_other_than_missing_domain_is_unknown():
         jobs(run=fake_launchctl(gui=completed("", 1, "Operation not permitted")))
 
 
+# ---- launchd's own precedence rules, live definitions, the system domain -------------------
+
+def test_enabled_override_beats_a_plist_disabled_key(tmp_path):
+    (tmp_path / "a.plist").write_bytes(plistlib.dumps({"Label": "re.enabled", "StartInterval": 60, "Disabled": True}))
+    (tmp_path / "b.plist").write_bytes(plistlib.dumps({"Label": "still.off", "StartInterval": 60, "Disabled": True}))
+    (tmp_path / "c.plist").write_bytes(plistlib.dumps({"Label": "forced.off", "StartInterval": 60}))
+    run = launchctl_with(enabled=["re.enabled"], disabled=["forced.off"])
+    rows = {r["label"]: r for r in policy.launchd_jobs([tmp_path], 501, run=run)}
+    assert rows["re.enabled"]["active"] is True  # `launchctl enable` wins: launchd loads it at next login and it fires
+    assert rows["still.off"]["active"] is False
+    assert rows["forced.off"]["active"] is False  # `launchctl disable` wins over a plist with no Disabled key
+    assert policy.parse_launchctl_overrides('\t"a" => enabled\n\t"b" => disabled\n\t"c" => false\n\t"d" => true\n') == ({"b", "d"}, {"a", "c"})
+
+
+def test_system_domain_daemons_are_audited_with_their_own_overrides(tmp_path):
+    daemons = tmp_path / "LaunchDaemons"
+    daemons.mkdir()
+    (daemons / "off.plist").write_bytes(plistlib.dumps({"Label": "test.system-disabled", "StartInterval": 60}))
+    (daemons / "on.plist").write_bytes(plistlib.dumps({"Label": "test.system-quiet-plist", "StartInterval": 60}))
+    calls = []
+    rows = {r["label"]: r for r in policy.launchd_jobs([daemons], 501, run=fake_launchctl(calls))}
+    assert rows["test.system-disabled"]["active"] is False  # `launchctl disable system/...` honoured: no permanent false bypass
+    assert rows["test.system-quiet-plist"]["active"] is True
+    # Loaded in `system` with no plist anywhere: probed in that domain, its live interval is read.
+    assert rows["test.system-daemon-loop"] == {"id": "launchd:test.system-daemon-loop", "label": "test.system-daemon-loop",
+                                               "clocks": ["StartInterval"], "active": True, "domains": ["system"]}
+    assert ["launchctl", "print", "system/test.system-daemon-loop"] in calls
+    assert not any(argv[-1].startswith("system/com.apple") for argv in calls)  # OS-owned: the disclosed boundary
+
+
+def test_the_live_definition_is_probed_even_when_the_plist_on_disk_has_no_clock(tmp_path):
+    # An operator "retires" a clock by deleting StartInterval from the plist but never boots the job out:
+    # the loaded job keeps firing, and the audit must still see it.
+    (tmp_path / "x.plist").write_bytes(plistlib.dumps({"Label": "io.example.edited", "RunAtLoad": True}))
+    probes = {"gui/501/io.example.edited": completed(text("print-service-interval.txt"))}
+    calls = []
+    rows = {r["label"]: r for r in policy.launchd_jobs([tmp_path], 501, run=launchctl_with(gui_labels=["io.example.edited"], probes=probes, calls=calls))}
+    assert rows["io.example.edited"]["clocks"] == ["StartInterval"] and rows["io.example.edited"]["active"] is True
+    assert policy.audit(darwin_inventory(launchd=list(rows.values())), {})["violations"] == [
+        {"id": "launchd:io.example.edited", "message": policy.REMEDY}]
+
+
+def test_a_failed_service_probe_is_unknown_not_a_silently_dropped_job():
+    denied = {"gui/501/vendor.loop": completed("", 1, "Operation not permitted")}
+    with pytest.raises(ValueError):
+        policy.launchd_jobs([], 501, run=launchctl_with(gui_labels=["vendor.loop"], probes=denied))
+    gone = {"gui/501/vendor.loop": completed("", 113, "Could not find service \"vendor.loop\" in domain for user gui: 501")}
+    assert policy.launchd_jobs([], 501, run=launchctl_with(gui_labels=["vendor.loop"], probes=gone)) == []  # the benign race
+    by_text = {"gui/501/vendor.loop": completed("", 1, "Could not find service")}
+    assert policy.launchd_jobs([], 501, run=launchctl_with(gui_labels=["vendor.loop"], probes=by_text)) == []
+
+
+@pytest.mark.parametrize("date", ["2024-01-01T00:00:00", "2024Z", "not-a-date"])
+def test_a_plist_with_a_malformed_date_is_one_unreadable_file_not_an_aborted_inventory(tmp_path, date):
+    # plistlib raises AttributeError / TypeError / ValueError depending on the malformed <date>.
+    bad = f"<?xml version='1.0'?><plist version='1.0'><dict><key>Label</key><string>x</string><key>d</key><date>{date}</date></dict></plist>"
+    (tmp_path / "bad.plist").write_text(bad)
+    (tmp_path / "good.plist").write_bytes(plistlib.dumps({"Label": "good", "StartInterval": 5}))
+    rows, files = policy.scan_launchd_plists([tmp_path])
+    assert rows["good"]["clocks"] == ["StartInterval"] and [f["unreadable"] for f in files] == [True]
+
+
 # ---- audit ----------------------------------------------------------------------------
 
 def darwin_inventory(**rows):
@@ -313,7 +403,10 @@ def test_collect_on_darwin_gathers_launchd_not_systemd(monkeypatch, tmp_path):
     inventory = policy.collect("http://127.0.0.1:1", tmp_path)
     assert inventory["platform"] == "darwin"
     assert set(inventory["sources"]) == policy.DARWIN_REQUIRED
-    assert "launchd" in inventory["scope"] and "the system launchd domain" in inventory["not_audited"]
+    assert "launchd" in inventory["scope"] and "system" in inventory["scope"]
+    # The system domain IS audited now; the one coverage boundary (OS-owned loaded jobs with no plist) is disclosed.
+    assert "the system launchd domain" not in inventory["not_audited"]
+    assert policy.LAUNCHD_NOT_PROBED in inventory["not_audited"] and "com.apple." in policy.LAUNCHD_NOT_PROBED
     assert policy.audit(inventory, {})["violations"][0]["id"] == "launchd:io.example.resync"
 
 

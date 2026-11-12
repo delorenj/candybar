@@ -1,5 +1,7 @@
 #!/bin/sh
-# Render (and optionally load) the Mac executor LaunchAgent. Idempotent.
+# Render (and optionally load) the Mac executor LaunchAgent. Safe to re-run: the new file is
+# linted before it replaces the old one, and --load boots out this one label first if it is
+# already loaded in the target domain (and refuses if it is loaded in the other one).
 #
 #   deploy/mac/install-executor.sh --dry-run          # print the rendered plist
 #   deploy/mac/install-executor.sh                    # write ~/Library/LaunchAgents/io.33god.candybar-executor.plist
@@ -10,7 +12,8 @@
 #                     with <repo>/.venv/bin prepended)
 #   --pg-port N       registry Postgres loopback port (default 5435)
 #   --nats-port N     NATS loopback port (default 4222)
-#   --domain D        gui | user  (default gui; label is bootstrapped into D/<uid>)
+#   --domain D        gui | user  (default gui; label is bootstrapped into D/<uid>, and the plist is
+#                     limited to that domain's one session type: gui -> Aqua, user -> Background)
 #   --out FILE        write here instead of ~/Library/LaunchAgents (tests)
 #
 # Never loads without --load, never touches another label, never writes a secret.
@@ -45,7 +48,11 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-case "$domain" in gui|user) ;; *) echo "install-executor: --domain must be gui or user" >&2; exit 64 ;; esac
+case "$domain" in
+  gui) session_type=Aqua ;;
+  user) session_type=Background ;;
+  *) echo "install-executor: --domain must be gui or user" >&2; exit 64 ;;
+esac
 case "$pg_port$nats_port" in *[!0-9]*) echo "install-executor: ports must be numeric" >&2; exit 64 ;; esac
 
 if [ -z "$path_value" ]; then
@@ -64,6 +71,7 @@ rendered=$(sed \
   -e "s|__HOME__|$(esc "$HOME")|g" \
   -e "s|__PG_PORT__|$(esc "$pg_port")|g" \
   -e "s|__NATS_PORT__|$(esc "$nats_port")|g" \
+  -e "s|__SESSION_TYPE__|$session_type|g" \
   "$template")
 
 case "$rendered" in *__[A-Z_]*__*) echo "install-executor: unsubstituted placeholder left in plist" >&2; exit 70 ;; esac
@@ -73,19 +81,44 @@ if [ "$dry" -eq 1 ]; then
   exit 0
 fi
 
+uid=$(id -u)
+target="$domain/$uid"
+loaded_here=0
+if [ "$load" -eq 1 ]; then
+  # Decide before writing anything: a copy in the OTHER domain would double-run jobs, so refuse.
+  for other in gui user; do
+    if launchctl print "$other/$uid/$label" >/dev/null 2>&1; then
+      if [ "$other" = "$domain" ]; then
+        loaded_here=1
+      else
+        echo "install-executor: $label is already loaded in $other/$uid; boot it out there first (a second copy would double-run jobs)" >&2
+        exit 73
+      fi
+    fi
+  done
+fi
+
 mkdir -p "$(dirname "$out")" "$HOME/Library/Logs/33god"
+# Lint a temp file first: a plist that fails plutil must never replace a working one.
+tmp="$out.new.$$"
+trap 'rm -f "$tmp"' EXIT
+printf '%s\n' "$rendered" > "$tmp"
+if command -v plutil >/dev/null 2>&1; then
+  plutil -lint "$tmp" >/dev/null || { echo "install-executor: rendered plist failed plutil -lint; $out left untouched" >&2; exit 65; }
+fi
 if [ -f "$out" ]; then
   mkdir -p "$backup_dir"
   cp -p "$out" "$backup_dir/$label.plist.$(date +%Y%m%dT%H%M%S)"
 fi
-printf '%s\n' "$rendered" > "$out"
-if command -v plutil >/dev/null 2>&1; then
-  plutil -lint "$out"
-fi
+mv "$tmp" "$out"
 echo "install-executor: wrote $out"
 
 if [ "$load" -eq 1 ]; then
-  target="$domain/$(id -u)"
+  if [ "$loaded_here" -eq 1 ]; then
+    # A reload of this one label: the running copy keeps its old definition until it is booted out.
+    launchctl bootout "$target/$label"
+    echo "install-executor: booted out the running $label from $target"
+  fi
   launchctl bootstrap "$target" "$out"
   echo "install-executor: bootstrapped $label into $target"
 fi

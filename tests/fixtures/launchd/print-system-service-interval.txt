@@ -1,0 +1,7 @@
+system/test.system-daemon-loop = {
+	active count = 1
+	state = running
+
+	run interval = 900 seconds
+	job state = running
+}

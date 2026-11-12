@@ -28,7 +28,7 @@ REPO = Path(__file__).resolve().parents[1]
 MAC = REPO / "deploy" / "mac"
 TEMPLATE = MAC / "io.33god.candybar-executor.plist.template"
 PLACEHOLDERS = {"__REPO__": "/Users/u/code/33GOD/candybar", "__PATH__": "/Users/u/code/33GOD/candybar/.venv/bin:/usr/bin:/bin",
-                "__HOME__": "/Users/u", "__PG_PORT__": "5435", "__NATS_PORT__": "4222"}
+                "__HOME__": "/Users/u", "__PG_PORT__": "5435", "__NATS_PORT__": "4222", "__SESSION_TYPE__": "Aqua"}
 SH = shutil.which("sh") or "/bin/sh"
 
 
@@ -69,8 +69,12 @@ def test_template_carries_no_secret_and_no_linux_path():
     assert not re.search(r"://[^/@\s:]+:[^/@\s]+@", text)  # no DSN userinfo password
 
 
-def test_template_can_load_into_either_launchd_domain():
-    assert {"Aqua", "Background"} <= set(rendered_template()["LimitLoadToSessionType"])
+def test_template_names_exactly_one_session_type_and_is_not_throttled():
+    plist = rendered_template()
+    # One type (the installer picks it from --domain): two would let launchd load a second copy into the other domain.
+    assert plist["LimitLoadToSessionType"] == "Aqua" and isinstance(plist["LimitLoadToSessionType"], str)
+    assert "ProcessType" not in plist  # Background would throttle every job the executor spawns
+    assert plist["ExitTimeOut"] == 60  # parity with the Linux unit's TimeoutStopSec
 
 
 def test_standard_launchd_path_shape_is_accepted_by_the_installer():
@@ -80,18 +84,24 @@ def test_standard_launchd_path_shape_is_accepted_by_the_installer():
 
 # ---- install-executor.sh ------------------------------------------------------------------
 
-def make_launchctl(tmp_path: Path) -> tuple[Path, Path]:
+def make_launchctl(tmp_path: Path, loaded: tuple[str, ...] = (), plutil_ok: bool = True) -> tuple[Path, Path]:
+    """A launchctl shim that logs every call; `print <target>` succeeds only for targets in `loaded`."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     log = tmp_path / "launchctl.log"
     shim = bin_dir / "launchctl"
-    shim.write_text(f'#!/bin/sh\necho "$@" >> {log}\n')
+    cases = "".join(f"    {target}) exit 0 ;;\n" for target in loaded)
+    shim.write_text(f'#!/bin/sh\necho "$@" >> {log}\n[ "$1" = print ] || exit 0\ncase "$2" in\n{cases}    *) exit 113 ;;\nesac\n')
     shim.chmod(0o755)
+    plutil = bin_dir / "plutil"
+    plutil.write_text(f'#!/bin/sh\necho "plutil $@" >> {log}\n' + ("exit 0\n" if plutil_ok else "echo 'bad plist' >&2\nexit 1\n"))
+    plutil.chmod(0o755)
     return bin_dir, log
 
 
-def install(tmp_path: Path, *args: str, agent_env: str | None = "PATH=/Users/u/.local/bin:/usr/bin:/bin\nHOME=/Users/u\n"):
-    bin_dir, log = make_launchctl(tmp_path)
+def install(tmp_path: Path, *args: str, agent_env: str | None = "PATH=/Users/u/.local/bin:/usr/bin:/bin\nHOME=/Users/u\n",
+            loaded: tuple[str, ...] = (), plutil_ok: bool = True):
+    bin_dir, log = make_launchctl(tmp_path, loaded, plutil_ok)
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
     env_file = tmp_path / "launchd-agent.env"
@@ -101,6 +111,10 @@ def install(tmp_path: Path, *args: str, agent_env: str | None = "PATH=/Users/u/.
            "CANDYBAR_BACKUP_DIR": str(tmp_path / "backups")}
     result = subprocess.run([SH, str(MAC / "install-executor.sh"), *args], env=env, capture_output=True, text=True, timeout=30, check=False)
     return result, log, home
+
+
+def launchctl_mutations(log: Path) -> list[str]:
+    return [line for line in log.read_text().splitlines() if line.split()[0] in {"bootstrap", "bootout"}] if log.exists() else []
 
 
 def test_installer_dry_run_renders_a_valid_plist_from_the_convention_path(tmp_path):
@@ -122,18 +136,42 @@ def test_installer_writes_but_does_not_load_without_load_flag(tmp_path):
     assert result.returncode == 0, result.stderr
     env = plistlib.loads(out.read_bytes())["EnvironmentVariables"]
     assert env["DATABASE_URL"].endswith(":5999/candybar") and env["NATS_URL"] == "nats://127.0.0.1:4333"
-    assert not log.exists()  # never bootstraps on its own
+    assert [line for line in log.read_text().splitlines() if not line.startswith("plutil")] == []  # no launchctl call at all
     # Re-running backs the previous plist up outside the repo.
     again, _, _ = install(tmp_path, "--out", str(out))
     assert again.returncode == 0 and len(list((tmp_path / "backups").iterdir())) == 1
 
 
-@pytest.mark.parametrize("domain", ["gui", "user"])
-def test_installer_load_bootstraps_exactly_one_label_into_the_chosen_domain(tmp_path, domain):
+@pytest.mark.parametrize("domain,session", [("gui", "Aqua"), ("user", "Background")])
+def test_installer_load_bootstraps_exactly_one_label_into_the_chosen_domain(tmp_path, domain, session):
     out = tmp_path / "x.plist"
     result, log, _ = install(tmp_path, "--out", str(out), "--load", "--domain", domain)
     assert result.returncode == 0, result.stderr
-    assert log.read_text().strip() == f"bootstrap {domain}/{os.getuid()} {out}"
+    assert launchctl_mutations(log) == [f"bootstrap {domain}/{os.getuid()} {out}"]
+    assert plistlib.loads(out.read_bytes())["LimitLoadToSessionType"] == session  # one type per domain, never both
+
+
+def test_installer_reload_boots_out_only_its_own_label_from_the_target_domain_first(tmp_path):
+    uid, out = os.getuid(), tmp_path / "x.plist"
+    result, log, _ = install(tmp_path, "--out", str(out), "--load", loaded=(f"gui/{uid}/io.33god.candybar-executor",))
+    assert result.returncode == 0, result.stderr
+    assert launchctl_mutations(log) == [f"bootout gui/{uid}/io.33god.candybar-executor", f"bootstrap gui/{uid} {out}"]
+
+
+def test_installer_refuses_to_load_a_second_copy_into_the_other_domain_and_writes_nothing(tmp_path):
+    uid, out = os.getuid(), tmp_path / "x.plist"
+    result, log, _ = install(tmp_path, "--out", str(out), "--load", "--domain", "user", loaded=(f"gui/{uid}/io.33god.candybar-executor",))
+    assert result.returncode == 73 and "already loaded in gui" in result.stderr
+    assert launchctl_mutations(log) == [] and not out.exists()
+
+
+def test_installer_never_replaces_a_working_plist_with_one_that_fails_lint(tmp_path):
+    out = tmp_path / "x.plist"
+    out.write_text("previous working plist")
+    result, log, _ = install(tmp_path, "--out", str(out), "--load", plutil_ok=False)
+    assert result.returncode == 65 and "failed plutil -lint" in result.stderr
+    assert out.read_text() == "previous working plist" and launchctl_mutations(log) == []
+    assert not list(tmp_path.glob("x.plist.new.*"))  # the temp file is cleaned up
 
 
 @pytest.mark.parametrize("args,agent_env", [(("--dry-run", "--domain", "system"), "PATH=/usr/bin\n"), (("--dry-run", "--pg-port", "54;35"), "PATH=/usr/bin\n"),

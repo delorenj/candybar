@@ -1,0 +1,16 @@
+system = {
+	type = system
+	handle = 0
+	active count = 4
+	service count = 4
+
+	services = {
+		       0      - 	com.apple.example.daemon
+		     412      - 	test.system-daemon-loop
+		       0      0 	test.system-daemon-quiet
+	}
+
+	disabled services = {
+		"test.system-disabled" => disabled
+	}
+}
