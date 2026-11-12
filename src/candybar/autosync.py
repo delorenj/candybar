@@ -17,7 +17,7 @@ import signal
 import threading
 import tomllib
 from collections import Counter
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -39,6 +39,11 @@ from .project import (
 from .runners import canonical_runner
 
 log = logging.getLogger(__name__)
+# CAND-53: the migration ledger lock is held only around the one registry write
+# of an actively migrated definition, never across list/read passes or no-op
+# reconciles. A `candybar migrate` verb holding it makes the write wait this long
+# (then fail and retry like any other unsynced pass).
+LEDGER_WAIT_S = 10.0
 EXCLUDED = frozenset({
     '.git', '.venv', 'venv', '.worktrees', 'worktrees', 'node_modules',
     '.cache', 'cache', '__pycache__', '.pytest_cache', '.mypy_cache',
@@ -249,11 +254,14 @@ def _sync_one(config, api, definition, project, ledger_path, report, dry_run):
         result['status'] = 'would-update' if dry_run else 'updated'
         if dry_run:
             return
-        if ledger_path:
-            fresh = _ledger_entry(ledger_path, name)
-            if not _active_entry(fresh) or fresh.candybar_id != str(row['id']):
-                raise ValueError(f'{name}: migration changed before update')
-        api.update(row['id'], changes)
+        # The ledger is replaced atomically, so every read above is consistent
+        # without the lock. Hold it only to re-check the entry and write.
+        with locked(ledger_path, wait=LEDGER_WAIT_S) if ledger_path else nullcontext():
+            if ledger_path:
+                fresh = _ledger_entry(ledger_path, name)
+                if not _active_entry(fresh) or fresh.candybar_id != str(row['id']):
+                    raise ValueError(f'{name}: migration changed before update')
+            api.update(row['id'], changes)
         job_id = row['id']
     else:
         if name in config._known:
@@ -329,43 +337,42 @@ def _reconcile(config: WatchConfig, api=None, *, dry_run: bool = False) -> Recon
         report.errors.extend(f'duplicate manifest claim: {name}' for name, count in counts.items() if count > 1)
         if report.errors or not definitions:
             return report  # No registry access when the last manifest was removed.
-        with ExitStack() as stack:
-            for ledger in sorted({p for _, _, p in definitions if p is not None}):
-                stack.enter_context(locked(ledger))
-                # Preflight every migration before any other group's write.
-                for definition, _, path in definitions:
-                    if path == ledger:
-                        _active_entry(_ledger_entry(ledger, definition.name))
-            api = api if api is not None else CandybarApi()
-            # Ownership/identity failures are validation failures, not a partial
-            # apply: preflight ALL sources before writing the first definition.
-            rows = api.list_candybars()
-            by_name = {row['name']: row for row in rows}
-            if len(rows) != len(by_name):
-                raise ValueError('duplicate registry names')
-            for definition, project, ledger in definitions:
-                entry = _ledger_entry(ledger, definition.name) if ledger else None
-                if entry is not None and not _active_entry(entry):
-                    continue
-                row = by_name.get(definition.name)
-                actual = _read(api, row['id']) if row is not None else None
-                owners = {tag for tag in (actual or {}).get('tags', []) if tag.startswith('project:')}
-                if owners and (project is None or owners != {project.tag}):
-                    report.errors.append(f'{definition.name}: foreign project ownership {sorted(owners)}')
-                if entry is not None and (actual is None or str(actual['id']) != entry.candybar_id):
-                    report.errors.append(f'{definition.name}: migration requires exact ledger candybar_id {entry.candybar_id}')
-                known = config._known.get(definition.name)
-                if known is not None and (actual is None or str(actual['id']) != known):
-                    report.errors.append(f'{definition.name}: known registration disappeared or changed identity')
-            if report.errors:
-                return report
-            for definition, project, ledger in definitions:
-                try:
-                    _sync_one(config, api, definition, project, ledger, report, dry_run)
-                except (ApiError, OSError, ValueError, KeyError, TypeError) as exc:
-                    report.errors.append(f'{definition.source} ({definition.name}): {exc}')
-                    if report.results and report.results[-1]['name'] == definition.name:
-                        report.results[-1]['status'] = 'error'
+        # Preflight every migration before any write. Ledger reads need no lock
+        # (atomic replace); the lock is taken per write in `_sync_one`.
+        for ledger in sorted({p for _, _, p in definitions if p is not None}):
+            for definition, _, path in definitions:
+                if path == ledger:
+                    _active_entry(_ledger_entry(ledger, definition.name))
+        api = api if api is not None else CandybarApi()
+        # Ownership/identity failures are validation failures, not a partial
+        # apply: preflight ALL sources before writing the first definition.
+        rows = api.list_candybars()
+        by_name = {row['name']: row for row in rows}
+        if len(rows) != len(by_name):
+            raise ValueError('duplicate registry names')
+        for definition, project, ledger in definitions:
+            entry = _ledger_entry(ledger, definition.name) if ledger else None
+            if entry is not None and not _active_entry(entry):
+                continue
+            row = by_name.get(definition.name)
+            actual = _read(api, row['id']) if row is not None else None
+            owners = {tag for tag in (actual or {}).get('tags', []) if tag.startswith('project:')}
+            if owners and (project is None or owners != {project.tag}):
+                report.errors.append(f'{definition.name}: foreign project ownership {sorted(owners)}')
+            if entry is not None and (actual is None or str(actual['id']) != entry.candybar_id):
+                report.errors.append(f'{definition.name}: migration requires exact ledger candybar_id {entry.candybar_id}')
+            known = config._known.get(definition.name)
+            if known is not None and (actual is None or str(actual['id']) != known):
+                report.errors.append(f'{definition.name}: known registration disappeared or changed identity')
+        if report.errors:
+            return report
+        for definition, project, ledger in definitions:
+            try:
+                _sync_one(config, api, definition, project, ledger, report, dry_run)
+            except (ApiError, OSError, ValueError, KeyError, TypeError) as exc:
+                report.errors.append(f'{definition.source} ({definition.name}): {exc}')
+                if report.results and report.results[-1]['name'] == definition.name:
+                    report.results[-1]['status'] = 'error'
     except (ApiError, OSError, ValueError, KeyError, TypeError) as exc:
         report.errors.append(str(exc))
     return report

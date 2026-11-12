@@ -223,6 +223,15 @@ not the normal workflow. No global config is read by plain `sync` or `watch`.
   refused before writes. Legacy paths remain relative to the manifest directory.
 - Sync operations are serialized across editor hooks and native watchers, then
   read current files and API state; there is no second reconciliation logic.
+- One watcher per watched tree: `candybar watch` takes a non-blocking flock keyed on
+  the resolved tree (`$XDG_RUNTIME_DIR/candybar/watch-<key>.lock`); a second one
+  (another shell's entry hook) exits 0 quietly. The kernel drops the lock when the
+  holder dies.
+- The migration ledger lock (`deploy/migration/`) is held by a watcher only around
+  the single registry write of an actively migrated definition (never across
+  registry reads or no-op passes); it waits up to 10s for a running `candybar
+  migrate`, then reports unsynced and retries. `candybar migrate` verbs wait up to
+  30s (`CANDYBAR_LEDGER_LOCK_WAIT_S` overrides) before refusing.
 - Files own definition fields, not lifecycle: pause/archive/skip remain intact.
   New registrations start paused even if TOML says `enabled = true`; prove them
   and use `candybar resume <name>` explicitly.

@@ -79,14 +79,19 @@ def watch(
         if not report.ok:
             raise typer.Exit(code=1)
         return
+    from candybar.watch_lock import watch_singleton
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    try:
-        run_watch(settings, config_path=config_path)
-    except KeyboardInterrupt:
-        pass
-    except (OSError, ValueError, RuntimeError) as exc:
-        typer.echo(f"watch stopped: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+    with watch_singleton(settings) as sole:
+        if not sole:
+            return  # CAND-53: another watcher already covers this tree; stay quiet.
+        try:
+            run_watch(settings, config_path=config_path)
+        except KeyboardInterrupt:
+            pass
+        except (OSError, ValueError, RuntimeError) as exc:
+            typer.echo(f"watch stopped: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
 
 
 def install(app: typer.Typer) -> None:

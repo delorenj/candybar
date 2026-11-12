@@ -19,6 +19,7 @@ from __future__ import annotations
 import fcntl
 import os
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -307,22 +308,43 @@ def save_ledger(path: Path, ledger: Ledger) -> None:
         raise
 
 
+#: How long a `candybar migrate` verb waits for the ledger lock before refusing
+#: (CAND-53: a watcher's brief write must not starve a verb). Env-overridable.
+MIGRATE_LOCK_WAIT_S = 30.0
+LOCK_WAIT_ENV = "CANDYBAR_LEDGER_LOCK_WAIT_S"
+_LOCK_POLL_S = 0.05
+
+
+def migrate_lock_wait() -> float:
+    try:
+        return max(0.0, float(os.environ[LOCK_WAIT_ENV]))
+    except (KeyError, ValueError):
+        return MIGRATE_LOCK_WAIT_S
+
+
 @contextmanager
-def locked(path: Path) -> Iterator[None]:
+def locked(path: Path, wait: float = 0.0) -> Iterator[None]:
     """Exclusive lock for a read-modify-write of the ledger.
 
     Taken on the ledger's DIRECTORY (the file itself is replaced by rename,
-    so a lock on its inode would not exclude the next writer). Never waits:
-    a second concurrent `candybar migrate` is refused.
+    so a lock on its inode would not exclude the next writer). With the
+    default `wait=0` it never waits and a second concurrent writer is refused;
+    with `wait=N` it polls up to N seconds for the holder to let go, then
+    refuses with the same error.
     """
     fd = os.open(path.parent, os.O_RDONLY)
     try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise LedgerError(
-                f"another `candybar migrate` holds {path.parent}; retry"
-            ) from exc
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError as exc:
+                if time.monotonic() >= deadline:
+                    raise LedgerError(
+                        f"another `candybar migrate` holds {path.parent}; retry"
+                    ) from exc
+                time.sleep(min(_LOCK_POLL_S, max(deadline - time.monotonic(), 0.001)))
         yield
     finally:
         os.close(fd)
@@ -333,6 +355,8 @@ __all__ = [
     "KIND_HERMES",
     "KIND_SYSTEMD_TIMER",
     "LEDGER_ENV",
+    "LOCK_WAIT_ENV",
+    "MIGRATE_LOCK_WAIT_S",
     "STATUS_CUTOVER",
     "STATUS_DECOMMISSIONED",
     "STATUS_PLANNED",
@@ -349,5 +373,6 @@ __all__ = [
     "dump_ledger",
     "load_ledger",
     "locked",
+    "migrate_lock_wait",
     "save_ledger",
 ]
