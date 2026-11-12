@@ -1,0 +1,12 @@
+[candybar]
+name = "mac-hindsight-capture-sweep"
+description = "Damian's Mac: flush idle Hindsight session write-back buffers (session_capture.py sweep only)"
+tags = ["mac", "hindsight"]
+schedule = "*/10 * * * *"
+timezone = "UTC"
+enabled = false
+
+[candybar.runner]
+kind = "exec"
+argv = ["/bin/sh", "-c", "exec \"$HOME/.local/share/33god/hook-hub/venv/bin/python\" \"$HOME/code/33GOD/bloodbank/services/hook-hub/session_capture.py\" sweep"]
+timeout_s = 120
