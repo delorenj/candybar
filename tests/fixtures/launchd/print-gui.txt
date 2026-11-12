@@ -1,0 +1,28 @@
+gui/501 = {
+	type = login
+	handle = 100022
+	active count = 5
+	service count = 5
+	session = Aqua
+
+	environment = {
+		SSH_AUTH_SOCK => /private/tmp/com.apple.launchd.x/Listeners
+	}
+
+	services = {
+		     723      - 	application.com.apple.Notes.1152921500311893942.1152921500311893947
+		       0      1 	test.interval-job
+		    1503      - 	test.keepalive-service
+		       0      0 	test.submitted-loop
+		       0      0 	test.submitted-quiet
+		       0      0 	test.vanished
+		       0      - 	com.apple.example.agent
+	}
+
+	disabled services = {
+		"test.override-disabled" => disabled
+	}
+
+	endpoints = {
+	}
+}

@@ -1,0 +1,7 @@
+user/501/test.user-domain-only = {
+	event triggers = {
+		com.apple.launchd.calendarinterval => {
+			stream = com.apple.launchd.calendarinterval
+		}
+	}
+}

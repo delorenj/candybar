@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Candybar executor LaunchAgent for macOS (W5-1). Rendered by install-executor.sh;
+  every double-underscore token below is substituted at install time.
+
+  Policy, enforced by tests/test_mac_profile.py:
+    - RunAtLoad + KeepAlive ONLY. No StartInterval, no StartCalendarInterval:
+      Candybar is the single clock and the executor is the thing that fires jobs.
+    - No secret anywhere in this file. The registry DSN has no password; PGPASSWORD
+      is injected by env-op-resolve from the interim 0600 store in run-executor.sh.
+    - PATH is explicit. launchd would otherwise give /usr/bin:/bin:/usr/sbin:/sbin
+      (Apple python 3.9, bash 3.2, no Homebrew, no mise).
+    - CANDYBAR_CGROUP_ROOT is empty: macOS has no cgroup v2, so invocations run
+      unscoped and memory/CPU meter as 0 (execution never depends on it).
+    - Metrics and health on loopback only.
+    - LimitLoadToSessionType includes Background so the label can be bootstrapped
+      into either gui/<uid> or user/<uid> (without it user/<uid> fails with
+      "5: Input/output error").
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>io.33god.candybar-executor</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>__REPO__/deploy/mac/run-executor.sh</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>__REPO__</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>__PATH__</string>
+		<key>HOME</key>
+		<string>__HOME__</string>
+		<key>DATABASE_URL</key>
+		<string>postgresql+psycopg://candybar@127.0.0.1:__PG_PORT__/candybar</string>
+		<key>NATS_URL</key>
+		<string>nats://127.0.0.1:__NATS_PORT__</string>
+		<key>CANDYBAR_CGROUP_ROOT</key>
+		<string></string>
+		<key>CANDYBAR_EXECUTOR_METRICS_HOST</key>
+		<string>127.0.0.1</string>
+		<key>CANDYBAR_EXECUTOR_METRICS_PORT</key>
+		<string>8701</string>
+		<key>CANDYBAR_NVIDIA_SMI</key>
+		<string></string>
+		<key>PYTHONDONTWRITEBYTECODE</key>
+		<string>1</string>
+		<key>PYTHONUNBUFFERED</key>
+		<string>1</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>ExitTimeOut</key>
+	<integer>20</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>LimitLoadToSessionType</key>
+	<array>
+		<string>Aqua</string>
+		<string>Background</string>
+	</array>
+	<key>StandardOutPath</key>
+	<string>__HOME__/Library/Logs/33god/candybar-executor.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/Library/Logs/33god/candybar-executor.err.log</string>
+</dict>
+</plist>

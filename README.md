@@ -859,7 +859,10 @@ every Hermes profile job store, user and system systemd timers, and user and
 `/etc` crontabs, and reports native recurring clocks that are not Candybars.
 Exit 0 passes, 1 means bypass clocks were found, and 2 means an inventory
 source was unavailable (never read 2 as green). It does not cover remote hosts,
-other users' crontabs, or n8n without `--n8n-export`. Findings are
+other users' crontabs, or n8n without `--n8n-export`. On macOS the live audit reads
+launchd instead of systemd (plists plus the `gui/<uid>` and `user/<uid>` domains,
+`StartInterval`/`StartCalendarInterval` are the clocks; see
+[`deploy/mac/README.md`](deploy/mac/README.md)); the Linux collector is unchanged. Findings are
 observations: do not auto-disable or migrate unfamiliar timers. The policy
 code is `src/candybar/scheduling_policy.py`, `scheduling_drift.py`,
 `transition_exec.py` and `deploy/scheduling-policy.json` (exact-id exceptions,

@@ -1,0 +1,6 @@
+gui/501/test.submitted-quiet = {
+	active count = 0
+	state = not running
+
+	job state = exited
+}

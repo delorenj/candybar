@@ -40,3 +40,13 @@ infra-doctor probe (or it will page about the stale stamp, correctly).
 Simulated-outage drill: `systemctl --user stop candybar-executor.service`,
 wait for the next 2-minute boundary — exactly one page, no stamp. Restart the
 executor — one recovery page and a fresh stamp.
+
+## macOS: no watchdog (AD-22, W5-1)
+
+Operator decision 2026-11-12: the Mac peer install ships **no** watchdog. This
+directory is a `systemd --user` timer and is Linux-only; nothing here is
+installed on macOS, and no launchd `StartInterval`/`StartCalendarInterval`
+equivalent may be added (that would be a second clock, and the Darwin
+`doctor --live` collector flags it). This is a recorded decision, not an
+exception: `deploy/scheduling-policy.json` carries no `launchd:` entry. See
+[`deploy/mac/README.md`](../mac/README.md#ad-22-no-watchdog-on-the-mac).

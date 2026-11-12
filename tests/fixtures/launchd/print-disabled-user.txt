@@ -1,0 +1,4 @@
+
+	disabled services = {
+		"com.docker.helper" => enabled
+	}

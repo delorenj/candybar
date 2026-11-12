@@ -1,0 +1,119 @@
+# Candybar control plane for the macOS peer install (Colima). W5-1.
+#
+# An OVERLAY on deploy/compose.yml, never a standalone file:
+#
+#   docker --context colima compose -p candybar \
+#     -f deploy/compose.yml -f deploy/compose.mac.yml up -d
+#
+# Why an overlay and not a copy: compose.yml stays the single description of
+# the control-plane container (image, command, healthcheck, restart policy,
+# NATS_URL, API bind); this file only removes what is Linux/homelab specific
+# and adds what a host without a system Postgres needs.
+#
+# Compose MERGES lists and maps across -f files, so "just override it" would
+# leave the Linux values in place. Every removal below uses an explicit tag
+# (Compose v2.24.4+ for !override, v2.24.0+ for !reset), and
+# tests/test_compose_mac.py renders the merge with `docker compose config` and
+# asserts the result, so a silent merge regression fails CI:
+#
+#   removed                       how
+#   ----------------------------  -------------------------------------------
+#   `proxy` network (Traefik +    top-level `networks: !override` (no proxy),
+#     Prometheus edge)            service `networks: !override`
+#   Traefik labels                `labels: !reset []`
+#   /home/delorenj/candybar/jobs  `volumes: !reset []` (the Mac profile is
+#     read-only mount               exec-runner-only: argv jobs have no
+#                                   `entrypoint` file for the API to stat)
+#   host.docker.internal gateway  `extra_hosts: !reset []` (the registry is a
+#     (host system Postgres)        container here, not the host's Postgres)
+#   deploy/.env (op-inject)       `env_file: !reset []` (no 1Password on the
+#                                   Mac; secrets come from env-op-resolve)
+#   published port bind           `ports: !override`, explicit 127.0.0.1
+#
+# Kept on purpose: the one external network, `bloodbank-network`. It is the
+# join to the Mac's bus. The 33god-bus compose project (W2-2) creates it with
+# that exact name and gives NATS the `nats` alias, which is what compose.yml's
+# NATS_URL=nats://nats:4222 already resolves. Joining it is the requirement,
+# not a Linux leftover. Start 33god-bus first.
+#
+# Added: `candybar-postgres`, a dedicated PG17 container for the registry (the
+# Mac has no host Postgres; named deviation from the mirror rule, PLAN.md
+# section 1). Never seeded from another host's registry dump.
+#
+# Secrets: one value, CANDYBAR_DB_PASSWORD, never in a tracked file. Run every
+# compose command through the resolver (see deploy/mac/README.md):
+#   env-op-resolve exec --env-file deploy/mac/compose.env.op -- docker ...
+# The DSN carries no password; libpq reads PGPASSWORD, so the DSN is safe to
+# print and the hygiene gate stays green. `:?` refuses to render without it, so
+# a bare `up` can never create the database with an empty password.
+#
+# Platform: the image is built from ../Dockerfile for the VM's architecture
+# (linux/arm64 on Apple Silicon); nothing in it is amd64-only.
+
+name: candybar
+
+services:
+  candybar:
+    env_file: !reset []
+    environment:
+      # Same driver and database name as the Linux registry DSN; no password.
+      DATABASE_URL: "postgresql+psycopg://candybar@candybar-postgres:5432/candybar"
+      PGPASSWORD: "${CANDYBAR_DB_PASSWORD:?CANDYBAR_DB_PASSWORD must come from env-op-resolve}"
+    extra_hosts: !reset []
+    volumes: !reset []
+    labels: !reset []
+    ports: !override
+      # Control plane, loopback only. The container still binds 0.0.0.0 inside
+      # (CANDYBAR_API_HOST) so the published port can reach it.
+      - target: 8700
+        published: "8700"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks: !override
+      - candybar-internal
+      - bloodbank-network
+    depends_on:
+      candybar-postgres:
+        condition: service_healthy
+
+  candybar-postgres:
+    # postgres:17-alpine index digest; carries linux/arm64 (verified with
+    # `docker buildx imagetools inspect`, 2026-11-12). Matches the 17.x the
+    # Linux registry runs.
+    image: postgres:17-alpine@sha256:e5d2edd28b1f8d40a0a6c0c9cdc545b19b56a0d5d88f94bc11a97d970d4700d0
+    container_name: candybar-postgres
+    environment:
+      POSTGRES_USER: candybar
+      POSTGRES_PASSWORD: "${CANDYBAR_DB_PASSWORD:?CANDYBAR_DB_PASSWORD must come from env-op-resolve}"
+      POSTGRES_DB: candybar
+    volumes:
+      - candybar-pgdata:/var/lib/postgresql/data
+    ports:
+      # The host executor (launchd, outside the VM) reaches the registry here.
+      - target: 5432
+        published: "${CANDYBAR_POSTGRES_PORT:-5435}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U candybar -d candybar"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      candybar-internal:
+        aliases: [candybar-postgres]
+    restart: unless-stopped
+
+networks: !override
+  # !override replaces the merged map, so compose.yml's external `proxy` is
+  # gone, not merely shadowed.
+  candybar-internal:
+    name: candybar-internal
+  bloodbank-network:
+    external: true
+    name: bloodbank-network
+
+volumes:
+  candybar-pgdata:
+    name: candybar_registry_pgdata

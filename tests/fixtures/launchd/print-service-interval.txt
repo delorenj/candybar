@@ -1,0 +1,7 @@
+gui/501/test.submitted-loop = {
+	active count = 0
+	state = not running
+
+	run interval = 3600 seconds
+	job state = exited
+}

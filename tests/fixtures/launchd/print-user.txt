@@ -1,0 +1,6 @@
+user/501 = {
+	type = user
+	services = {
+		       0      0 	test.user-domain-only
+	}
+}

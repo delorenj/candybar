@@ -37,6 +37,18 @@ Notes:
 - `scripts/check-deploy-hygiene.sh` (repo root) gates every push: no LAN IPs,
   no plaintext-secret shapes on any deploy surface.
 
+## macOS profile (W5-1)
+
+[`mac/README.md`](mac/README.md) and [`compose.mac.yml`](compose.mac.yml) describe the
+exec-runner-only profile for a Mac running Colima: the control plane in a container
+(overlay, no Traefik / `proxy` / Linux mounts, loopback ports), a dedicated PG17 registry
+container, and a `launchd` executor with `CANDYBAR_CGROUP_ROOT=""`. No watchdog on the
+Mac (AD-22, recorded decision). Render proof, asserted by `tests/test_compose_mac.py`:
+
+```bash
+CANDYBAR_DB_PASSWORD=dummy docker compose -f deploy/compose.yml -f deploy/compose.mac.yml config
+```
+
 ## Project/editor autosync (current)
 
 No repository enrollment is needed. `candybar sync [SAVED_FILE|PROJECT]` resolves

@@ -1,0 +1,6 @@
+
+	disabled services = {
+		"com.docker.helper" => enabled
+		"test.override-disabled" => disabled
+		"test.legacy-true" => true
+	}
