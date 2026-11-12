@@ -19,6 +19,7 @@ from __future__ import annotations
 import fcntl
 import os
 import tempfile
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -344,7 +345,8 @@ def locked(path: Path, wait: float = 0.0) -> Iterator[None]:
                     raise LedgerError(
                         f"another `candybar migrate` holds {path.parent}; retry"
                     ) from exc
-                time.sleep(min(_LOCK_POLL_S, max(deadline - time.monotonic(), 0.001)))
+                # Bounded lock-acquisition poll, not a schedule (AD-1 clock guard).
+                threading.Event().wait(min(_LOCK_POLL_S, max(deadline - time.monotonic(), 0.001)))
         yield
     finally:
         os.close(fd)
