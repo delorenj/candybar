@@ -225,7 +225,7 @@ jobs:
   - systemctl --user disable --now newapi-claude-token.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-claude-token.timer
-  status: verified
+  status: decommissioned
   candybar_id: 01a1793b-6898-766c-8bbb-e5fa19dcef06
   cutover_at: '2026-10-26T17:21:39.434690Z'
   verification:
@@ -246,6 +246,14 @@ jobs:
     action: verify
     outcome: ok
     detail: 'invocation 85a791f2-97a7-5745-be3d-0a2af8e3b8d9 (scheduled) fail exit=1 runtime=525ms memory=10932224B cpu=0.7553 (result parity: the job already failed natively)'
+  - at: '2026-11-12T21:35:25.331051Z'
+    action: decommission
+    outcome: ok
+    detail: 'Decommissioned 2026-11-12: sync-claude-token.py succeeded 0/823 runs ever (Claude Code here authenticates with ANTHROPIC_AUTH_TOKEN, no sk-ant-oat to copy); candybar archived by the orchestrator; units and script deleted from client-portal. Dedicated grants are owned by newapi-oauth-connections.'
+  - at: '2026-11-12T21:35:25.504356Z'
+    action: decommission
+    outcome: ok
+    detail: candybar 01a1793b-6898-766c-8bbb-e5fa19dcef06 disabled
 - id: systemd:newapi-oauth-connections
   wave: '7.13'
   candybar:
