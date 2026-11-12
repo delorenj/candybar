@@ -27,7 +27,7 @@ jobs:
   - RandomizedDelaySec=15s dropped
   - OnBootSec/OnActiveSec boot re-arm dropped
   - Persistent=true catch-up replaced by candybar misfire policy
-  native_failing: false
+  native_failing: true
   source_of_truth:
     repo: AutomaticAI-io/client-portal
     path: gateway/ops/systemd/newapi-allowances.timer
@@ -36,13 +36,13 @@ jobs:
   - systemctl --user disable --now newapi-allowances.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-allowances.timer
-  status: rolled-back
+  status: cutover
   candybar_id: 01a1793a-d2a0-7070-b267-4f6d3e41a3b5
-  cutover_at: '2026-10-26T17:21:01.164216Z'
+  cutover_at: '2026-11-12T17:01:45.273185Z'
   verification:
-    invocation_id: 5489318d-e9f2-5211-aa7b-49ea0885b505
-    result: success
-    at: '2026-10-26T17:25:06.003740Z'
+    invocation_id: null
+    result: null
+    at: null
   disable_pending: false
   history:
   - at: '2026-10-26T17:15:39.722006Z'
@@ -65,6 +65,10 @@ jobs:
     action: rollback
     outcome: ok
     detail: candybar 01a1793a-d2a0-7070-b267-4f6d3e41a3b5 disabled
+  - at: '2026-11-12T17:01:45.273185Z'
+    action: cutover
+    outcome: ok
+    detail: candybar 01a1793a-d2a0-7070-b267-4f6d3e41a3b5 enabled; first fire 2026-11-12T17:05:00Z
 - id: systemd:newapi-vm-health
   wave: '7.13'
   candybar:
