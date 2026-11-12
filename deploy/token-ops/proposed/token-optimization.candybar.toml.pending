@@ -1,0 +1,16 @@
+# PROPOSED ONLY: blocked by canonical migration/autosync lock (FLUME-82).
+# Rename/apply only under Candybar's migration directory lock with the matching
+# ledger candybar definition and API PATCH/readback. This file is not registered.
+[candybar]
+name = "token-optimization"
+description = "Six-hour token action/blocker pass to covered-date vault reports (was hermes peter-griffin:3684c5aa8eac); gates on matching report, routine delivery local"
+tags = ["migrated", "hermes-agent", "wave-7-17"]
+schedule = "37 0,6,12,18 * * *"
+timezone = "America/New_York"
+
+[candybar.runner]
+kind = "exec"
+argv = ["/usr/bin/python3", "/home/delorenj/code/33GOD/candybar/deploy/migration/token_ops_vault.py", "run", "action"]
+workdir = "/home/delorenj/code/client-portal/gateway"
+timeout_s = 3720
+on_failure = ["/usr/bin/python3", "/home/delorenj/code/33GOD/candybar/deploy/migration/token_ops_vault.py", "notify-failure"]
