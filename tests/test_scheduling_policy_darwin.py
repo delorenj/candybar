@@ -6,6 +6,7 @@ host; the services rows are `PID<ws>STATUS<ws>LABEL`). The collector is driven
 through an injected `run`, so these tests execute on Linux and never call a
 real launchctl. Linux collector behaviour is pinned by test_scheduling_policy.py.
 """
+import hashlib
 import json
 import plistlib
 import subprocess
@@ -21,6 +22,11 @@ from candybar.cli.main import app
 FIXTURES = Path(__file__).parent / "fixtures" / "launchd"
 AGENTS = FIXTURES / "LaunchAgents"
 LIBRARY_AGENTS = FIXTURES / "LibraryLaunchAgents"
+# Byte-for-byte copies of two plists found on a real Mac (Citrix-style keystone updater
+# stubs in ~/Library/LaunchAgents): both are an empty `<dict/>`, so no Label. The first
+# W5-1 collector raised on them and made the whole launchd inventory unknown.
+REAL_EMPTY = FIXTURES / "RealEmptyPlists"
+REAL_EMPTY_SHA256 = "97704a8960b4facceef54397a08fb5d0a456247c3627359215aa2a27df22656c"
 SENTINEL = "SENTINEL-NEVER-IN-INVENTORY"
 
 
@@ -53,6 +59,12 @@ def fake_launchctl(calls=None, *, gui=None, user=None):
         return table[(argv[1], argv[2])]
 
     return run
+
+
+def empty_launchctl(argv):
+    """A host with nothing loaded and nothing disabled: only the plists on disk matter."""
+    assert argv[0] == "launchctl" and argv[1] in {"print", "print-disabled"}
+    return completed("\tservices = {\n\t}\n" if argv[1] == "print" else "disabled services = {\n}\n")
 
 
 def jobs(**kwargs):
@@ -93,12 +105,68 @@ def test_binary_plists_are_read(tmp_path):
     assert policy.launchd_plists([tmp_path])["bin"]["clocks"] == ["StartInterval"]
 
 
-@pytest.mark.parametrize("body", [b"<?xml version='1.0'?><plist><dict><key>Label</key><string>x", b"\x00\x01 not a plist",
-                                  plistlib.dumps({"NoLabel": 1}), plistlib.dumps(["not", "a", "dict"])])
-def test_malformed_plist_is_an_unreadable_inventory_not_a_skip(tmp_path, body):
+@pytest.mark.parametrize("body", [b"<?xml version='1.0'?><plist><dict><key>Label</key><string>x", b"\x00\x01 not a plist", b""])
+def test_unparseable_plist_is_a_per_file_unreadable_entry_not_an_aborted_scan(tmp_path, body):
+    (tmp_path / "good.plist").write_bytes(plistlib.dumps({"Label": "good", "StartInterval": 5}))
     (tmp_path / "x.plist").write_bytes(body)
-    with pytest.raises(ValueError):
-        policy.launchd_plists([tmp_path])
+    rows, files = policy.scan_launchd_plists([tmp_path])
+    assert rows["good"]["clocks"] == ["StartInterval"]  # the scan kept going
+    assert [(f["file"].endswith("x.plist"), f["unreadable"]) for f in files] == [(True, True)]
+
+
+def test_unreadable_plist_makes_the_audit_unknown_while_every_other_job_is_still_audited(tmp_path):
+    (tmp_path / "good.plist").write_bytes(plistlib.dumps({"Label": "good", "StartInterval": 5}))
+    (tmp_path / "x.plist").write_bytes(b"\x00 not a plist")
+    rows = policy.launchd_jobs([tmp_path], 501, run=empty_launchctl)
+    report = policy.audit(darwin_inventory(launchd=rows), {})
+    assert report["status"] == "unknown"  # a corrupt plist can never certify green
+    assert [v["id"] for v in report["violations"]] == ["launchd:good"]  # ... and never hides a real clock
+    assert any(entry.endswith("x.plist: plist unreadable; cannot certify it carries no clock") for entry in report["unknown"])
+
+
+@pytest.mark.parametrize("data", [{"NoLabel": 1}, {}, {"Label": ""}, {"Label": 7}, ["not", "a", "dict"]])
+def test_plist_without_a_usable_label_is_recorded_per_file_not_fatal(tmp_path, data):
+    (tmp_path / "x.plist").write_bytes(plistlib.dumps(data))
+    rows, files = policy.scan_launchd_plists([tmp_path])
+    assert rows == {} and len(files) == 1
+    assert files[0]["clocks"] == [] and files[0]["unreadable"] is False
+
+
+def test_label_less_plist_with_a_clock_key_is_still_flagged_by_its_path(tmp_path):
+    # launchd requires a Label, so this should never load, but that is not proven here:
+    # a clock key is a finding, keyed on the file, and only an exact-id exception clears it.
+    (tmp_path / "ghost.plist").write_bytes(plistlib.dumps({"StartInterval": 60, "ProgramArguments": ["/bin/true"]}))
+    (tmp_path / "quiet.plist").write_bytes(plistlib.dumps({"RunAtLoad": True}))
+    rows = {r["file"]: r for r in policy.launchd_jobs([tmp_path], 501, run=empty_launchctl)}
+    ghost = next(r for f, r in rows.items() if f.endswith("ghost.plist"))
+    quiet = next(r for f, r in rows.items() if f.endswith("quiet.plist"))
+    assert ghost["clocks"] == ["StartInterval"] and ghost["active"] is True and ghost["id"].startswith("launchd:file:")
+    assert quiet["clocks"] == [] and quiet["active"] is False
+    report = policy.audit(darwin_inventory(launchd=list(rows.values())), {})
+    assert [v["id"] for v in report["violations"]] == [ghost["id"]] and report["unknown"] == []
+    assert "/bin/true" not in json.dumps(rows)  # arguments are never read into the inventory
+
+
+def test_real_empty_mac_plists_are_the_real_bytes():
+    for name in ("com.citrolabs.keystone.agent.plist", "com.citrolabs.keystone.xpcservice.plist"):
+        assert hashlib.sha256((REAL_EMPTY / name).read_bytes()).hexdigest() == REAL_EMPTY_SHA256
+        assert plistlib.loads((REAL_EMPTY / name).read_bytes()) == {}
+
+
+def test_real_empty_mac_plists_do_not_abort_the_inventory_and_the_real_clocks_surface():
+    dirs = [AGENTS, REAL_EMPTY, LIBRARY_AGENTS]
+    rows = policy.launchd_jobs(dirs, 501, run=fake_launchctl())
+    by_id = {r["id"]: r for r in rows}
+    keystone = [r for r in rows if r.get("file", "").endswith(("keystone.agent.plist", "keystone.xpcservice.plist"))]
+    assert len(keystone) == 2 and all(r["active"] is False and r["clocks"] == [] and r["unreadable"] is False for r in keystone)
+    assert by_id["launchd:test.interval-job"]["clocks"] == ["StartInterval"]  # real findings still present
+    report = policy.audit(darwin_inventory(launchd=rows), {})
+    assert report["unknown"] == []  # the empty plists are not an unknown inventory
+    assert report["status"] == "fail"
+    assert "launchd:test.interval-job" in {v["id"] for v in report["violations"]}
+    assert not any("keystone" in v["id"] for v in report["violations"])  # an empty dict is not a clock
+    # Through the same collector `doctor --live` uses, pointed at a real-shaped directory set.
+    assert policy.launchd_plists(dirs).keys() >= {"test.interval-job", "test.calendar-job"}
 
 
 # ---- launchctl output parsers -----------------------------------------------------------

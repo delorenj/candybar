@@ -80,7 +80,13 @@ of systemd: plists in `~/Library/LaunchAgents`, `/Library/LaunchAgents` and
 (`launchctl print`, `print-disabled`; read-only verbs only), the user crontab
 (`crontab -l`), every Hermes profile and the registry. `StartInterval` and
 `StartCalendarInterval` on an enabled or loaded job are reported as bypass clocks
-with the exact id `launchd:<label>`. `WatchPaths`, `KeepAlive`, `RunAtLoad` and
+with the exact id `launchd:<label>`. One bad plist never aborts the inventory: a plist
+with no `Label` (real Macs carry empty `<dict/>` stubs such as
+`com.citrolabs.keystone.agent.plist`; launchd cannot load a job without one) becomes a
+per-file row keyed `launchd:file:<path>`, which is a finding only if it carries a clock
+key; a plist that cannot be parsed or read becomes a per-file `unreadable` row, which makes
+the report `unknown` (exit 2, it cannot be certified clock-free) while every other job is
+still audited and listed. `WatchPaths`, `KeepAlive`, `RunAtLoad` and
 `ThrottleInterval` are supervision or events and are never flagged. Findings are
 observations: other people's launchd jobs are listed, never disabled. The system
 launchd domain and other users' domains are not audited (stated in the report's
@@ -92,17 +98,22 @@ unavailable.
 Prerequisites (earlier waves): Colima up; project `33god-bus` up (network
 `bloodbank-network`, NATS alias `nats`, `127.0.0.1:4222`, streams
 `BLOODBANK_COMMANDS` present); `env-op-resolve` and `~/.config/33god/launchd-agent.env`
-in place; `brew install libpq`; mise python 3.14 and uv.
+in place; mise python 3.14 and uv. No Homebrew libpq: the Darwin lock installs `psycopg-binary` (below).
 
 All commands over ssh use `/usr/local/bin/docker --context colima` explicitly and
 the PATH from `~/.config/33god/launchd-agent.env`.
 
 1. **Checkout.** In `~/code/33GOD/candybar`: `git --no-optional-locks status --porcelain`
    must be empty, then `git fetch origin && git merge --ff-only origin/main`. Record the SHA.
-2. **Locked env.** `uv sync --frozen`. Then prove psycopg finds libpq under the launchd PATH
-   and the wrapper's `DYLD_FALLBACK_LIBRARY_PATH` (this is **not yet proven on Darwin**):
-   `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/opt/libpq/lib:/opt/homebrew/lib .venv/bin/python -c "import psycopg; print(psycopg.pq.__impl__, psycopg.pq.version())"`.
-   If it prints `python`, add `brew link --force libpq` and say so in the evidence.
+2. **Locked env.** `uv sync --frozen`. The lock carries `psycopg-binary==3.3.6` for
+   `sys_platform == 'darwin'` only, so psycopg uses the libpq bundled in the wheel and
+   never dlopens a system library (Linux keeps the system libpq). Prove it, with no
+   `DYLD_*` variable and no Homebrew libpq involved:
+   `.venv/bin/python -c "import psycopg; print(psycopg.pq.__impl__, psycopg.pq.version())"`
+   must print `binary` and a libpq version number; `python` means the binary wheel did not
+   install (stop and report). Why not Homebrew's keg-only libpq: it is outside dyld's default
+   search path and the only way to point at it is `DYLD_FALLBACK_LIBRARY_PATH`, which SIP strips
+   across `/bin/sh` and `/usr/bin/env` (the resolver's shebang), so a launchd job never sees it.
 3. **Secret.** Generate a registry password on the Mac straight into the store, never
    printed. `env-op-resolve key op://DeLoSecrets/candybar-studio-registry/password` prints the
    store key (`OP_DELOSECRETS_CANDYBAR_STUDIO_REGISTRY_PASSWORD`); append `KEY=<value>` to

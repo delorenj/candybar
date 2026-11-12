@@ -12,6 +12,7 @@ import json
 import os
 import plistlib
 import re
+import struct
 import subprocess
 import sys
 import urllib.error
@@ -120,31 +121,56 @@ def crontabs(etc: Path = Path("/etc"), *, tolerate_missing_cron_d: bool = False)
     return rows
 
 
-def launchd_plists(dirs: list[Path]) -> dict[str, dict]:
-    """Label -> {clocks, disabled} from plists in auto-loading launchd directories.
+def _plist_display(path: Path) -> str:
+    """`~/Library/...` for the user's own files, the absolute path otherwise (names only, never contents)."""
+    try:
+        return "~/" + path.relative_to(Path.home()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def scan_launchd_plists(dirs: list[Path]) -> tuple[dict[str, dict], list[dict]]:
+    """(by label, per file) from plists in auto-loading launchd directories.
 
     Only labels and clock key names are kept: `ProgramArguments` and
     `EnvironmentVariables` routinely hold credentials and are never read into
-    the inventory. A malformed plist is an unreadable inventory, not a skip.
+    the inventory. One bad file never aborts the scan of the others:
+
+    * a plist with no usable `Label` (an empty `<dict/>`, a non-dict root) cannot
+      be loaded by launchd, which requires one, so it is a per-file entry keyed on
+      its path. It counts as a clock only when it carries a clock key (it cannot be
+      proven that launchd will never load it), and an empty one is just recorded.
+    * a plist that cannot be read or parsed is a per-file entry marked `unreadable`:
+      the audit reports it as unknown (exit 2) and still audits every other job.
     """
     rows: dict[str, dict] = {}
+    files: list[dict] = []
     for directory in dirs:
         if not directory.is_dir():  # /Library/LaunchAgents is often absent
             continue
         for path in sorted(directory.glob("*.plist")):
+            shown = _plist_display(path)
             try:
                 with path.open("rb") as handle:
                     data = plistlib.load(handle)
-            except (plistlib.InvalidFileException, ExpatError) as exc:
-                raise ValueError("invalid launchd plist") from exc
+            except (ValueError, ExpatError, OSError, struct.error, OverflowError):
+                files.append({"file": shown, "clocks": [], "unreadable": True})
+                continue
             if not isinstance(data, dict) or not isinstance(data.get("Label"), str) or not data["Label"]:
-                raise ValueError("launchd plist without a Label")
+                clocks = sorted(k for k in LAUNCHD_CLOCK_KEYS if k in data) if isinstance(data, dict) else []
+                files.append({"file": shown, "clocks": clocks, "unreadable": False})
+                continue
             row = rows.setdefault(data["Label"], {"clocks": [], "disabled": True})
             # Duplicate labels across directories: union the clocks (a clock in
             # either copy is a clock) and count it enabled if either copy is.
             row["clocks"] = sorted(set(row["clocks"]) | {k for k in LAUNCHD_CLOCK_KEYS if k in data})
             row["disabled"] = row["disabled"] and data.get("Disabled") is True
-    return rows
+    return rows, files
+
+
+def launchd_plists(dirs: list[Path]) -> dict[str, dict]:
+    """Label -> {clocks, disabled}: the labelled half of `scan_launchd_plists`."""
+    return scan_launchd_plists(dirs)[0]
 
 
 _SERVICE_ROW = re.compile(r"^\s*(?:\d+|-)\s+(?:-?\d+|-)\s+(\S+)\s*$")
@@ -208,7 +234,7 @@ def launchd_jobs(dirs: list[Path] | None = None, uid: int | None = None, run=com
     uid = os.getuid() if uid is None else uid
     dirs = dirs if dirs is not None else [Path.home() / "Library/LaunchAgents", Path("/Library/LaunchAgents"),
                                           Path("/Library/LaunchDaemons")]
-    plists = launchd_plists(dirs)
+    plists, unlabeled = scan_launchd_plists(dirs)
     loaded: dict[str, list[str]] = {}
     disabled: set[str] = set()
     for domain in (f"gui/{uid}", f"user/{uid}"):
@@ -236,6 +262,12 @@ def launchd_jobs(dirs: list[Path] | None = None, uid: int | None = None, run=com
             continue  # unloaded between the listing and the probe
         rows[label] = {"id": f"launchd:{label}", "label": label, "clocks": launchctl_clocks(probe.stdout),
                        "active": True, "domains": sorted(domains)}
+    for entry in unlabeled:
+        # No Label means no label to match against `launchctl` and nothing to load by
+        # name: a per-file row, active only if it carries a clock key.
+        rows[f"file:{entry['file']}"] = {"id": f"launchd:file:{entry['file']}", "label": None, "file": entry["file"],
+                                         "clocks": entry["clocks"], "active": bool(entry["clocks"]),
+                                         "unreadable": entry["unreadable"], "domains": []}
     return sorted(rows.values(), key=lambda row: row["id"])
 
 
@@ -463,6 +495,11 @@ def audit(inventory: dict, exceptions: dict, *, base: str | None = None) -> dict
                     clocks = row.get("clocks")
                     if type(row.get("active")) is not bool or not isinstance(clocks, list) or any(not isinstance(c, str) for c in clocks):
                         raise ValueError("malformed launchd row")
+                    if row.get("unreadable") is True:
+                        # One corrupt plist must not hide the rest of the inventory, but
+                        # it also cannot be certified clock-free: unknown, never green.
+                        unknown.append(f"{key}: plist unreadable; cannot certify it carries no clock")
+                        continue
                     # A loaded or auto-loading job with no StartInterval/StartCalendarInterval
                     # is supervision or an event trigger, not a clock.
                     active = row["active"] and bool(clocks)

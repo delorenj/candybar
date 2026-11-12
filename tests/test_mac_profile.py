@@ -16,6 +16,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from uuid import uuid4
 
@@ -188,14 +189,41 @@ def test_mac_wrapper_forces_an_empty_cgroup_root_and_injects_the_secret(tmp_path
     assert "cgroup-root=[]" in result.stdout  # even an inherited non-empty value is overridden: there is no cgroupfs
     assert "pgpassword=injected-by-resolver" in result.stdout
     assert "args=daemon --roles executor" in result.stdout  # exec role only, never heartbeat/dispatcher/api
-    # Homebrew's keg-only libpq is findable by psycopg's dlopen; set inside the script because SIP strips DYLD_* through /bin/sh.
-    assert "dyld=/opt/homebrew/opt/libpq/lib:/opt/homebrew/lib:" in result.stdout
+    # No DYLD_* plumbing: SIP strips it across /usr/bin/env (the resolver's shebang) and /bin/sh, so it
+    # could never reach candybar. libpq comes bundled in the darwin psycopg-binary wheel instead (below).
+    assert "dyld=none" in result.stdout
 
 
 def test_mac_wrapper_sets_the_variable_when_the_environment_has_none(tmp_path):
     shutil.copy(MAC / "executor.env.op", tmp_path / "executor.env.op")
     result = run_mac_wrapper(tmp_path, CANDYBAR_ENV_FILE=str(tmp_path / "executor.env.op"))
     assert "cgroup-root=[]" in result.stdout and "UNSET" not in result.stdout
+
+
+def test_mac_wrapper_does_not_depend_on_dyld_variables_that_sip_strips():
+    text = (MAC / "run-executor.sh").read_text()
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    assert "DYLD_" not in code and "libpq" not in code
+
+
+def locked_package(name):
+    lock = tomllib.loads((REPO / "uv.lock").read_text())
+    return next((pkg for pkg in lock["package"] if pkg["name"] == name), None)
+
+
+def test_darwin_installs_the_bundled_libpq_wheel_and_linux_does_not():
+    project = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["dependencies"]
+    assert "psycopg==3.3.6" in project  # every platform
+    assert "psycopg-binary==3.3.6; sys_platform == 'darwin'" in project  # pinned to the same version, darwin only
+    candybar = locked_package("candybar")
+    edge = next(dep for dep in candybar["dependencies"] if dep["name"] == "psycopg-binary")
+    assert edge["marker"] == "sys_platform == 'darwin'"  # the lock, not just pyproject, keeps Linux on the system libpq
+    binary = locked_package("psycopg-binary")
+    assert binary["version"] == locked_package("psycopg")["version"]
+    wheels = [wheel["url"].rsplit("/", 1)[1] for wheel in binary["wheels"]]
+    assert wheels and all("macosx" in name for name in wheels)  # nothing here can install on Linux
+    for tag in ("cp313", "cp314"):  # requires-python >= 3.13: the Mac's uv and mise pythons are 3.14
+        assert any(f"-{tag}-{tag}-macosx_11_0_arm64" in name for name in wheels), tag
 
 
 def test_mac_wrapper_never_mentions_proc_or_cgroupfs():

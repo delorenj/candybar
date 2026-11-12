@@ -19,11 +19,14 @@ root=$(cd "$here/../.." && pwd)
 CANDYBAR_CGROUP_ROOT=""
 export CANDYBAR_CGROUP_ROOT
 
-# psycopg (pure python) dlopens libpq, and Homebrew's libpq is keg-only (not on
-# dyld's default search path). Exported here, after sh has started: SIP strips
-# DYLD_* from anything launched THROUGH /bin/sh, so the plist cannot carry it.
-DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/opt/libpq/lib:/opt/homebrew/lib:${DYLD_FALLBACK_LIBRARY_PATH:-$HOME/lib:/usr/local/lib:/usr/lib}"
-export DYLD_FALLBACK_LIBRARY_PATH
+# libpq: nothing to do here. On Darwin the lockfile installs psycopg-binary (a
+# `sys_platform == 'darwin'` dependency), whose wheel bundles libpq, so psycopg never
+# dlopens a system library. The first W5-1 wrapper exported DYLD_FALLBACK_LIBRARY_PATH
+# for Homebrew's keg-only libpq instead, and that cannot work: SIP strips DYLD_* from
+# every process launched through a protected binary (/bin/sh, /usr/bin/env), and the
+# resolver below is `#!/usr/bin/env python3`, so the variable never reached candybar.
+# Do not reintroduce it; check with:
+#   .venv/bin/python -c "import psycopg; print(psycopg.pq.__impl__)"   # binary
 
 bin="$root/.venv/bin/candybar"
 if [ ! -x "$bin" ]; then
