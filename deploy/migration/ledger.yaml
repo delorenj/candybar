@@ -36,13 +36,13 @@ jobs:
   - systemctl --user disable --now newapi-allowances.timer
   rollback:
   - systemctl --user enable --now /home/delorenj/code/client-portal/gateway/ops/systemd/newapi-allowances.timer
-  status: cutover
+  status: decommissioned
   candybar_id: 01a1793a-d2a0-7070-b267-4f6d3e41a3b5
   cutover_at: '2026-11-12T17:01:45.273185Z'
   verification:
-    invocation_id: null
-    result: null
-    at: null
+    invocation_id: 22497904-8265-58d4-8714-2a40e52bd193
+    result: fail
+    at: '2026-11-12T17:05:07.328716Z'
   disable_pending: false
   history:
   - at: '2026-10-26T17:15:39.722006Z'
@@ -69,6 +69,18 @@ jobs:
     action: cutover
     outcome: ok
     detail: candybar 01a1793a-d2a0-7070-b267-4f6d3e41a3b5 enabled; first fire 2026-11-12T17:05:00Z
+  - at: '2026-11-12T17:06:32.834315Z'
+    action: verify
+    outcome: ok
+    detail: 'invocation 22497904-8265-58d4-8714-2a40e52bd193 (scheduled) fail exit=1 runtime=7017ms memory=43388928B cpu=0.2066 (result parity: the job already failed natively)'
+  - at: '2026-11-12T17:07:27.258456Z'
+    action: decommission
+    outcome: ok
+    detail: 'handed to the client-portal project: ~/code/client-portal/.candybars/newapi-allowances.candybar.toml now owns this candybar (same id, adopted with register --update); native timer stays retired'
+  - at: '2026-11-12T17:07:27.573395Z'
+    action: decommission
+    outcome: ok
+    detail: candybar 01a1793a-d2a0-7070-b267-4f6d3e41a3b5 disabled
 - id: systemd:newapi-vm-health
   wave: '7.13'
   candybar:
