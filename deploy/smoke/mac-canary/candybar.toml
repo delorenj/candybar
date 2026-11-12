@@ -1,0 +1,12 @@
+[candybar]
+name = "mac-canary"
+description = "Damian's Mac Candybar clock liveness canary"
+tags = ["mac", "canary"]
+schedule = "5 * * * *"
+timezone = "America/New_York"
+enabled = false
+
+[candybar.runner]
+kind = "exec"
+argv = ["/bin/sh", "-c", "printf '%s %s\\n' \"$(/bin/date '+%Y-%m-%dT%H:%M:%S%z')\" \"$(/bin/hostname)\" >> \"$HOME/.local/state/33god/candybar-canary.log\""]
+timeout_s = 30
