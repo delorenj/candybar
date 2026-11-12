@@ -160,7 +160,7 @@ def fake_checkout(tmp_path: Path, script: Path) -> Path:
     candybar = root / ".venv" / "bin" / "candybar"
     candybar.parent.mkdir(parents=True)
     candybar.write_text('#!/bin/sh\nif [ "${CANDYBAR_CGROUP_ROOT+set}" = set ]; then echo "cgroup-root=[$CANDYBAR_CGROUP_ROOT]"; else echo cgroup-root=UNSET; fi\n'
-                        'echo "pgpassword=${PGPASSWORD:-none}"\necho "dyld=${DYLD_FALLBACK_LIBRARY_PATH:-none}"\necho "args=$*"\n')
+                        'echo "pgpassword=${PGPASSWORD:-none}"\necho "dyld=${DYLD_FALLBACK_LIBRARY_PATH:-none}"\necho "path0=${PATH%%:*}"\necho "args=$*"\n')
     candybar.chmod(0o755)
     return root
 
@@ -192,6 +192,8 @@ def test_mac_wrapper_forces_an_empty_cgroup_root_and_injects_the_secret(tmp_path
     # No DYLD_* plumbing: SIP strips it across /usr/bin/env (the resolver's shebang) and /bin/sh, so it
     # could never reach candybar. libpq comes bundled in the darwin psycopg-binary wheel instead (below).
     assert "dyld=none" in result.stdout
+    # The resolver's `#!/usr/bin/env python3` must find the venv python, never a mise shim (untrusted repo config).
+    assert f"path0={tmp_path / 'checkout' / '.venv' / 'bin'}" in result.stdout
 
 
 def test_mac_wrapper_sets_the_variable_when_the_environment_has_none(tmp_path):

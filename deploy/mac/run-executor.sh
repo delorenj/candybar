@@ -28,6 +28,15 @@ export CANDYBAR_CGROUP_ROOT
 # Do not reintroduce it; check with:
 #   .venv/bin/python -c "import psycopg; print(psycopg.pq.__impl__)"   # binary
 
+# The resolver is `#!/usr/bin/env python3`. Put the checkout's venv first so that resolves
+# to the venv python, which exists by construction (`uv sync --frozen`) and is never a mise
+# shim. A shim reads the repo's mise.toml from the plist's WorkingDirectory and exits 1
+# with "Config files ... are not trusted" while that file is untrusted, which under
+# KeepAlive would be a restart loop that never reaches candybar. (The installer already
+# prepends the same directory; this makes the wrapper correct for any PATH.)
+PATH="$root/.venv/bin:$PATH"
+export PATH
+
 bin="$root/.venv/bin/candybar"
 if [ ! -x "$bin" ]; then
   echo "run-executor: $bin missing; run 'uv sync --frozen' in $root first" >&2

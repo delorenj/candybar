@@ -114,6 +114,13 @@ the PATH from `~/.config/33god/launchd-agent.env`.
    install (stop and report). Why not Homebrew's keg-only libpq: it is outside dyld's default
    search path and the only way to point at it is `DYLD_FALLBACK_LIBRARY_PATH`, which SIP strips
    across `/bin/sh` and `/usr/bin/env` (the resolver's shebang), so a launchd job never sees it.
+   Before any `uv` command in the checkout run `mise trust --show` there. On this Mac the
+   checkout's `mise.toml` was **untrusted** (2026-11-12), and then the mise shims (`uv`,
+   `python3`) exit 1 inside that directory with "Config files ... are not trusted". Read
+   `mise.toml`, then either `mise trust ~/code/33GOD/candybar/mise.toml` (record it; undo with
+   `mise trust --untrust ~/code/33GOD/candybar/mise.toml`) or call uv by its absolute mise
+   install path. The LaunchAgent does not need the trust: `run-executor.sh` puts `.venv/bin`
+   first on PATH so the resolver's `python3` is the venv python, never a shim.
 3. **Secret.** Generate a registry password on the Mac straight into the store, never
    printed. `env-op-resolve key op://DeLoSecrets/candybar-studio-registry/password` prints the
    store key (`OP_DELOSECRETS_CANDYBAR_STUDIO_REGISTRY_PASSWORD`); append `KEY=<value>` to
