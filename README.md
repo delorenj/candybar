@@ -321,6 +321,9 @@ timeout_s = 3600                       # default; bounds the wait (the client is
     of starting another: never two concurrent attempts of one job.
   The executor finds the CLI as `hermes` on its `PATH` (`~/.local/bin/hermes`
   in the unit), or as `CANDYBAR_HERMES`.
+  Build an LLM pass as an interval driver (`interval-driver` skill): a
+  `monitor_script` snapshot gate makes an unchanged board cost 0 tokens, and a
+  roadmap brief keeps a real pass near 70k tokens instead of ~1M.
 - **Hermes no-agent jobs do not use this runner.** A `no_agent` Hermes job is a
   script whose stdout is delivered verbatim; migrate it as an `exec` runner that
   runs the script directly, and reproduce its `failure_deliver` with an
