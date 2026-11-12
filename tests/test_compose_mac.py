@@ -102,7 +102,11 @@ def _render(tmp_path: Path, *files: str, password: bool = True, env_file: bool =
         shutil.copy(REPO / "deploy" / name, deploy / name)
     if env_file:
         (deploy / ".env").write_text("DATABASE_URL=postgresql://x@host.docker.internal:5432/candybar\n")
-    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path)}
+    # Inherit the real environment (HOME included): `docker compose` is a CLI plugin found under
+    # ~/.docker/cli-plugins on a Mac, so a fake HOME makes it vanish ("unknown shorthand flag").
+    # Only what could mask the proof is dropped: any CANDYBAR_* value (a password in the
+    # developer's shell would hide the "refuses without it" case) and DATABASE_URL.
+    env = {key: value for key, value in os.environ.items() if not key.startswith("CANDYBAR_") and key != "DATABASE_URL"}
     if password:
         env["CANDYBAR_DB_PASSWORD"] = "dummy-render-only"
     argv = ["docker", "compose", *(arg for name in files for arg in ("-f", str(deploy / name))), "config", "--format", "json"]
