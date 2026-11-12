@@ -250,6 +250,10 @@ jobs:
     action: decommission
     outcome: ok
     detail: 'Decommissioned 2026-11-12: sync-claude-token.py succeeded 0/823 runs ever (Claude Code here authenticates with ANTHROPIC_AUTH_TOKEN, no sk-ant-oat to copy); candybar archived by the orchestrator; units and script deleted from client-portal. Dedicated grants are owned by newapi-oauth-connections.'
+  - at: '2026-11-12T21:49:09.733561Z'
+    action: decommission
+    outcome: note
+    detail: 'source removed: manifests/newapi-claude-token (git rm); client-portal gateway/ops/systemd/newapi-claude-token.{service,timer} and ops/sync-claude-token.py already deleted (047b292c); no unit under ~/.config/systemd/user. The AutomaticAI OAuth vault items and the claude channels are untouched.'
   - at: '2026-11-12T21:35:25.504356Z'
     action: decommission
     outcome: ok
