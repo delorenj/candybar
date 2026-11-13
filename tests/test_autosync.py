@@ -16,6 +16,12 @@ from candybar.migration.client import ApiError
 from candybar.project import render
 
 
+@pytest.fixture(autouse=True)
+def _private_runtime_dir(tmp_path, monkeypatch):
+    """The per-registry sync flock lives in XDG_RUNTIME_DIR; never contend with live watchers."""
+    monkeypatch.setenv('XDG_RUNTIME_DIR', str(tmp_path / '_run'))
+
+
 class FakeApi:
     def __init__(self):
         self.rows = {}
@@ -309,8 +315,8 @@ def test_migration_exact_identity_lock_and_reread(tmp_path, monkeypatch):
     real_lock = autosync.locked
 
     @contextmanager
-    def observing_lock(path):
-        with real_lock(path):
+    def observing_lock(path, **kw):
+        with real_lock(path, **kw):
             locked_paths.append(path)
             yield
     monkeypatch.setattr(autosync, 'locked', observing_lock)
@@ -484,3 +490,115 @@ def test_config_atomic_edit_exits_for_restart(tmp_path, monkeypatch):
     finally:
         stop.set()
         thread.join(3)
+
+
+# --- CAND-53: the ledger lock must not be held across a registry pass ----------
+
+
+class LockProbeApi(FakeApi):
+    """Every registry call tries to take the ledger lock like a concurrent `migrate`."""
+
+    def __init__(self, ledger):
+        super().__init__()
+        self.ledger = ledger
+        self.probes = []
+
+    def _probe(self):
+        from candybar.migration.ledger import LedgerError, locked
+        try:
+            with locked(self.ledger):
+                self.probes.append(True)
+        except LedgerError:
+            self.probes.append(False)
+
+    def list_candybars(self):
+        self._probe()
+        return super().list_candybars()
+
+    def get_candybar(self, job_id):
+        self._probe()
+        return super().get_candybar(job_id)
+
+    def runner(self, job_id):
+        self._probe()
+        return super().runner(job_id)
+
+
+def _adopted_migration(tmp_path):
+    file, ledger, _ = migration(tmp_path)
+    plain = manifest(tmp_path / 'normal/candybar.toml')
+    seed = FakeApi()
+    assert reconcile(WatchConfig((), legacy=(plain,)), seed).ok
+    api = LockProbeApi(ledger)
+    api.rows = seed.rows
+    return file, ledger, api
+
+
+def test_registry_reads_do_not_hold_the_migration_ledger_lock(tmp_path):
+    file, ledger, api = _adopted_migration(tmp_path)
+    assert reconcile(WatchConfig((), legacy=(file,)), api).ok
+    assert api.probes and all(api.probes), api.probes
+
+
+def test_noop_reconcile_never_touches_the_ledger_lock(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    file, ledger, api = _adopted_migration(tmp_path)
+    taken = []
+
+    @contextmanager
+    def spy(path, **kw):
+        taken.append(path)
+        yield
+    monkeypatch.setattr(autosync, 'locked', spy)
+    before = sorted((p.name, p.stat().st_mtime_ns) for p in ledger.parent.iterdir())
+    for _ in range(3):
+        assert reconcile(WatchConfig((), legacy=(file,)), api).ok
+    assert taken == []
+    assert before == sorted((p.name, p.stat().st_mtime_ns) for p in ledger.parent.iterdir())
+
+
+def test_migration_write_waits_a_bounded_time_for_a_running_migrate(tmp_path, monkeypatch):
+    from candybar.migration.ledger import locked
+    file, ledger, api = _adopted_migration(tmp_path)
+    manifest(file, description='changed')
+    monkeypatch.setattr(autosync, 'LEDGER_WAIT_S', 0.2)
+    with locked(ledger):
+        report = reconcile(WatchConfig((), legacy=(file,)), api)
+    assert not report.ok and 'another `candybar migrate`' in str(report.errors)
+    assert not [w for w in api.writes if w[0] == 'update' and w[2].get('description')]
+    assert reconcile(WatchConfig((), legacy=(file,)), api).ok  # released: applied
+    assert only_row(api)['description'] == 'changed'
+
+
+def test_two_reconcilers_on_one_tree_leave_the_lock_free_for_migrate(tmp_path, monkeypatch):
+    import time
+    from candybar.migration.ledger import locked
+    file, ledger, _ = _adopted_migration(tmp_path)
+    api = FakeApi()
+    plain = manifest(tmp_path / 'again/candybar.toml')
+    assert reconcile(WatchConfig((), legacy=(plain,)), api).ok
+    slow = api.list_candybars
+
+    def slow_list():
+        time.sleep(0.15)
+        return slow()
+    api.list_candybars = slow_list
+    stop = threading.Event()
+    config = WatchConfig((), legacy=(file,))
+
+    def watcher():
+        while not stop.is_set():
+            reconcile(config, api)
+    threads = [threading.Thread(target=watcher, daemon=True) for _ in range(2)]
+    for t in threads:
+        t.start()
+    try:
+        time.sleep(0.1)
+        started = time.monotonic()
+        with locked(ledger, wait=2):  # what `candybar migrate` does
+            pass
+        assert time.monotonic() - started < 1
+    finally:
+        stop.set()
+        for t in threads:
+            t.join(timeout=5)

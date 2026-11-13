@@ -415,3 +415,45 @@ def test_live_default_commands_round_trip_a_linked_timer(tmp_path: Path) -> None
         sh("disable", f"{name}.service")
         sh("daemon-reload")
         sh("reset-failed", timer)
+
+
+def test_lock_waits_a_bounded_time_for_a_releasing_holder(tmp_path: Path) -> None:
+    """CAND-53: `candybar migrate` must outlast a brief holder instead of refusing instantly."""
+    import threading
+    import time
+
+    path = tmp_path / "ledger.yaml"
+    path.write_text(dump_ledger(Ledger()))
+    held, release = threading.Event(), threading.Event()
+
+    def holder() -> None:
+        with locked(path):
+            held.set()
+            release.wait(5)
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    try:
+        assert held.wait(5)
+        started = time.monotonic()
+        with pytest.raises(LedgerError, match="another `candybar migrate`"), locked(path, wait=0.3):
+            pass
+        assert 0.25 <= time.monotonic() - started < 2  # bounded, not instant and not forever
+        threading.Timer(0.3, release.set).start()
+        with locked(path, wait=5):  # acquires once the holder lets go
+            pass
+    finally:
+        release.set()
+        thread.join()
+
+
+def test_migrate_verbs_wait_for_the_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from candybar.migration import ops
+
+    seen = []
+    real = ops.locked
+    monkeypatch.setattr(ops, "locked", lambda p, **kw: (seen.append(kw), real(p, **kw))[1])
+    path = tmp_path / "ledger.yaml"
+    save_ledger(path, Ledger())
+    ops.verify(type("H", (), {"echo": staticmethod(lambda *_: None)})(), path, "systemd:none.timer")
+    assert seen and all(kw.get("wait", 0) >= 10 for kw in seen)

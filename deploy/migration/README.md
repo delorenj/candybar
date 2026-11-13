@@ -23,7 +23,7 @@ permission to disable or migrate other jobs en masse.
 
 Rollback exceptions are **conditional**, not a policy label: doctor rereads this
 checkout's canonical `deploy/migration/ledger.yaml`, under the migration directory
-lock, and requires the exact ledger id, native timer, API UUID and runner identity,
+lock (`candybar migrate` verbs wait up to 30s for it; watchers hold it only around a registry write; doctor still reports unknown if it is busy), and requires the exact ledger id, native timer, API UUID and runner identity,
 `status: rolled-back`, `disable_pending: false`, and an observed disabled
 registration. Live audits refresh the registry while holding that lock; an active
 migration, missing/malformed ledger or registry, or absent exact registration is

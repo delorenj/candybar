@@ -53,6 +53,7 @@ from .ledger import (
     Verification,
     load_ledger,
     locked,
+    migrate_lock_wait,
     save_ledger,
 )
 from .native import (
@@ -342,7 +343,7 @@ def plan(
     """Validate entries and print what a cutover would do. `--write` fills the defaults."""
     try:
         if write:
-            with locked(path):
+            with locked(path, wait=migrate_lock_wait()):
                 ledger = load_ledger(path)
                 entries = _select(ledger, ids, wave)
                 problems = sum(
@@ -395,7 +396,7 @@ def _ensure_registered_disabled(host: Host, entry: LedgerEntry) -> str:
 def cutover(host: Host, path: Path, job_id: str, *, wait_s: float = 0) -> int:
     """register disabled -> retire native -> enable; reversed on any failure."""
     try:
-        with locked(path):
+        with locked(path, wait=migrate_lock_wait()):
             ledger = load_ledger(path)
             entry = ledger.entry(job_id)
             return _cutover(host, path, ledger, entry, wait_s)
@@ -518,7 +519,7 @@ def _cutover(
 def verify(host: Host, path: Path, job_id: str) -> int:
     """The first scheduled fire after cutover is the proof (AD-21)."""
     try:
-        with locked(path):
+        with locked(path, wait=migrate_lock_wait()):
             ledger = load_ledger(path)
             entry = ledger.entry(job_id)
             return _verify(host, path, ledger, entry)
@@ -618,7 +619,7 @@ def _verify(host: Host, path: Path, ledger: Ledger, entry: LedgerEntry) -> int:
 def rollback(host: Host, path: Path, job_id: str, *, reason: str = "") -> int:
     """Restore the native scheduler first, then disable the candybar best effort."""
     try:
-        with locked(path):
+        with locked(path, wait=migrate_lock_wait()):
             ledger = load_ledger(path)
             entry = ledger.entry(job_id)
             return _rollback(host, path, ledger, entry, reason)
@@ -711,7 +712,7 @@ def _decommission_note(entry: LedgerEntry) -> str:
 def decommission(host: Host, path: Path, job_id: str, *, reason: str) -> int:
     """Retire a job for good: native retired, candybar disabled, status terminal."""
     try:
-        with locked(path):
+        with locked(path, wait=migrate_lock_wait()):
             ledger = load_ledger(path)
             entry = ledger.entry(job_id)
             return _decommission(host, path, ledger, entry, reason)
