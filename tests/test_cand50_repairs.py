@@ -254,17 +254,19 @@ def inventory(enabled=False):
 
 
 @pytest.fixture
-def canonical(tmp_path, monkeypatch):
-    ledger = load_ledger(policy.CANONICAL_LEDGER)
-    entry = copy.deepcopy(ledger.entry(LEDGER_ID))
-    path = tmp_path / "ledger.yaml"
-    save_ledger(path, Ledger(jobs=[entry]))
-    monkeypatch.setattr(policy, "CANONICAL_LEDGER", path)
-    return path, entry
+def canonical(rolled_back_clock):
+    # CAND-53: a tmp rolled-back ledger stands in for CANONICAL_LEDGER, so these
+    # scenarios no longer follow the live ledger (that job is decommissioned).
+    return rolled_back_clock.ledger, rolled_back_clock.entry
 
 
-def test_conditional_rollback_requires_real_disabled_exact_owner(canonical):
-    exceptions = policy.load_policy(POLICY)
+@pytest.fixture
+def rollback_policy(rolled_back_clock):
+    return rolled_back_clock.policy
+
+
+def test_conditional_rollback_requires_real_disabled_exact_owner(canonical, rollback_policy):
+    exceptions = policy.load_policy(rollback_policy)
     assert policy.audit(inventory(), exceptions)["status"] == "pass"
     report = policy.audit(inventory(enabled=True), exceptions)
     assert report["status"] == "fail" and "duplicate" in report["violations"][0]["message"]
@@ -277,9 +279,9 @@ def test_conditional_rollback_requires_real_disabled_exact_owner(canonical):
     (lambda e: setattr(e, "candybar_id", "wrong-uuid"), "unknown"),
     (lambda e: setattr(e.native, "unit", "newapi-allowances-copy.timer"), "unknown"),
 ])
-def test_fresh_canonical_status_and_identity_not_policy_labels(canonical, change, expected):
+def test_fresh_canonical_status_and_identity_not_policy_labels(canonical, rollback_policy, change, expected):
     path, entry = canonical
-    exceptions = policy.load_policy(POLICY)
+    exceptions = policy.load_policy(rollback_policy)
     assert policy.audit(inventory(), exceptions)["status"] == "pass"
     change(entry)
     save_ledger(path, Ledger(jobs=[entry]))
@@ -295,16 +297,16 @@ def test_fresh_canonical_status_and_identity_not_policy_labels(canonical, change
     lambda d: d["sources"]["registry"]["rows"][0].update(runner={"kind": "systemd", "unit": "other.service"}),
     lambda d: d["sources"]["registry"]["rows"].append(d["sources"]["registry"]["rows"][0].copy()),
 ])
-def test_missing_malformed_ambiguous_or_name_only_registry_unknown(canonical, change):
+def test_missing_malformed_ambiguous_or_name_only_registry_unknown(canonical, rollback_policy, change):
     data = inventory()
     change(data)
-    report = policy.audit(data, policy.load_policy(POLICY))
+    report = policy.audit(data, policy.load_policy(rollback_policy))
     assert report["status"] == "unknown" and not report["approved"]
 
 
-def test_canonical_missing_malformed_and_concurrent_migration_unknown(canonical):
+def test_canonical_missing_malformed_and_concurrent_migration_unknown(canonical, rollback_policy):
     path, _ = canonical
-    exceptions = policy.load_policy(POLICY)
+    exceptions = policy.load_policy(rollback_policy)
     with locked(path):
         report = policy.audit(inventory(), exceptions)
         assert report["status"] == "unknown" and not report["approved"]
@@ -314,7 +316,7 @@ def test_canonical_missing_malformed_and_concurrent_migration_unknown(canonical)
     assert policy.audit(inventory(), exceptions)["status"] == "unknown"
 
 
-def test_source_overrides_and_inventory_ledger_cannot_spoof_canonical(canonical, tmp_path, monkeypatch):
+def test_source_overrides_and_inventory_ledger_cannot_spoof_canonical(canonical, rollback_policy, tmp_path, monkeypatch):
     path, entry = canonical
     spoof = tmp_path / "spoof.yaml"
     save_ledger(spoof, Ledger(jobs=[entry]))
@@ -326,14 +328,14 @@ def test_source_overrides_and_inventory_ledger_cannot_spoof_canonical(canonical,
     data["sources"]["ledger"] = {"status": "ok", "rows": [{"id": LEDGER_ID, "status": "rolled-back"}]}
     # --policy is an exception declaration, never a source override for evidence.
     override = tmp_path / "policy.json"
-    raw = json.loads(POLICY.read_text())
+    raw = json.loads(rollback_policy.read_text())
     raw["ledger_path"] = str(spoof)
     override.write_text(json.dumps(raw))
     report = policy.audit(data, policy.load_policy(override))
     assert report["status"] == "unknown" and not report["approved"]
 
 
-def test_live_registry_is_refreshed_under_canonical_lock(canonical, monkeypatch):
+def test_live_registry_is_refreshed_under_canonical_lock(canonical, rollback_policy, monkeypatch):
     path, _ = canonical
     observed = []
     def registry(base):
@@ -342,35 +344,49 @@ def test_live_registry_is_refreshed_under_canonical_lock(canonical, monkeypatch)
         observed.append(base)
         return inventory(enabled=True)["sources"]["registry"]["rows"]
     monkeypatch.setattr(policy, "registry", registry)
-    report = policy.audit(inventory(), policy.load_policy(POLICY), base="http://fixture")
+    report = policy.audit(inventory(), policy.load_policy(rollback_policy), base="http://fixture")
     assert observed == ["http://fixture"] and report["status"] == "fail"
     def unavailable(base):
         raise OSError("fixture API outage")
     monkeypatch.setattr(policy, "registry", unavailable)
-    assert policy.audit(inventory(), policy.load_policy(POLICY), base="http://fixture")["status"] == "unknown"
+    assert policy.audit(inventory(), policy.load_policy(rollback_policy), base="http://fixture")["status"] == "unknown"
 
 
-def test_real_doctor_cli_duplicate_fails_missing_owner_unknown(tmp_path):
+# The real `candybar doctor` CLI in a child process, with CANONICAL_LEDGER aimed
+# at the tmp rolled-back fixture (a child cannot inherit the monkeypatch).
+DOCTOR = """import sys
+from pathlib import Path
+from candybar import scheduling_policy
+scheduling_policy.CANONICAL_LEDGER = Path(sys.argv[1])
+from candybar.cli.main import app
+app(sys.argv[2:], prog_name="candybar")
+"""
+
+
+def test_real_doctor_cli_duplicate_fails_missing_owner_unknown(tmp_path, canonical, rollback_policy):
+    ledger, _ = canonical
     fixture = tmp_path / "inventory.json"
     env = {**os.environ, "HOME": str(tmp_path), "TMPDIR": str(tmp_path)}
+    doctor = [sys.executable, "-c", DOCTOR, str(ledger), "doctor", "--inventory", str(fixture),
+              "--policy", str(rollback_policy), "--json"]
     for data, code in [(inventory(enabled=True), 1), (inventory(), 0)]:
         fixture.write_text(json.dumps(data))
-        result = subprocess.run([str(ROOT / ".venv/bin/candybar"), "doctor", "--inventory", str(fixture), "--policy", str(POLICY), "--json"], capture_output=True, text=True, env=env, check=False)
+        result = subprocess.run(doctor, capture_output=True, text=True, env=env, check=False)
         assert result.returncode == code, result.stdout + result.stderr
         report = json.loads(result.stdout)
         assert report["checks"]["machine"]["status"] == ("fail" if code else "pass")
     data = inventory()
     data["sources"]["registry"]["rows"] = []
     fixture.write_text(json.dumps(data))
-    result = subprocess.run([str(ROOT / ".venv/bin/candybar"), "doctor", "--inventory", str(fixture), "--policy", str(POLICY), "--json"], capture_output=True, text=True, env=env, check=False)
+    result = subprocess.run(doctor, capture_output=True, text=True, env=env, check=False)
     assert result.returncode == 2 and json.loads(result.stdout)["status"] == "unknown"
 
 
-def test_pending_rollback_unknown_holds_previous_drift_condition(canonical):
+def test_pending_rollback_unknown_holds_previous_drift_condition(canonical, rollback_policy):
     path, entry = canonical
     entry.disable_pending = True
     save_ledger(path, Ledger(jobs=[entry]))
-    report = policy.audit(inventory(), policy.load_policy(POLICY))
+    report = policy.audit(inventory(), policy.load_policy(rollback_policy))
     state, messages = transition(report, {"conditions": [TIMER]})
     assert TIMER in state["conditions"] and len(messages) == 1 and "0 cleared" in messages[0]
 
@@ -421,8 +437,8 @@ execute(sys.argv[2:],state,'fixture','fixture',sender=accepted_then_died)
 
 @pytest.mark.parametrize("field,value", [("ledger_id", "wrong"), ("candybar_id", "wrong"),
                                          ("ledger_status", "verified"), ("ledger_id", None)])
-def test_policy_override_cannot_launder_protected_clock(tmp_path, field, value):
-    raw = json.loads(POLICY.read_text())
+def test_policy_override_cannot_launder_protected_clock(rollback_policy, tmp_path, field, value):
+    raw = json.loads(rollback_policy.read_text())
     entry = next(e for e in raw["exceptions"] if e["id"] == TIMER)
     if value is None:
         for key in ("ledger_id", "ledger_status", "candybar_id"):

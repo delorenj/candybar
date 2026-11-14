@@ -541,7 +541,7 @@ def test_a_cancelled_queued_task_never_starts(reg: Reg) -> None:
         ("restic-vault", [], "a backup job"),
         ("milkshake-ledger-backup", [], "a backup job"),
         ("y", ["backups"], "a backup job"),
-        ("newapi-allowances", [], "named in deploy/scheduling-policy.json"),
+        ("infra-doctor", [], "named in deploy/scheduling-policy.json"),
     ],
 )
 def test_protection(name: str, tags: list[str], reason: str) -> None:

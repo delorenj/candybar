@@ -35,16 +35,28 @@ def test_rogue_timer_and_registered_service_timer_still_fail():
     assert policy.audit(data, {})["status"] == "pass"  # retired timer
 
 
-def test_rolled_back_native_clock_exact_exception_only():
+def test_rolled_back_native_clock_exact_exception_only(rolled_back_clock):
     data = empty()
     data["sources"]["systemd-user"]["rows"] = [timer("newapi-allowances.timer")]
     data["sources"]["registry"]["rows"] = [{"id": "01a1793a-d2a0-7070-b267-4f6d3e41a3b5", "enabled": False,
                                               "runner": {"kind": "systemd", "unit": "newapi-allowances.service"}}]
-    exceptions = policy.load_policy(Path(__file__).parents[1] / "deploy/scheduling-policy.json")
+    exceptions = policy.load_policy(rolled_back_clock.policy)
     assert policy.audit(data, exceptions)["status"] == "pass"
     assert exceptions["systemd:user:newapi-allowances.timer"]["ledger_status"] == "rolled-back"
     data["sources"]["systemd-user"]["rows"].append(timer("newapi-allowances-copy.timer"))
     assert policy.audit(data, exceptions)["status"] == "fail"
+
+
+def test_decommissioned_newapi_timer_is_no_longer_exempt():
+    # CAND-53: systemd:newapi-allowances was decommissioned on 2026-11-12 and its
+    # native timer file deleted; the canonical policy keeps no exception for it,
+    # so a timer of that name coming back is an ordinary violation.
+    exceptions = policy.load_policy(Path(__file__).parents[1] / "deploy/scheduling-policy.json")
+    assert "systemd:user:newapi-allowances.timer" not in exceptions
+    data = empty()
+    data["sources"]["systemd-user"]["rows"] = [timer("newapi-allowances.timer")]
+    report = policy.audit(data, exceptions)
+    assert report["status"] == "fail" and "not a Candybar; register" in report["violations"][0]["message"]
 
 
 def test_explicit_self_watchdog_exception():

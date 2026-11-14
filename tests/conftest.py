@@ -55,3 +55,52 @@ def _cost_store_without_a_database(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_module, "list_costs", list_costs)
     monkeypatch.setattr(app_module, "get_cost", get_cost)
     monkeypatch.setattr(app_module, "refresh_costs", refresh_costs)
+
+
+ROLLBACK_TIMER = "systemd:user:newapi-allowances.timer"
+
+
+@pytest.fixture
+def rolled_back_clock(tmp_path, monkeypatch):
+    """A self-contained rolled-back migration for the protected rollback exception.
+
+    The scenarios that certify a conditional rollback exception must not read
+    the live canonical ledger or policy (CAND-53): systemd:newapi-allowances was
+    re-cut-over and decommissioned on 2026-11-12, which turned every one of them
+    red. This writes a tmp ledger holding one synthetic rolled-back entry with
+    the protected binding's exact identities, points CANONICAL_LEDGER at it, and
+    writes a tmp policy carrying the rollback exception.
+    """
+    import json
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from candybar import scheduling_policy as policy
+    from candybar.migration.ledger import Ledger, LedgerEntry, save_ledger
+
+    binding = policy.ROLLBACK_BINDINGS[ROLLBACK_TIMER]
+    entry = LedgerEntry.model_validate({
+        "id": binding["ledger_id"],
+        "wave": "fixture",
+        "candybar": {"name": "newapi-allowances", "schedule": "*/5 * * * *",
+                     "runner": {"kind": "systemd", "unit": "newapi-allowances.service"}},
+        "native": {"kind": "systemd-timer", "schedule": "OnUnitActiveSec=5m",
+                   "unit": "newapi-allowances.timer"},
+        "source_of_truth": {"repo": "fixture/repo", "path": "newapi-allowances.timer"},
+        "status": "rolled-back",
+        "candybar_id": binding["candybar_id"],
+        "disable_pending": False,
+    })
+    ledger = tmp_path / "rollback-fixture" / "ledger.yaml"
+    ledger.parent.mkdir()
+    save_ledger(ledger, Ledger(jobs=[entry]))
+    monkeypatch.setattr(policy, "CANONICAL_LEDGER", ledger)
+    canonical = Path(__file__).parents[1] / "deploy/scheduling-policy.json"
+    raw = json.loads(canonical.read_text())
+    raw["exceptions"] = [e for e in raw["exceptions"] if e["id"] != ROLLBACK_TIMER] + [{
+        "id": ROLLBACK_TIMER, "owner": "fixture rollback owner",
+        "reason": "Fixture conditional rollback exception.", **binding,
+    }]
+    path = tmp_path / "rollback-fixture" / "scheduling-policy.json"
+    path.write_text(json.dumps(raw))
+    return SimpleNamespace(policy=path, ledger=ledger, entry=entry)
