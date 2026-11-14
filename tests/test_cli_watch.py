@@ -34,7 +34,7 @@ def core(monkeypatch):
         calls.append(("reconcile", settings, dry_run))
         return report
 
-    def run(settings, *, config_path):
+    def run(settings, *, config_path, launcher_pid=None):
         calls.append(("watch", settings, config_path))
 
     module = SimpleNamespace(load_config=load, reconcile=reconcile, run_watch=run)
