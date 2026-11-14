@@ -24,6 +24,7 @@ from typing import Any
 
 from watchfiles._rust_notify import RustNotify
 
+from . import watch_lock
 from .migration.client import ApiError, CandybarApi
 from .migration.ledger import load_ledger, locked
 from .project import (
@@ -44,6 +45,14 @@ log = logging.getLogger(__name__)
 # reconciles. A `candybar migrate` verb holding it makes the write wait this long
 # (then fail and retry like any other unsynced pass).
 LEDGER_WAIT_S = 10.0
+# CAND-53: a watcher queued on the per-registry sync lock re-checks its stop
+# request this often, so SIGTERM never waits for another tree's whole pass.
+SYNC_LOCK_POLL_S = 0.2
+# CAND-53: how often a running watcher checks that the process that launched it
+# (the shell, via the entry hook) is still its parent. An event-wait inside
+# run_watch, not a schedule (AD-1 clock guard).
+LAUNCHER_CHECK_S = 2.0
+STOPPED = 'stopped while waiting for the sync lock; the next watcher pass reconciles'
 EXCLUDED = frozenset({
     '.git', '.venv', 'venv', '.worktrees', 'worktrees', 'node_modules',
     '.cache', 'cache', '__pycache__', '.pytest_cache', '.mypy_cache',
@@ -286,11 +295,20 @@ def _sync_one(config, api, definition, project, ledger_path, report, dry_run):
 
 
 @contextmanager
-def _reconcile_lock():
+def _reconcile_lock(stop: threading.Event | None = None):
     """Serialize editor saves and native workers sharing a registry endpoint.
 
     The flock is process-wide and released on crash. Lock state lives outside
     repositories; no project enrollment or persistent inventory is required.
+    Yields True once held. With `stop`, the wait is a non-blocking poll that
+    yields False as soon as `stop` is set: a blocking flock is retried across
+    a SIGTERM handler (PEP 475), so a queued watcher could not stop (CAND-53).
+
+    The key is the registry endpoint, deliberately not the tree: watched trees
+    overlap (~/code/33GOD contains ~/code/33GOD/candybar, its own git root and
+    its own singleton), manifest names are registry-global, and each pass
+    re-reads manifest bytes after taking the lock, so serialized passes are
+    what guarantee the newest bytes are written last.
     """
     from .migration.client import api_url
 
@@ -298,16 +316,38 @@ def _reconcile_lock():
     base.mkdir(parents=True, exist_ok=True, mode=0o700)
     key = hashlib.sha256(api_url().encode()).hexdigest()[:24]
     with (base / f'sync-{key}.lock').open('a') as stream:
-        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        if stop is None:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        else:
+            while True:
+                if stop.is_set():
+                    yield False
+                    return
+                try:
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    # Bounded lock-acquisition poll, not a schedule. A private
+                    # Event: the signal handler sets `stop`, never this one.
+                    threading.Event().wait(SYNC_LOCK_POLL_S)
         try:
-            yield
+            yield True
         finally:
             fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
-def reconcile(config: WatchConfig, api=None, *, dry_run: bool = False) -> ReconcileReport:
-    """Serialize and re-read manifests before reconciling against the registry."""
-    with _reconcile_lock():
+def reconcile(config: WatchConfig, api=None, *, dry_run: bool = False,
+              stop: threading.Event | None = None) -> ReconcileReport:
+    """Serialize and re-read manifests before reconciling against the registry.
+
+    A set `stop` (watcher shutdown) ends the wait for the lock with an unsynced
+    report. A pass that already holds the lock runs to completion, so an edit
+    saved just before the shell left is never dropped; a stop is honoured after
+    at most one pass of this watcher's own tree.
+    """
+    with _reconcile_lock(stop) as held:
+        if not held:
+            return ReconcileReport(errors=[STOPPED])
         return _reconcile(config, api, dry_run=dry_run)
 
 
@@ -379,13 +419,19 @@ def _reconcile(config: WatchConfig, api=None, *, dry_run: bool = False) -> Recon
 
 
 def run_watch(config: WatchConfig, *, config_path: Path | None = None,
-              stop_event: threading.Event | None = None) -> None:
+              stop_event: threading.Event | None = None,
+              launcher_pid: int | None = None) -> None:
     """Block on native events, retry per burst, and keep watching after errors.
 
     A configuration edit or native backend error raises RuntimeError, allowing
-    Restart=on-failure to reload configuration. Stop events/SIGTERM return cleanly.
+    Restart=on-failure to reload configuration. Stop events/SIGTERM return
+    cleanly, and so does losing the launcher: when the parent pid stops being
+    `launcher_pid` (default: the parent at start) the launching shell is gone,
+    for instance SIGKILLed so its zshexit TERM never ran, and the watcher
+    stops rather than hold its tree forever (CAND-53).
     """
     stop = stop_event if stop_event is not None else threading.Event()
+    launcher = launcher_pid if launcher_pid is not None else watch_lock.parent_pid()
     events: queue.Queue = queue.Queue()
     previous = {}
     if threading.current_thread() is threading.main_thread():
@@ -413,9 +459,18 @@ def run_watch(config: WatchConfig, *, config_path: Path | None = None,
         # essential: Python event filters do NOT prune OS watch registration.
         return RustNotify([str(p) for p in watched], False, False, 300, False, False)
 
+    def follow_launcher():
+        while not stop.wait(LAUNCHER_CHECK_S):
+            if watch_lock.parent_pid() != launcher:
+                log.warning('autosync launcher %s is gone; stopping this watcher', launcher)
+                stop.set()
+                return
+
     watcher = None
     thread = None
+    guard = threading.Thread(target=follow_launcher, name='candybar-launcher-watch', daemon=True)
     try:
+        guard.start()
         watched = paths()
         watcher = native(watched)  # Constructor installs watches synchronously.
 
@@ -459,7 +514,9 @@ def run_watch(config: WatchConfig, *, config_path: Path | None = None,
             for attempt in range(config.retries + 1):
                 if stop.is_set():
                     return
-                report = reconcile(config)  # Latest bytes on every bounded retry.
+                report = reconcile(config, stop=stop)  # Latest bytes on every bounded retry.
+                if not report.ok and stop.is_set():
+                    return  # Stopped while queued: nothing to log or retry.
                 if report.ok:
                     for result in report.results:
                         log.info('autosync %s %s (%s)', result['status'], result['name'], result['source'])
@@ -489,6 +546,7 @@ def run_watch(config: WatchConfig, *, config_path: Path | None = None,
             sync()
     finally:
         stop.set()
+        guard.join(timeout=5)
         if thread:
             thread.join(timeout=5)
         if watcher and (thread is None or not thread.is_alive()):

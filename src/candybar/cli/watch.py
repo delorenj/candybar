@@ -79,19 +79,32 @@ def watch(
         if not report.ok:
             raise typer.Exit(code=1)
         return
-    from candybar.watch_lock import watch_singleton
+    from candybar.watch_lock import parent_pid, watch_singleton
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    with watch_singleton(settings) as sole:
-        if not sole:
-            return  # CAND-53: another watcher already covers this tree; stay quiet.
-        try:
-            run_watch(settings, config_path=config_path)
-        except KeyboardInterrupt:
-            pass
-        except (OSError, ValueError, RuntimeError) as exc:
-            typer.echo(f"watch stopped: {exc}", err=True)
-            raise typer.Exit(code=1) from exc
+    # CAND-53: the launching shell is this process's parent. When another
+    # watcher already covers the tree, stand by (no inotify, no API) and take
+    # over when it exits; leave once our own launcher is gone.
+    launcher = parent_pid()
+    announced: list[bool] = []
+
+    def standby() -> bool:
+        if not announced:
+            announced.append(True)
+            logging.getLogger("candybar.watch").info(
+                "another watcher covers %s; standing by until it exits", path or config_path or Path.cwd())
+        return parent_pid() == launcher
+
+    try:
+        with watch_singleton(settings, standby=standby) as sole:
+            if not sole:
+                return
+            run_watch(settings, config_path=config_path, launcher_pid=launcher)
+    except KeyboardInterrupt:
+        pass
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"watch stopped: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 def install(app: typer.Typer) -> None:

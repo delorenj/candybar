@@ -535,7 +535,7 @@ def _adopted_migration(tmp_path):
 
 
 def test_registry_reads_do_not_hold_the_migration_ledger_lock(tmp_path):
-    file, ledger, api = _adopted_migration(tmp_path)
+    file, _ledger, api = _adopted_migration(tmp_path)
     assert reconcile(WatchConfig((), legacy=(file,)), api).ok
     assert api.probes and all(api.probes), api.probes
 
@@ -571,7 +571,6 @@ def test_migration_write_waits_a_bounded_time_for_a_running_migrate(tmp_path, mo
 
 
 def test_two_reconcilers_on_one_tree_leave_the_lock_free_for_migrate(tmp_path, monkeypatch):
-    import time
     from candybar.migration.ledger import locked
     file, ledger, _ = _adopted_migration(tmp_path)
     api = FakeApi()
@@ -602,3 +601,121 @@ def test_two_reconcilers_on_one_tree_leave_the_lock_free_for_migrate(tmp_path, m
         stop.set()
         for t in threads:
             t.join(timeout=5)
+
+
+# --- CAND-53 follow-up: shutdown never waits on another tree's pass; orphans exit ---
+
+
+def _watch_thread(config, stop, errors, **kwargs):
+    def run():
+        try:
+            run_watch(config, stop_event=stop, **kwargs)
+        except Exception as exc:  # noqa: BLE001 -- surface background failures to the test
+            errors.append(exc)
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return thread
+
+
+def test_stop_is_honoured_while_queued_on_the_sync_lock(tmp_path, monkeypatch):
+    manifest(tmp_path / '.candybar.toml')
+    api = FakeApi()
+    monkeypatch.setattr(autosync, 'CandybarApi', lambda: api)
+    stop, errors = threading.Event(), []
+    with autosync._reconcile_lock():  # another tree's watcher is mid-pass
+        thread = _watch_thread(WatchConfig((), projects=(tmp_path,), retries=0, debounce_ms=20), stop, errors)
+        threading.Event().wait(0.5)  # queued behind the holder
+        assert thread.is_alive() and not api.reads
+        stop.set()
+        thread.join(2)
+        alive = thread.is_alive()
+    thread.join(5)  # lock released either way: never leave the worker behind
+    assert not alive, 'stop request waited for the sync lock holder'
+    assert errors == [] and not api.reads
+
+
+def test_sigterm_is_honoured_while_queued_on_the_sync_lock(tmp_path):
+    """Evidence item 2: TERMed watchers drained one per pass, ~20s apart."""
+    import signal
+    import subprocess
+    import sys
+    project = tmp_path / 'project'
+    manifest(project / '.candybar.toml')
+    script = '''import sys
+from pathlib import Path
+from candybar import autosync
+real = autosync.RustNotify
+def native(*args):
+    watcher = real(*args)
+    print("ready", flush=True)
+    return watcher
+def no_api():
+    raise AssertionError("sync lock bypassed")
+autosync.RustNotify = native
+autosync.CandybarApi = no_api
+autosync.run_watch(autosync.WatchConfig((), projects=(Path(sys.argv[1]),), retries=0, debounce_ms=20))
+print("stopped", flush=True)
+'''
+    with autosync._reconcile_lock():  # a slow pass from another tree holds the endpoint
+        child = subprocess.Popen([sys.executable, '-c', script, str(project)], stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, env=dict(os.environ))
+        try:
+            assert child.stdout.readline().strip() == 'ready'
+            threading.Event().wait(0.5)  # now queued on the sync lock
+            child.send_signal(signal.SIGTERM)
+            try:
+                out, err = child.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                pytest.fail('SIGTERM was not honoured while queued on the sync lock')
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.communicate()
+    assert child.returncode == 0, err
+    assert 'stopped' in out
+
+
+def test_a_stop_during_a_held_pass_lets_that_pass_finish(tmp_path):
+    """Only the wait for the lock is cut short: a saved edit in flight is never dropped."""
+    for name in ('a', 'b', 'c'):
+        manifest(tmp_path / f'{name}/candybar.toml', name=name)
+    config = WatchConfig((tmp_path,))
+    api = FakeApi()
+    assert reconcile(config, api).ok
+    for name in ('a', 'b', 'c'):
+        manifest(tmp_path / f'{name}/candybar.toml', name=name, description='changed')
+    stop = threading.Event()
+    real_update = api.update
+
+    def update(job_id, changes):
+        stop.set()  # SIGTERM arrives during the first write
+        return real_update(job_id, changes)
+    api.update = update
+    assert reconcile(config, api, stop=stop).ok
+    assert {row['description'] for row in api.rows.values()} == {'changed'}
+    report = reconcile(config, api, stop=stop)  # already stopping: never takes the lock
+    assert not report.ok and 'stopped while waiting' in str(report.errors)
+
+
+def test_watcher_stops_when_its_launcher_is_gone(tmp_path, monkeypatch):
+    """Evidence item 1: a watcher whose shell was SIGKILLed never got zshexit's TERM."""
+    from candybar import watch_lock
+    manifest(tmp_path / '.candybar.toml')
+    api = FakeApi()
+    monkeypatch.setattr(autosync, 'CandybarApi', lambda: api)
+    monkeypatch.setattr(autosync, 'LAUNCHER_CHECK_S', 0.05, raising=False)
+    parent = [4242]
+    monkeypatch.setattr(watch_lock, 'parent_pid', lambda: parent[0], raising=False)
+    stop, errors = threading.Event(), []
+    thread = _watch_thread(WatchConfig((), projects=(tmp_path,), retries=0, debounce_ms=20), stop, errors)
+    try:
+        wait_for(lambda: bool(api.rows))
+        threading.Event().wait(0.3)
+        assert thread.is_alive()  # launcher still there: keeps watching
+        parent[0] = 4333  # shell gone; reparented to the user manager
+        thread.join(3)
+        assert not thread.is_alive(), 'orphaned watcher kept running'
+        assert stop.is_set() and errors == []
+    finally:
+        stop.set()
+        thread.join(5)
