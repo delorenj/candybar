@@ -1,0 +1,49 @@
+# Damian's Mac: the morning Dev Journal. Registered ONLY in the Mac's registry.
+# big-chungus runs its own dev-journal jobs; never register this one there.
+#
+# Clock: 06:00 America/New_York, every day. A wall-clock 06:00 is never skipped or
+# repeated by a DST transition (those happen at 02:00), so no DST policy is needed.
+#
+# Missed-fire policy (AD-6, run-at-wake, coalesce): if the Mac or the executor was
+# down at 06:00, the LATEST missed fire runs once when the executor is back
+# (trigger=misfire, same idempotency key as the scheduled fire); earlier missed
+# fires inside the 24 h window are recorded skipped(misfire_coalesced), never
+# replayed as a burst. Overlap is refused (skipped overlap), so a slow run is
+# never doubled up. The Mac never sleeps (pmset sleep 0), so the normal case is a
+# plain 06:00 fire.
+#
+# Idempotency, three layers, so a retry, a misfire after a late fire, or a manual
+# run never sends a second copy:
+#   1. Candybar: one idempotency key per fire.
+#   2. nightly.sh verifies first: a report already published and valid for
+#      "yesterday" (in the report config's timezone) is NOT regenerated.
+#   3. DDR_DELIVER_ONCE=1 (host.env) makes `reportctl distribute --once` skip any
+#      target with a successful receipt for the published generation
+#      (artifacts/<date>/deliveries.json) and send mail with a Resend
+#      Idempotency-Key.
+# Edge: a run that only happens at wake on a LATER calendar day reports the day
+# before that wake day. The day it skipped shows up as a gap in the next report's
+# report-delivery section; backfill with
+#   nightly.sh nightly --date YYYY-MM-DD
+#
+# No on_failure: Damian has no alert destination yet (ntfy is opt-in, W10-1).
+# A failed run is a failed Candybar invocation (`candybar history`) and the next
+# morning's report names the missing day.
+[candybar]
+name = "mac-dev-journal-nightly"
+description = "Damian's Mac: the 06:00 Dev Journal. nightly.sh verifies yesterday's report, generates it when missing, then emails it once to Damian (DDR_DELIVER_ONCE receipts + Resend Idempotency-Key)."
+tags = ["mac", "dev-journal"]
+schedule = "0 6 * * *"
+timezone = "America/New_York"
+enabled = false
+
+[candybar.runner]
+kind = "exec"
+argv = ["/bin/sh", "-c", "exec \"$HOME/.local/share/33god/skills/delonet-daily-report/scripts/nightly.sh\" nightly"]
+timeout_s = 1800
+
+# reportctl needs Python >= 3.11 (stock macOS /usr/bin/python3 is 3.9) and hermes
+# for the narrator, so Homebrew goes first. Everything else (config path, Resend
+# key reference, DDR_DELIVER_ONCE) comes from ~/.config/33god/host.env.
+[candybar.runner.env]
+PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
