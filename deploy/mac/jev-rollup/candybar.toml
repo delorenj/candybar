@@ -1,0 +1,28 @@
+# mac-jev-rollup: Damian's Mac roll-up sidecar. Candybar is the only clock on this Mac.
+#
+# Cadence (what jev-rollup-cadence.sh does on each fire): tick every run, fold the inbox into the
+# per-day notes at minute < 10 (hourly), compose yesterday's DAY.md at 06:00-06:09 local.
+# The script decides from the wall clock, so the schedule must stay `*/10` and the TZ pinned.
+#
+# Missed-fire policy: coalesce (Candybar AD-6). A tick is a cursor-based read of the Candystore
+# bus, so a missed fire loses nothing: the next tick picks up everything after the cursor
+# (200-event window per type, ample for ten minutes of one person's agents). A missed hourly
+# roll or the 06:0x day-compose is caught by the next one: roll folds the whole inbox; `day`
+# for a missed morning is `~/.local/bin/jev-rollup-run day` by hand (it composes yesterday).
+# Overlap is refused by Candybar. No on_failure: Damian has no alert destination (ntfy is W10-1).
+[candybar]
+name = "mac-jev-rollup"
+description = "Damian's Mac: jev-rollup sidecar. Candystore turn.annotated events -> per-project notes -> DAY.md (tick */10, roll hourly, day at 06:0x). Bus-fed, reads no Jev key."
+tags = ["mac", "jev-rollup"]
+schedule = "*/10 * * * *"
+timezone = "America/New_York"
+enabled = false
+
+[candybar.runner]
+kind = "exec"
+argv = ["/bin/sh", "-c", "exec \"$HOME/.local/share/33god/jev-rollup/jev-rollup-cadence.sh\""]
+timeout_s = 120
+
+[candybar.runner.env]
+PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+TZ = "America/New_York"
