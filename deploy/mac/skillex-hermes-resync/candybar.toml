@@ -1,0 +1,42 @@
+# Damian's Mac: keep every strict (Skillex-only) Hermes desk converged with the
+# skills catalog. Registered ONLY in the Mac's registry (127.0.0.1:8700).
+# big-chungus has its own `skillex-hermes-resync` job; never register this one there.
+#
+# Replaces the launchd agent io.33god.skillex-hermes-resync (StartInterval=900,
+# WatchPaths on the catalog HEAD, RunAtLoad), retired 2026-11-15 under mirror
+# W5-4. Candybar is the only clock on this Mac; launchd keeps no interval.
+#
+# Clock: every 15 minutes. The catalog HEAD WatchPaths trigger is gone with the
+# agent: on this Mac the catalog only moves when an operator moves it, and the
+# next 15-minute fire resyncs every desk (a plain `profile show` exit 0 is a no-op).
+#
+# Missed-fire policy (AD-6, run-at-wake, coalesce): if the Mac or the executor
+# was down, the LATEST missed fire runs once when the executor is back
+# (trigger=misfire); earlier fires inside the window are recorded
+# skipped(misfire_coalesced), never replayed as a burst. Overlap is refused
+# (skipped overlap) and the script also holds its own lock (status "busy").
+#
+# Idempotency: the script only strict-syncs a desk whose `profile show` reports
+# exit 6 (drift); a converged desk is untouched, so a repeated or misfired run
+# changes nothing. It never deletes, adopts or quarantines (that is
+# hermes-skillex-cutover.py, by hand, preview first).
+#
+# Effect evidence, in ~/.local/state/skillex/: hermes-resync.last.json
+# (status ok, one result per desk, counts.error == 0) and hermes-resync.jsonl.
+# Exit 1 = a desk needs a human (a failed Candybar invocation); exit 2 = the run
+# could not start. No on_failure: Damian has no alert destination yet (W10-1).
+[candybar]
+name = "mac-skillex-hermes-resync"
+description = "Damian's Mac: strict-sync every Skillex-only Hermes desk that drifted from the catalog (hermes-skillex-resync.py); never deletes or adopts foreign content."
+tags = ["mac", "skillex"]
+schedule = "*/15 * * * *"
+timezone = "UTC"
+enabled = false
+
+[candybar.runner]
+kind = "exec"
+# Same explicit environment the launchd agent had (registry checkout, the Node CLI
+# wrapper, never the repo's dist/cli.js, and a PATH that finds git and mise), set
+# inside the shell so $HOME expands and nothing here names Damian's account.
+argv = ["/bin/sh", "-c", "export PJ_SKILLS_REGISTRY_ROOT=\"$HOME/code/skillex\" SKILLEX_BIN=\"$HOME/.local/bin/skillex-npm\" PATH=\"$HOME/.local/bin:$HOME/.local/share/mise/shims:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\"; exec /opt/homebrew/opt/python@3.14/bin/python3.14 -B \"$HOME/.local/share/33god/skillex-hermes-resync/hermes-skillex-resync.py\" --settle 4"]
+timeout_s = 900
