@@ -1,10 +1,10 @@
 #!/bin/sh
 # install.sh -- install the jev-rollup sidecar on a peer host (macOS). Idempotent.
-# Copies this directory's five tool files to ~/.local/share/33god/jev-rollup/ and links the two
+# Copies the five tool files (from $JEV_ROLLUP_SRC, delivered out of band: they are private) to ~/.local/share/33god/jev-rollup/ and links the two
 # commands into ~/.local/bin. Touches nothing else: no credential, no host.env, no scheduler.
 # Registering the clock is `candybar register` on this directory (see README.md).
 set -eu
-here=$(cd "$(dirname "$0")" && pwd)
+here="${JEV_ROLLUP_SRC:-$(cd "$(dirname "$0")" && pwd)}"
 dest="${JEV_ROLLUP_HOME:-$HOME/.local/share/33god/jev-rollup}"
 ( cd "$here" && shasum -a 256 -c VENDORED.sha256 ) >/dev/null || { echo "install: VENDORED.sha256 mismatch, refusing" >&2; exit 1; }
 mkdir -p "$dest" "$HOME/.local/bin"
