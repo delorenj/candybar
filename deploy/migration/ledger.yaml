@@ -2880,7 +2880,7 @@ jobs:
     schedule: OnStartupSec=2min; OnCalendar=*-*-* *:07,22,37,52:00; Persistent=true; RandomizedDelaySec=30s; AccuracySec=30s
     jitter_s: 30
     unit: skillex-hermes-resync.timer
-    unit_file: /home/delorenj/code/skillex/systemd/skillex-hermes-resync.timer
+    unit_file: /home/delorenj/.local/state/candybar/rollback-units/skillex-hermes-resync.timer
   deviations:
   - RandomizedDelaySec=30s dropped
   - OnStartupSec=2min boot run dropped
@@ -2890,11 +2890,13 @@ jobs:
   source_of_truth:
     repo: delorenj/skillex
     path: scripts/install-hermes-resync.sh
-    commit: 7a0becd7fa06bad73289bf60a2835b76686d6cbb
+    commit: dcf2555acc0c7f5e27bbfe484fa62d749cec958c
   disable:
   - systemctl --user disable --now skillex-hermes-resync.timer
   rollback:
-  - systemctl --user enable --now /home/delorenj/code/skillex/systemd/skillex-hermes-resync.timer
+  - mkdir -p "$HOME/.local/state/candybar/rollback-units"
+  - git -C /home/delorenj/code/skillex show b3bd947f692a4e20cf0623d68f35abcfd5f1646a:systemd/skillex-hermes-resync.timer > "$HOME/.local/state/candybar/rollback-units/skillex-hermes-resync.timer"
+  - systemctl --user enable --now "$HOME/.local/state/candybar/rollback-units/skillex-hermes-resync.timer"
   status: verified
   candybar_id: 01a1794c-b5e7-7f1c-a240-d08a5493beff
   cutover_at: '2026-10-26T17:40:33.409401Z'
@@ -2916,6 +2918,10 @@ jobs:
     action: verify
     outcome: ok
     detail: 'invocation a51b1b36-a331-5ac7-bdc4-08a83fa6e10a (scheduled) fail exit=1 runtime=51372ms memory=127852544B cpu=0.2841 (result parity: the job already failed natively)'
+  - at: '2026-11-17T00:14:18Z'
+    action: source-of-truth
+    outcome: updated
+    detail: delorenj/skillex @ dcf2555a deleted systemd/skillex-hermes-resync.timer (candybar owns the schedule; install-hermes-resync.sh removes a leftover link and status flags one). Rollback now restores the exact former timer bytes from b3bd947f into ~/.local/state/candybar/rollback-units before enabling by path.
 - id: systemd:naipkins-registry-snapshot
   wave: '7.8'
   candybar:
