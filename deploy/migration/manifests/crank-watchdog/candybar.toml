@@ -1,8 +1,10 @@
 # CAND-50: no-agent detector, direct exec. Candybar owns the only clock.
 # Installed detector is separately reviewed; this adapter does not change detection.
+# PJAN-216 (2026-11-18): runs the jev-clairic checkout directly (the Hermes profile copy loaded a
+# stale zcrank.py) and watches every crank v2 session crank as well as legacy tabs.
 [candybar]
 name = "crank-watchdog"
-description = "LLM-free crank attendance, host saturation and pane-burn watchdog with local evidence and agent attention; no operator transport"
+description = "LLM-free crank watchdog: v2 session cranks (stalled, pane burn), host saturation, legacy tab attendance; local evidence, no operator transport"
 tags = ["ops", "crank", "no-agent", "migrated"]
 schedule = "*/15 * * * *"
 timezone = "UTC"
@@ -10,6 +12,6 @@ noise = true
 
 [candybar.runner]
 kind = "exec"
-argv = ["/home/delorenj/code/33GOD/candybar/.venv/bin/python", "-m", "candybar.transition_exec", "--state-file", "/home/delorenj/.local/state/zcrank/watchdog.json", "--local-only", "--", "/home/delorenj/.hermes/profiles/33god-pm/scripts/crank-watchdog.sh"]
+argv = ["/home/delorenj/code/33GOD/candybar/.venv/bin/python", "-m", "candybar.transition_exec", "--state-file", "/home/delorenj/.local/state/zcrank/watchdog.json", "--local-only", "--", "/home/delorenj/.agents/tools/jev-clairic/hermes/crank-watchdog.sh"]
 workdir = "/home/delorenj/code/33GOD/candybar"
 timeout_s = 180
