@@ -333,6 +333,11 @@ timeout_s = 3600                       # default; bounds the wait (the client is
   Build an LLM pass as an interval driver (`interval-driver` skill): a
   `monitor_script` snapshot gate makes an unchanged board cost 0 tokens, and a
   roadmap brief keeps a real pass near 70k tokens instead of ~1M.
+  The PM launch pass is the standing example: candybar `<repo>-pm-launch-pass`
+  (earshot: `earshot-pm-launch-pass`, `23 8-22 * * *`) fires the repo PM's
+  external-pinned job; `flume launch enable <repo>` writes and registers the
+  manifest, and `flume launch disable` pauses it when the repo's `.launch.yaml`
+  goes `mode: steady`. Launch-director and EM passes are retired.
 - **Hermes no-agent jobs do not use this runner.** A `no_agent` Hermes job is a
   script whose stdout is delivered verbatim; migrate it as an `exec` runner that
   runs the script directly, and reproduce its `failure_deliver` with an
