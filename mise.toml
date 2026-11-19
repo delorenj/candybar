@@ -10,7 +10,7 @@ node = "24"
 rust = "1.99.1"
 
 [env]
-_.path = [".mise/scripts", "agents/hermes/pm"]
+_.path = [".mise/scripts"]  # PM launcher NOT on PATH (it shadowed the global hermes): use `hermes-pm`
 _.file = [".env"]
 
 # This block will handle the linking of
