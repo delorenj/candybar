@@ -176,7 +176,7 @@ cmd doctor help="Find clocks bypassing Candybar. Read-only; exit 0 clean, 1 bypa
     flag --inventory help="Audit an offline inventory JSON (no live calls)." {
         arg <INVENTORY>
     }
-    flag --policy help="Exact exceptions with owner/reason." default="/home/delorenj/code/33GOD/candybar/.worktrees/33GOD-103-candybar/deploy/scheduling-policy.json" {
+    flag --policy help="Exact exceptions with owner/reason." default="<candybar-install>/deploy/scheduling-policy.json" {
         arg <POLICY>
     }
     flag --n8n-export help="Optional read-only n8n workflow export JSON." {
