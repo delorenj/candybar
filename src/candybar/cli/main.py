@@ -52,12 +52,22 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
+def _usage_spec_callback(value: bool) -> None:
+    if value:
+        typer.echo(Path(__file__).with_name("candybar.usage.kdl").read_text(), nl=False)
+        raise typer.Exit()
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
     version: Annotated[
         bool,
         typer.Option("--version", "-V", callback=_version_callback, is_eager=True, help="Show version and exit."),
+    ] = False,
+    usage_spec: Annotated[
+        bool,
+        typer.Option("--usage-spec", callback=_usage_spec_callback, is_eager=True, help="Print usage KDL and exit."),
     ] = False,
 ) -> None:
     """Candybar cron framework CLI."""
