@@ -150,6 +150,27 @@ project files:
   `project:` tag naming another project is an error). That tag is how the
   registry knows who owns what.
 
+### Candybar desks
+
+A candybar that owns more than one command can keep a **desk**: a folder named
+after it, next to its file. The desk holds the candybar's script, the
+documentation of the effort it drives, and whatever state it writes (for
+example a daily log). The loader reads only `.candybars/*.candybar.toml`, so
+nothing in a desk is ever registered.
+
+```text
+<repo>/.candybars/1pass-migration.candybar.toml   # the schedule and runner
+<repo>/.candybars/1pass-migration/                # its desk
+    README.md      # the effort, end to end: start here
+    check.py       # what the runner calls (argv relative to the repo root)
+    STATUS.md      # rewritten by every run
+    log/           # one entry per run
+```
+
+A job that writes its desk commits and pushes only the desk's paths
+(`git commit -- <desk paths>`), never the rest of the tree. The first desk is
+`delorenj/infra`'s `.candybars/1pass-migration/`.
+
 ### Create one
 
 ```bash

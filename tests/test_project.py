@@ -127,6 +127,18 @@ def test_project_files_order_and_ownership(repo: Path) -> None:
     assert project.default_file_for("nightly") == repo / ".candybars" / "nightly.candybar.toml"
 
 
+def test_desk_folder_beside_a_candybar_is_not_loaded(repo: Path) -> None:
+    """README "Candybar desks": `.candybars/<name>/` holds the job's script, docs and logs; the loader skips it."""
+    project = Project(repo)
+    put(repo / ".candybars" / "nightly.candybar.toml", "")
+    put(repo / ".candybars" / "nightly" / "README.md", "# desk")
+    put(repo / ".candybars" / "nightly" / "check.py", "")
+    put(repo / ".candybars" / "nightly" / "log" / "2026-11-21.json", "{}")
+    put(repo / ".candybars" / "nightly" / "old.candybar.toml", "")
+    assert project.files() == [repo / ".candybars" / "nightly.candybar.toml"]
+    assert not project.owns(repo / ".candybars" / "nightly" / "old.candybar.toml")
+
+
 def test_project_of_tags() -> None:
     assert project_of_tags(["ops", "project:alpha", "project:beta"]) == "alpha"
     assert project_of_tags(["ops"]) is None
