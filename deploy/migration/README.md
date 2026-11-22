@@ -78,6 +78,9 @@ daemon is down.
 The wave stories (7.7-7.17) add entries and drive them with the CLI. No wave
 hand-rolls registration SQL or toggles timers outside the ledger.
 
+A native clock on another machine (a launchd job on a Mac) is not a ledger entry: the schema has no remote kind.
+It is cut over by hand in the same order and recorded in [`remote-natives.md`](remote-natives.md).
+
 ## Entry schema
 
 ```yaml

@@ -3925,6 +3925,10 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation d451ded3-4765-5519-a702-955e52a7fc70 (scheduled) success exit=0 runtime=701ms memory=43098112B cpu=1.1516
+  - at: '2026-11-22T01:05:00Z'
+    action: retire-native
+    outcome: ok
+    detail: operator order; mobile-deploy-hub-catchup.timer deleted from delorenj/mobile-deploy-hub tools/catchup/units/ (hub commit b05f557), install.sh no longer copies it and sweeps stray copies, the installed copy in ~/.config/systemd/user was removed and daemon-reloaded. NOT `candybar migrate decommission`, which would disable the candybar and stop the job; the candybar stays enabled (healthy, every fire a success since 2026-10-26) and the rollback above no longer applies
   - at: '2026-11-21T19:58:00Z'
     action: retire-native
     outcome: ok
@@ -3980,6 +3984,10 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation 48f2f5f4-9158-56aa-bb0d-83649dd3e42c (scheduled) success exit=0 runtime=3542ms memory=31342592B cpu=0.185
+  - at: '2026-11-22T01:05:00Z'
+    action: retire-native
+    outcome: ok
+    detail: operator order; mobile-deploy-hub-macwatch.timer deleted from delorenj/mobile-deploy-hub tools/catchup/units/ (hub commit b05f557), install.sh no longer copies it and sweeps stray copies, the installed copy in ~/.config/systemd/user was removed and daemon-reloaded. NOT `candybar migrate decommission`, which would disable the candybar and stop the job; the candybar stays enabled (healthy, every fire a success since 2026-10-26) and the rollback above no longer applies
   - at: '2026-11-21T19:58:00Z'
     action: retire-native
     outcome: ok
