@@ -3925,6 +3925,10 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation d451ded3-4765-5519-a702-955e52a7fc70 (scheduled) success exit=0 runtime=701ms memory=43098112B cpu=1.1516
+  - at: '2026-11-21T19:58:00Z'
+    action: retire-native
+    outcome: ok
+    detail: operator order; the .timer file deleted from delorenj/mobile-deploy-hub tools/catchup/units (hub commit b05f557), install.sh no longer copies it and sweeps stray copies, installed copy removed from ~/.config/systemd/user; the candybar stays enabled and the rollback above no longer applies (a candybar migrate decommission was tried and disables the live candybar, so it was reverted and the candybar resumed)
 - id: systemd:mobile-deploy-hub-macwatch.timer
   wave: '7.11'
   candybar:
@@ -3976,6 +3980,10 @@ jobs:
     action: verify
     outcome: ok
     detail: invocation 48f2f5f4-9158-56aa-bb0d-83649dd3e42c (scheduled) success exit=0 runtime=3542ms memory=31342592B cpu=0.185
+  - at: '2026-11-21T19:58:00Z'
+    action: retire-native
+    outcome: ok
+    detail: operator order; the .timer file deleted from delorenj/mobile-deploy-hub tools/catchup/units (hub commit b05f557), install.sh no longer copies it and sweeps stray copies, installed copy removed from ~/.config/systemd/user; the candybar stays enabled and the rollback above no longer applies (a candybar migrate decommission was tried and disables the live candybar, so it was reverted and the candybar resumed)
 - id: hermes:33god-pm:061c4dbedc1c
   wave: CAND-50
   candybar:
