@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from watchfiles import Change
 from watchfiles._rust_notify import RustNotify
 
 from .migration.client import ApiError, CandybarApi
@@ -188,11 +189,26 @@ def _migration_ledger(path: Path, config: WatchConfig) -> Path | None:
     return None
 
 
-def _ledger_entry(path: Path, name: str):
-    ledger = load_ledger(path)
-    ids = [e.candybar_id for e in ledger.jobs if e.candybar_id]
-    if len(ids) != len(set(ids)):
-        raise ValueError(f'{path}: duplicate candybar ids')
+def _ledger_entry(path: Path, name: str, cache: dict | None = None):
+    """Return the unique ledger entry for `name`.
+
+    `cache` is per reconcile pass. It is keyed by path and the file's stat
+    fingerprint (the ledger is replaced atomically, so a write changes the
+    inode), so a pass parses each ledger once instead of three times per
+    definition. The pre-write re-check under the ledger lock passes no cache.
+    """
+    ledger = None
+    if cache is not None:
+        st = path.stat() if path.is_file() else None
+        key = (path, st and (st.st_ino, st.st_mtime_ns, st.st_size))
+        ledger = cache.get(key)
+    if ledger is None:
+        ledger = load_ledger(path)
+        ids = [e.candybar_id for e in ledger.jobs if e.candybar_id]
+        if len(ids) != len(set(ids)):
+            raise ValueError(f'{path}: duplicate candybar ids')
+        if cache is not None:
+            cache[key] = ledger
     matches = [e for e in ledger.jobs if e.name == name]
     if len(matches) != 1:
         raise ValueError(f'{path}: no unique ledger entry for {name}')
@@ -220,12 +236,12 @@ def _read(api, job_id: str) -> dict[str, Any]:
     return result
 
 
-def _sync_one(config, api, definition, project, ledger_path, report, dry_run):
+def _sync_one(config, api, definition, project, ledger_path, report, dry_run, ledgers=None):
     manifest = definition.manifest
     name = manifest.name
     result = {'name': name, 'source': str(definition.source), 'status': 'unchanged'}
     report.results.append(result)
-    entry = _ledger_entry(ledger_path, name) if ledger_path else None
+    entry = _ledger_entry(ledger_path, name, ledgers) if ledger_path else None
     if entry is not None and not _active_entry(entry):
         result['status'] = 'migration-inactive'
         return
@@ -339,10 +355,11 @@ def _reconcile(config: WatchConfig, api=None, *, dry_run: bool = False) -> Recon
             return report  # No registry access when the last manifest was removed.
         # Preflight every migration before any write. Ledger reads need no lock
         # (atomic replace); the lock is taken per write in `_sync_one`.
+        ledgers: dict = {}
         for ledger in sorted({p for _, _, p in definitions if p is not None}):
             for definition, _, path in definitions:
                 if path == ledger:
-                    _active_entry(_ledger_entry(ledger, definition.name))
+                    _active_entry(_ledger_entry(ledger, definition.name, ledgers))
         api = api if api is not None else CandybarApi()
         # Ownership/identity failures are validation failures, not a partial
         # apply: preflight ALL sources before writing the first definition.
@@ -351,7 +368,7 @@ def _reconcile(config: WatchConfig, api=None, *, dry_run: bool = False) -> Recon
         if len(rows) != len(by_name):
             raise ValueError('duplicate registry names')
         for definition, project, ledger in definitions:
-            entry = _ledger_entry(ledger, definition.name) if ledger else None
+            entry = _ledger_entry(ledger, definition.name, ledgers) if ledger else None
             if entry is not None and not _active_entry(entry):
                 continue
             row = by_name.get(definition.name)
@@ -368,7 +385,7 @@ def _reconcile(config: WatchConfig, api=None, *, dry_run: bool = False) -> Recon
             return report
         for definition, project, ledger in definitions:
             try:
-                _sync_one(config, api, definition, project, ledger, report, dry_run)
+                _sync_one(config, api, definition, project, ledger, report, dry_run, ledgers)
             except (ApiError, OSError, ValueError, KeyError, TypeError) as exc:
                 report.errors.append(f'{definition.source} ({definition.name}): {exc}')
                 if report.results and report.results[-1]['name'] == definition.name:
@@ -431,13 +448,18 @@ def run_watch(config: WatchConfig, *, config_path: Path | None = None,
                     changed = {Path(p) for _, p in changes}
                     if config_path and config_path in changed:
                         raise RuntimeError('watch configuration changed; restart to reload')
+                    # A directory only matters when it appears or disappears
+                    # (new subscription / removed subtree). `modified` on a
+                    # directory is an ATTRIB or mtime touch: agent runtimes
+                    # (Hermes runtime/cron, every tick) emit those constantly,
+                    # and each one used to trigger a full reconcile.
                     relevant = any(
                         p.name not in EXCLUDED and (
                             p == config_path or p == config.ledger
                             or p.name in {PROJECT_FILE, 'candybar.toml', 'ledger.yaml'}
                             or p.name.endswith('.candybar.toml')
-                            or p in watched or p.is_dir()
-                        ) for p in changed
+                            or (kind != Change.modified and (p in watched or p.is_dir()))
+                        ) for kind, p in ((Change(k), Path(p)) for k, p in changes)
                     )
                     if not relevant:
                         continue
@@ -461,8 +483,17 @@ def run_watch(config: WatchConfig, *, config_path: Path | None = None,
                     return
                 report = reconcile(config)  # Latest bytes on every bounded retry.
                 if report.ok:
+                    # One summary line per pass; per-definition lines only for
+                    # real changes. Logging every `unchanged` definition grew
+                    # project-watch.log to 666 MB.
+                    unchanged = 0
                     for result in report.results:
-                        log.info('autosync %s %s (%s)', result['status'], result['name'], result['source'])
+                        if result['status'] == 'unchanged':
+                            unchanged += 1
+                            log.debug('autosync unchanged %s (%s)', result['name'], result['source'])
+                        else:
+                            log.info('autosync %s %s (%s)', result['status'], result['name'], result['source'])
+                    log.info('autosync ok: %s definitions, %s unchanged', len(report.results), unchanged)
                     return
                 log.error('autosync unsynced (attempt %s/%s): %s', attempt + 1,
                           config.retries + 1, '; '.join(report.errors))

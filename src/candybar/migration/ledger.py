@@ -264,11 +264,20 @@ class Ledger(_Model):
         raise LedgerError(f"no ledger entry for {job_id!r}")
 
 
+def _safe_load(text: str) -> Any:
+    """Safe YAML via libyaml when present: ~10x faster than pure Python.
+
+    The ledger is ~160 KB and the watcher reads it on every reconcile, so the
+    pure-Python scanner dominated `candybar watch` CPU.
+    """
+    return yaml.load(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))  # noqa: S506 -- safe loaders only
+
+
 def load_ledger(path: Path) -> Ledger:
     if not path.is_file():
         raise LedgerError(f"no migration ledger at {path}")
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        raw = _safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         raise LedgerError(f"{path}: invalid YAML: {exc}") from exc
     if raw is None:
@@ -294,7 +303,7 @@ def save_ledger(path: Path, ledger: Ledger) -> None:
     """Atomic replace: a reader (or a crash) sees the old file or the new one, never half."""
     text = dump_ledger(ledger)
     # Round-trip before replacing: never commit a file the next load refuses.
-    Ledger.model_validate(yaml.safe_load(text) or {})
+    Ledger.model_validate(_safe_load(text) or {})
     mode = path.stat().st_mode & 0o777 if path.exists() else 0o644
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:

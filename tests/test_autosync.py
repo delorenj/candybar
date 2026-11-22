@@ -330,6 +330,27 @@ def test_migration_exact_identity_lock_and_reread(tmp_path, monkeypatch):
     assert not report.ok and 'exact ledger candybar_id' in str(report.errors)
 
 
+def test_noop_reconcile_parses_the_ledger_once(tmp_path, monkeypatch):
+    """Preflight, validation and sync share one parse per pass (was 3 per definition)."""
+    file, ledger, _ = migration(tmp_path)
+    api = FakeApi()
+    assert reconcile(WatchConfig((), legacy=(manifest(tmp_path / 'normal/candybar.toml'),)), api).ok
+    config = WatchConfig((), legacy=(file,))
+    assert reconcile(config, api).ok
+    loads = []
+    real = autosync.load_ledger
+    monkeypatch.setattr(autosync, 'load_ledger', lambda p: loads.append(p) or real(p))
+    report = reconcile(config, api)
+    assert report.ok and report.results[0]['status'] == 'unchanged'
+    assert loads == [ledger]
+    # A replaced ledger is re-read on the next pass, never served stale.
+    import yaml
+    data = yaml.safe_load(ledger.read_text())
+    data['jobs'][0]['status'] = 'planned'
+    ledger.write_text(yaml.safe_dump(data))
+    assert reconcile(config, api).results[0]['status'] == 'migration-inactive'
+
+
 @pytest.mark.parametrize('mode', ['pending', 'missing-id', 'missing', 'malformed', 'duplicate-name', 'duplicate-id'])
 def test_migration_fail_closed(tmp_path, mode):
     import yaml
@@ -407,6 +428,45 @@ def test_native_atomic_replace_new_directory_and_rename(tmp_path, monkeypatch):
         (directory / 'renamed.candybar.toml').unlink()
         threading.Event().wait(0.1)
         assert len(api.rows) == 1  # No pruning on deletion.
+    finally:
+        stop.set()
+        thread.join(3)
+    assert not thread.is_alive()
+    assert errors == []
+
+
+def test_directory_attribute_churn_does_not_reconcile(tmp_path, monkeypatch):
+    """Agent runtimes touch/chmod their directories every tick; that is not a manifest change."""
+    api = FakeApi()
+    monkeypatch.setattr(autosync, 'CandybarApi', lambda: api)
+    project = tmp_path / 'project'
+    runtime = project / 'agents/runtime/cron'
+    runtime.mkdir(parents=True)
+    manifest(project / '.candybars/job.candybar.toml')
+    stop, errors = threading.Event(), []
+    config = WatchConfig((project / 'agents',), projects=(project,), debounce_ms=30, retries=0)
+
+    def run():
+        try:
+            run_watch(config, stop_event=stop)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+    thread = threading.Thread(target=run)
+    thread.start()
+    try:
+        wait_for(lambda: len(api.rows) == 1)
+        threading.Event().wait(0.2)
+        before = api.reads
+        for mode in (0o700, 0o755, 0o700):
+            runtime.chmod(mode)
+            os.utime(runtime)
+            os.utime(project)
+            (runtime / '.tick.lock').write_text('tick')
+            threading.Event().wait(0.1)
+        threading.Event().wait(0.25)
+        assert api.reads == before
+        (runtime / 'new-subdir').mkdir()  # A new directory still re-subscribes and reconciles.
+        wait_for(lambda: api.reads > before)
     finally:
         stop.set()
         thread.join(3)
