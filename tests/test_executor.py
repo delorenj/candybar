@@ -12,7 +12,9 @@ import stat
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
+
+import pytest
 
 from candybar.events import STDERR_TAIL_MAX, build_candybar_invoke
 from candybar.events.envelope import (
@@ -1104,3 +1106,45 @@ def test_claim_failure_naks_without_running() -> None:
     msg = FakeMsg(make_command().model_dump_json().encode())
     run(executor.handle_message(msg))
     assert runs == [] and msg.naks == [1] and msg.acked == 0
+
+
+def test_child_env_never_leaks_the_executor_registry_dsn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://candybar:secret@localhost:5432/candybar")
+    base = {
+        "invocation_id": uuid4(),
+        "candybar_id": uuid4(),
+        "trigger": "manual",
+        "tick_id": None,
+        "result_file": tmp_path / "result.json",
+    }
+    assert "DATABASE_URL" not in child_env(**base)
+    # A job may still set its own, explicitly, in the runner env.
+    own = child_env(**base, extra={"DATABASE_URL": "postgresql://job@localhost/job"})
+    assert own["DATABASE_URL"] == "postgresql://job@localhost/job"
+
+
+def test_leftover_processes_are_reaped_through_cgroup_kill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A job's orphaned grandchildren die with the invocation (cgroup.kill)."""
+    scope = tmp_path / "scope"
+    scope.mkdir()
+    (scope / "cgroup.procs").write_text("4242\n4243\n")
+    (scope / "cgroup.kill").write_text("0")
+    monkeypatch.setattr(runner, "REAP_WAIT_SECONDS", 0.05)
+    reaped = runner._reap_leftovers(scope)
+    assert [r.split(":")[0] for r in reaped] == ["4242", "4243"]
+    assert (scope / "cgroup.kill").read_text() == "1"
+
+
+def test_no_reap_without_cgroup_kill_or_leftovers(tmp_path: Path) -> None:
+    scope = tmp_path / "scope"
+    scope.mkdir()
+    (scope / "cgroup.procs").write_text("0")  # plain-fs test double, no cgroup.kill
+    assert runner._reap_leftovers(scope) == []
+    (scope / "cgroup.kill").write_text("0")
+    (scope / "cgroup.procs").write_text("")
+    assert runner._reap_leftovers(scope) == []
+    assert (scope / "cgroup.kill").read_text() == "0"

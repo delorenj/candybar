@@ -42,6 +42,7 @@ import asyncio
 import json
 import logging
 import os
+import select
 import shutil
 import signal
 import subprocess
@@ -67,6 +68,12 @@ log = logging.getLogger(__name__)
 CGROUP_ROOT_ENV = "CANDYBAR_CGROUP_ROOT"
 WORK_ROOT_ENV = "CANDYBAR_WORK_ROOT"
 DEFAULT_CGROUP_ROOT = "/sys/fs/cgroup/candybar"
+# The executor's own settings (executor.env) that must never reach a job. Its
+# registry DSN carries the Candybar DB password, and any job whose tool reads
+# the DATABASE_URL convention (CandyStore, most ORMs) silently aimed at the
+# Candybar registry instead of its own database. A job that needs one sets it
+# in its runner `env`, which is applied after this scrub.
+DAEMON_PRIVATE_ENV = frozenset({"DATABASE_URL"})
 WAIT_SLICE_SECONDS = 25.0
 
 
@@ -169,7 +176,7 @@ def child_env(
     `extra` is an exec runner's non-secret literals; they sit between the
     daemon's environment and the protocol vars, so the protocol always wins.
     """
-    env = dict(os.environ)
+    env = {k: v for k, v in os.environ.items() if k not in DAEMON_PRIVATE_ENV}
     if extra:
         env.update(extra)
     env.update(
@@ -224,12 +231,81 @@ def _join_scope_preexec(fd: int) -> Callable[[], None]:
     return join
 
 
+REAP_WAIT_SECONDS = 1.0
+
+
+def _reap_leftovers(scope: Path) -> list[str]:
+    """SIGKILL whatever the job left running in its scope; return what was reaped.
+
+    An invocation ends when its main process exits. Anything still in the scope
+    then is a leak: a grandchild the job forgot (e.g. `npx vite preview` whose
+    npx wrapper was terminated, leaving vite orphaned), which would otherwise
+    hold memory and ports forever and pin the scope so it can never be removed.
+    `cgroup.kill` (cgroup v2, Linux 5.14+) kills the whole scope atomically,
+    including processes that left the job's process group.
+    """
+    procs = scope / "cgroup.procs"
+    kill = scope / "cgroup.kill"
+    try:
+        pids = [p for p in procs.read_text().split() if p]
+    except OSError:
+        return []
+    if not pids or not kill.exists():
+        return []
+    reaped = []
+    for pid in pids:
+        try:
+            reaped.append(f"{pid}:{Path(f'/proc/{pid}/comm').read_text().strip()}")
+        except OSError:
+            reaped.append(pid)
+    try:
+        kill.write_text("1")
+    except OSError as exc:
+        log.warning("could not reap leftovers %s in %s: %s", reaped, scope, exc)
+        return []
+    _wait_unpopulated(scope)
+    log.warning("invocation scope %s: reaped %d leftover process(es): %s",
+                scope.name, len(reaped), ", ".join(reaped))
+    return reaped
+
+
+def _wait_unpopulated(scope: Path) -> None:
+    """Event wait (not a clock): cgroup.events raises POLLPRI when `populated` flips."""
+    events = scope / "cgroup.events"
+    try:
+        fd = os.open(events, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        poller = select.poll()
+        poller.register(fd, select.POLLPRI | select.POLLERR)
+        deadline = time.monotonic() + REAP_WAIT_SECONDS
+        while True:
+            os.lseek(fd, 0, os.SEEK_SET)
+            if b"populated 0" in os.read(fd, 4096):
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not poller.poll(int(remaining * 1000)):
+                return
+    except OSError:
+        return
+    finally:
+        os.close(fd)
+
+
 def _leave_scope(scope: Path | None) -> None:
     if scope is None:
         return
     try:
         scope.rmdir()  # succeeds once the child has exited
     except OSError:
+        if _reap_leftovers(scope):
+            try:
+                scope.rmdir()
+                return
+            except OSError as exc:
+                log.warning("could not remove cgroup scope %s after reaping: %s", scope, exc)
+                return
         # Plain-fs test double: the written cgroup.procs is a real file that
         # blocks rmdir (on cgroupfs it is virtual and never does).
         try:
