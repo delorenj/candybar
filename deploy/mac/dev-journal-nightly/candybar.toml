@@ -26,6 +26,10 @@
 # report-delivery section; backfill with
 #   nightly.sh nightly --date YYYY-MM-DD
 #
+# PAUSED in the Mac registry since 2026-11-23 (Jarad): Damian's Mac runs plain
+# (33god-mode off) and this job calls the AutomaticAI gateway. Resume with
+# `candybar resume mac-dev-journal-nightly` when the Mac goes back to 33GOD.
+#
 # No on_failure: Damian has no alert destination yet (ntfy is opt-in, W10-1).
 # A failed run is a failed Candybar invocation (`candybar history`) and the next
 # morning's report names the missing day.
