@@ -26,7 +26,7 @@
 #                                   `entrypoint` file for the API to stat)
 #   host.docker.internal gateway  `extra_hosts: !reset []` (the registry is a
 #     (host system Postgres)        container here, not the host's Postgres)
-#   deploy/.env (op-inject)       `env_file: !reset []` (no 1Password on the
+#   deploy/.env (op-inject)       `env_file: !reset []` (no DeLoSecrets on the
 #                                   Mac; secrets come from env-op-resolve)
 #   published port bind           `ports: !override`, explicit 127.0.0.1
 #

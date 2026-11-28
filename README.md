@@ -54,7 +54,7 @@ export DATABASE_URL=postgresql://candybar:<password>@localhost:5432/candybar
 uv run alembic -c deploy/alembic.ini upgrade head
 ```
 
-The role password lives in 1Password (`op://DeLoSecrets/Candybar Postgres Role/password`).
+The role password lives in DeLoSecrets (`op://DeLoSecrets/Candybar Postgres Role/password`).
 Live-PG tests: `CANDYBAR_TEST_PG=1 DATABASE_URL=... uv run pytest tests/test_registry_integration.py`.
 
 ## Register a candybar
@@ -1097,7 +1097,7 @@ host Postgres (`candybar` database) and Bloodbank NATS — zero new
 infrastructure.
 
 ```bash
-# 1. Resolve secrets (DATABASE_URL) from 1Password into the gitignored .env
+# 1. Resolve secrets (DATABASE_URL) from DeLoSecrets into the gitignored .env
 ~/docker/stacks/_lib/op-inject.sh deploy/.env.template deploy/.env
 
 # 2. Build + run

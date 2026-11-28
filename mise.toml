@@ -57,7 +57,7 @@ description = "Inject .env.op into .env"
 run = "'{{config_root}}/.mise/scripts/materialize-env.sh'"
 
 [tasks."hindsight:setup"]
-description = "Provision this dev's shared project Hindsight key from 1Password into .env (op read; upserts those two keys, leaves the rest of .env intact)"
+description = "Provision this dev's shared project Hindsight key from DeLoSecrets into .env (op read; upserts those two keys, leaves the rest of .env intact)"
 run = "'{{config_root}}/.mise/scripts/hindsight-setup.sh'"
 
 # Core task (unconditional): snapshot recent project Markdown into the

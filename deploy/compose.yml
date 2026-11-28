@@ -16,7 +16,7 @@
 # 600) from deploy/.env.template by the stack op-inject helper:
 #   ~/docker/stacks/_lib/op-inject.sh deploy/.env.template deploy/.env
 # or from the repo root:  (cd deploy && ~/docker/stacks/_lib/op-inject.sh)
-# Rotation = 1Password edit + re-inject + `docker compose up -d`.
+# Rotation = DeLoSecrets edit + re-inject + `docker compose up -d`.
 #
 # Bring-up:
 #   docker compose -f deploy/compose.yml build

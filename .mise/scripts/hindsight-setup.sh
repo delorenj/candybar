@@ -2,7 +2,7 @@
 # Provision this dev's Hindsight credentials for this project's bank.
 #
 # Strategy (chosen 2026-06-12): ONE shared CAF-scoped API key lives in the
-# DeLoSecrets 1Password vault. This task resolves it via `op` and writes
+# DeLoSecrets vault. This task resolves it via `op` and writes
 # HINDSIGHT_API_URL + HINDSIGHT_API_KEY into the gitignored .env, which mise
 # already loads — so every agent hook that shells out to `hindsight` picks the
 # key up automatically (env vars outrank ~/.hindsight/config).
@@ -10,7 +10,7 @@
 # Idempotent: updates the two HINDSIGHT_ lines in place, leaves the rest of
 # .env untouched. Never prints the secret.
 #
-# Override the 1Password reference if the item path differs:
+# Override the DeLoSecrets reference if the item path differs:
 #   HINDSIGHT_OP_KEY_REF="op://DeLoSecrets/<item>/<field>" mise run hindsight:setup
 set -euo pipefail
 
@@ -26,7 +26,7 @@ note "API URL : ${API_URL}"
 note "op ref  : ${OP_KEY_REF}"
 
 if ! command -v op >/dev/null 2>&1; then
-  echo "ERROR: 1Password CLI (op) not found." >&2
+  echo "ERROR: op CLI not found." >&2
   note "Install it, then re-run, OR set the key manually:" >&2
   note "  hindsight configure --api-url ${API_URL} --api-key <key>" >&2
   exit 1
@@ -34,7 +34,7 @@ fi
 
 # Resolve the secret (op handles its own auth / biometric unlock).
 if ! API_KEY="$(op read "${OP_KEY_REF}" 2>/dev/null)" || [[ -z "${API_KEY}" ]]; then
-  echo "ERROR: could not read ${OP_KEY_REF} from 1Password." >&2
+  echo "ERROR: could not read ${OP_KEY_REF} from DeLoSecrets." >&2
   note "Sign in (\`op signin\`) or fix HINDSIGHT_OP_KEY_REF, then re-run." >&2
   exit 1
 fi

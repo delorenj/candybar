@@ -11,7 +11,7 @@ if [ ! -f "$source_file" ] || ! grep -Eq '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:
   exit 0
 fi
 
-# Entering a project without the 1Password CLI must not damage an existing .env.
+# Entering a project without the `op` CLI must not damage an existing .env.
 if ! command -v op >/dev/null 2>&1; then
   exit 0
 fi
